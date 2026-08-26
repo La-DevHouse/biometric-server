@@ -242,7 +242,6 @@ El servidor puede encolar estos comandos para que el dispositivo los ejecute:
 | `CLEAR_LOG_DATA` | — | `{"status":"ok"}` | Limpia logs |
 | `CLEAR_ENROLL_DATA` | — | `{"status":"ok"}` | Limpia enrollments |
 | `SET_FK_NAME` | `fk_name` | `{"status":"ok"}` | Renombra dispositivo |
-| `SET_WEB_SERVER_INFO` | `server_ip`, `server_port` | `{"status":"ok"}` | Configura servidor |
 
 ---
 
@@ -427,13 +426,15 @@ sqlite3 data/biometric.db "SELECT * FROM attendance_logs LIMIT 10;"
 
 | Variable | Default | Propósito |
 |----------|---------|-----------|
+| `PORT` | `3000` | Puerto donde escucha el servidor (`npm run dev` / `npm start`) |
 | `NO_CMD_STRATEGY` | `ok_empty` | Respuesta cuando no hay comando: `ok_empty` o `error` |
 | `DEV_ID` | `SIM001` | ID del dispositivo simulado |
 | `POLL_INTERVAL` | `5000` | Millisegundos entre polls (simulador) |
-| `SERVER_URL` | `http://localhost:3000` | URL del servidor (simulador) |
+| `SERVER_URL` | `http://localhost:${PORT}` | URL del servidor (simulador, e2e) — sigue a `PORT` automáticamente si no se define |
 
 **Uso:**
 ```bash
+PORT=4000 npm run dev
 DEV_ID=CUSTOM001 POLL_INTERVAL=3000 npm run simulator
 NO_CMD_STRATEGY=error npm run dev
 ```

@@ -1,135 +1,152 @@
-import { allAsync, getAsync } from "@/lib/db";
-import { initDb } from "@/lib/db";
+import { allAsync, getAsync, initDb } from "@/lib/db";
+import { listActiveOperations } from "@/lib/operations";
+import { isDeviceOnline } from "@/lib/deviceStatus";
+import { formatVerifyMode } from "@/lib/verifyMode";
+import { StatCard } from "@/components/ui/StatCard";
+import { Card, CardMeta } from "@/components/ui/Card";
+import { Table, Th, Td, Tr } from "@/components/ui/Table";
+import { LinkBtn } from "@/components/ui/Btn";
+import { EmptyState } from "@/components/ui/EmptyState";
 
 export const revalidate = 3;
+
+interface DeviceRow {
+  dev_id: string;
+  fk_name: string | null;
+  last_seen_at: number | null;
+}
+
+interface RecentLog {
+  io_time: string;
+  user_id: string;
+  display_name: string | null;
+  device_name: string | null;
+  verify_mode: string | null;
+}
+
+function todayPrefix(): string {
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}`;
+}
+
+function fmtTime(ioTime: string): string {
+  // io_time is device-format YYYYMMDDhhmmss.
+  if (!/^\d{14}$/.test(ioTime)) return ioTime;
+  return `${ioTime.slice(6, 8)}/${ioTime.slice(4, 6)} ${ioTime.slice(8, 10)}:${ioTime.slice(10, 12)}`;
+}
 
 async function getData() {
   await initDb();
 
-  const devices = await allAsync<any>(
-    `SELECT dev_id, fk_name, firmware, last_seen_at FROM devices ORDER BY dev_id`
+  const devices = await allAsync<DeviceRow>(
+    `SELECT dev_id, fk_name, last_seen_at FROM devices ORDER BY dev_id`
   );
 
-  const totalLogs = await getAsync<{ count: number }>(
-    `SELECT COUNT(*) as count FROM attendance_logs`
+  const totalToday = await getAsync<{ n: number }>(
+    `SELECT COUNT(*) AS n FROM attendance_logs WHERE io_time LIKE ?`,
+    [`${todayPrefix()}%`]
   );
 
-  const pendingCommands = await getAsync<{ count: number }>(
-    `SELECT COUNT(*) as count FROM commands WHERE status = 'WAIT'`
-  );
+  const totalUsers = await getAsync<{ n: number }>(`SELECT COUNT(*) AS n FROM users`);
 
-  const processedCommands = await getAsync<{ count: number }>(
-    `SELECT COUNT(*) as count FROM commands WHERE status = 'RESULT'`
+  const activeOps = await listActiveOperations();
+
+  const recentLogs = await allAsync<RecentLog>(
+    `SELECT al.io_time, al.user_id, al.verify_mode,
+            COALESCE(u.user_name, al.user_id) AS display_name,
+            COALESCE(d.fk_name, d.dev_id) AS device_name
+       FROM attendance_logs al
+       LEFT JOIN devices d ON d.dev_id = al.dev_id
+       LEFT JOIN users u ON u.dev_id = al.dev_id AND u.user_id = al.user_id
+      ORDER BY al.received_at DESC
+      LIMIT 8`
   );
 
   return {
-    devices: devices.map(d => ({
-      ...d,
-      isOnline: d.last_seen_at && Date.now() - d.last_seen_at < 30000,
-    })),
-    stats: {
-      totalLogs: totalLogs?.count || 0,
-      pendingCommands: pendingCommands?.count || 0,
-      processedCommands: processedCommands?.count || 0,
-    },
+    devices,
+    totalToday: totalToday?.n ?? 0,
+    totalUsers: totalUsers?.n ?? 0,
+    activeOpsCount: activeOps.length,
+    recentLogs,
   };
 }
 
-export default async function AdminDashboard() {
-  const { devices, stats } = await getData();
+export default async function InicioPage() {
+  const { devices, totalToday, totalUsers, activeOpsCount, recentLogs } = await getData();
+
+  const onlineDevices = devices.filter((d) => isDeviceOnline(d.last_seen_at));
+  const offlineDevices = devices.filter((d) => !isDeviceOnline(d.last_seen_at));
 
   return (
-    <div className="space-y-8">
-      {/* Stats */}
-      <div className="grid grid-cols-3 gap-4">
-        <div className="bg-white p-6 rounded-lg border border-slate-200">
-          <div className="text-sm text-slate-600">Devices</div>
-          <div className="text-3xl font-bold text-slate-900">{devices.length}</div>
-          <div className="text-xs text-slate-500 mt-2">
-            {devices.filter(d => d.isOnline).length} online
-          </div>
-        </div>
-
-        <div className="bg-white p-6 rounded-lg border border-slate-200">
-          <div className="text-sm text-slate-600">Pending Commands</div>
-          <div className="text-3xl font-bold text-blue-600">{stats.pendingCommands}</div>
-        </div>
-
-        <div className="bg-white p-6 rounded-lg border border-slate-200">
-          <div className="text-sm text-slate-600">Total Logs</div>
-          <div className="text-3xl font-bold text-slate-900">{stats.totalLogs}</div>
-          <div className="text-xs text-slate-500 mt-2">
-            {stats.processedCommands} commands processed
-          </div>
-        </div>
+    <div className="flex flex-col gap-[22px] max-w-[1100px]">
+      <div className="grid gap-[18px]" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))" }}>
+        <StatCard
+          kicker="Equipos en línea"
+          value={`${onlineDevices.length} / ${devices.length}`}
+          meta="visto en los últimos 30 s"
+        />
+        <StatCard kicker="Marcaciones hoy" value={totalToday} meta="llegan solas en tiempo real" />
+        <StatCard
+          kicker="Operaciones en curso"
+          value={activeOpsCount}
+          meta="comandos en cola o ejecutando"
+        />
+        <StatCard
+          kicker="Usuarios registrados"
+          value={totalUsers}
+          meta={`en ${devices.length} equipo${devices.length === 1 ? "" : "s"}`}
+        />
       </div>
 
-      {/* Devices Table */}
-      <div className="bg-white rounded-lg border border-slate-200">
-        <div className="px-6 py-4 border-b border-slate-200">
-          <h2 className="text-lg font-semibold text-slate-900">Connected Devices</h2>
-        </div>
-        <table className="w-full">
-          <thead className="bg-slate-50 border-b border-slate-200">
-            <tr>
-              <th className="px-6 py-3 text-left text-sm font-semibold text-slate-600">
-                Device ID
-              </th>
-              <th className="px-6 py-3 text-left text-sm font-semibold text-slate-600">
-                Name
-              </th>
-              <th className="px-6 py-3 text-left text-sm font-semibold text-slate-600">
-                Firmware
-              </th>
-              <th className="px-6 py-3 text-left text-sm font-semibold text-slate-600">
-                Status
-              </th>
-              <th className="px-6 py-3 text-left text-sm font-semibold text-slate-600">
-                Last Seen
-              </th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-200">
-            {devices.length === 0 ? (
+      {offlineDevices.length > 0 && (
+        <Card>
+          <div className="flex items-center gap-3">
+            <CardMeta>
+              Sin conexión: {offlineDevices.map((d) => d.fk_name || d.dev_id).join(", ")}
+            </CardMeta>
+            <LinkBtn href="/admin/dispositivos" variant="ghost" className="ml-auto">
+              Ver dispositivos →
+            </LinkBtn>
+          </div>
+        </Card>
+      )}
+
+      <div className="flex flex-col gap-2">
+        <h3 className="font-heading text-lg m-0">Últimas marcaciones</h3>
+        {recentLogs.length === 0 ? (
+          <EmptyState
+            title="Todavía no hay marcaciones"
+            description="Aparecerán aquí en tiempo real en cuanto un equipo reporte una."
+          />
+        ) : (
+          <Table>
+            <thead>
               <tr>
-                <td colSpan={5} className="px-6 py-8 text-center text-slate-500">
-                  No devices connected
-                </td>
+                <Th>Hora</Th>
+                <Th>Usuario</Th>
+                <Th>Dispositivo</Th>
+                <Th>Verificación</Th>
               </tr>
-            ) : (
-              devices.map(device => (
-                <tr key={device.dev_id} className="hover:bg-slate-50">
-                  <td className="px-6 py-4 font-mono text-sm text-slate-900">
-                    {device.dev_id}
-                  </td>
-                  <td className="px-6 py-4 text-slate-900">
-                    {device.fk_name || "—"}
-                  </td>
-                  <td className="px-6 py-4 text-slate-600 text-sm">
-                    {device.firmware || "—"}
-                  </td>
-                  <td className="px-6 py-4">
-                    <span
-                      className={`inline-block px-3 py-1 rounded-full text-sm font-medium ${
-                        device.isOnline
-                          ? "bg-green-100 text-green-700"
-                          : "bg-slate-100 text-slate-600"
-                      }`}
-                    >
-                      {device.isOnline ? "● Online" : "○ Offline"}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 text-slate-500 text-sm">
-                    {device.last_seen_at
-                      ? new Date(device.last_seen_at).toLocaleString()
-                      : "—"}
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {recentLogs.map((r, i) => (
+                <Tr key={i}>
+                  <Td>{fmtTime(r.io_time)}</Td>
+                  <Td>{r.display_name}</Td>
+                  <Td>{r.device_name}</Td>
+                  <Td>{formatVerifyMode(r.verify_mode)}</Td>
+                </Tr>
+              ))}
+            </tbody>
+          </Table>
+        )}
       </div>
+
+      <p className="text-xs text-text/50 max-w-md">
+        Un equipo se considera en línea si reportó actividad en los últimos 30 segundos.
+        Los comandos enviados a un equipo desconectado quedan en cola hasta que vuelva.
+      </p>
     </div>
   );
 }

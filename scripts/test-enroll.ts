@@ -20,7 +20,7 @@ const enrollBody = Buffer.concat([
 
 const options = {
   hostname: "localhost",
-  port: 3000,
+  port: parseInt(process.env.PORT || "3000", 10),
   path: "/",
   method: "POST",
   headers: {

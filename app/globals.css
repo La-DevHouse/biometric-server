@@ -1,26 +1,123 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+@theme {
+  /* The design's spacing scale is exactly 3.4px × (1,2,3,4,6,8) — verified
+     against the designer's tokens. Tailwind v4 derives its whole spacing
+     scale from a single --spacing multiplier, so overriding it here makes
+     every utility (p-1, gap-2, px-6...) land exactly on the design's grid
+     instead of needing arbitrary values everywhere. */
+  --spacing: 3.4px;
+
+  --color-bg: #f2f2f3;
+  --color-surface: #e9e9ea;
+  --color-text: #1d1f20;
+  --color-accent: #5980a6;
+  --color-accent-2: #728fab;
+  /* Precomputed rather than applied as a Tailwind opacity modifier
+     (border-text/16): --color-text feeding Tailwind's color-scale
+     detection would make "text" a valid color name, colliding in spirit
+     with the text-{size} typography utilities Tailwind already reserves
+     that prefix for. A standalone token, exactly as the original design
+     defines it, sidesteps the ambiguity entirely. */
+  --color-divider: color-mix(in srgb, #1d1f20 16%, transparent);
+
+  /* accent2 (no hyphen before the digit) is a deliberate rename of the
+     design's "accent-2-100..900" ramp: Tailwind v4 detects a color scale by
+     splitting the CSS variable name on its last hyphen for the shade, and
+     "accent-2-100" already has a hyphen before its own "2" — ambiguous to
+     parse ("accent" shade "2-100"? "accent-2" shade "100"?). accent2-100
+     removes that ambiguity while keeping --color-accent-2 above as the
+     flat base color the original design also defines. */
+  --color-neutral-100: #f5f5f8;
+  --color-neutral-200: #e7e7ea;
+  --color-neutral-300: #d4d4d7;
+  --color-neutral-400: #b7b7ba;
+  --color-neutral-500: #98989b;
+  --color-neutral-600: #7a7a7d;
+  --color-neutral-700: #5d5d60;
+  --color-neutral-800: #424244;
+  --color-neutral-900: #2b2b2d;
+
+  --color-accent-100: #eef6ff;
+  --color-accent-200: #d6ebff;
+  --color-accent-300: #b5d9fd;
+  --color-accent-400: #94bce3;
+  --color-accent-500: #749dc4;
+  --color-accent-600: #597ea3;
+  --color-accent-700: #416180;
+  --color-accent-800: #2c455d;
+  --color-accent-900: #1d2d3d;
+
+  --color-accent2-100: #eef6ff;
+  --color-accent2-200: #d6ebff;
+  --color-accent2-300: #bdd8f2;
+  --color-accent2-400: #9ebbd8;
+  --color-accent2-500: #7e9cb8;
+  --color-accent2-600: #627d98;
+  --color-accent2-700: #486077;
+  --color-accent2-800: #314457;
+  --color-accent2-900: #1f2d3a;
+
+  --font-sans: var(--font-barlow), system-ui, sans-serif;
+  --font-heading: var(--font-barlow-condensed), system-ui, sans-serif;
+
+  --radius-sm: 2px;
+  --radius-md: 4px;
+  --radius-lg: 7px;
+
+  --shadow-xs: none;
+  --shadow-sm: 0 1px 2px rgb(43 43 45 / 14%);
+  --shadow-md: 0 3px 10px rgb(43 43 45 / 16%);
+  --shadow-lg: 0 12px 32px rgb(43 43 45 / 22%);
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+/* This design is light-only. The previous prefers-color-scheme block flipped
+   --background/--foreground for dark mode while every page hardcoded light
+   Tailwind colors (bg-white, text-slate-900, ...) — the shell went dark and
+   the content didn't, which was never a working dark mode, just a bug. */
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+@layer base {
+  body {
+    background: var(--color-bg);
+    color: var(--color-text);
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+@layer components {
+  /* The one thing a utility class can't express: an indefinite pulsing dot
+     for the live operations tracker (Fase 3). Everything else in the
+     design is built from Tailwind utilities directly in components. */
+  @keyframes op-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.35; }
+  }
+  .animate-op-pulse {
+    animation: op-pulse 1.2s ease-in-out infinite;
+  }
+
+  /* The design's "blueprint" registration-mark corners: a small crosshair
+     (a vertical + a horizontal hairline) sitting just outside each corner
+     of a card, via <Corner /> in components/ui/Card.tsx. Precise absolute
+     positioning with two pseudo-elements per mark — not reasonably a
+     Tailwind utility composition, so kept as the literal CSS from the
+     original design (matched pixel-for-pixel: 11px box, lines at 5px,
+     marks offset -6px outside the border). */
+  .blueprint-corner {
+    position: absolute;
+    width: 11px;
+    height: 11px;
+    color: color-mix(in srgb, var(--color-text) 55%, transparent);
+  }
+  .blueprint-corner::before,
+  .blueprint-corner::after {
+    content: "";
+    position: absolute;
+    background: currentColor;
+  }
+  .blueprint-corner::before { left: 5px; top: 0; width: 1px; height: 100%; }
+  .blueprint-corner::after { top: 5px; left: 0; width: 100%; height: 1px; }
+  .blueprint-corner-tl { top: -6px; left: -6px; }
+  .blueprint-corner-tr { top: -6px; right: -6px; }
+  .blueprint-corner-bl { bottom: -6px; left: -6px; }
+  .blueprint-corner-br { bottom: -6px; right: -6px; }
 }

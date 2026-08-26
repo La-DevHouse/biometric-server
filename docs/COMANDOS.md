@@ -95,41 +95,14 @@ Parameters: {"fk_name":"Oficina Piso 3"}
 - Se usa para identificar dispositivos en reportes
 - No afecta funcionalidad
 
----
-
-### SET_WEB_SERVER_INFO
-**Descripción:** Configura la dirección del servidor web (no usado en arquitectura push)
-
-**Parámetros JSON:**
-```json
-{
-  "server_ip": "192.168.1.100",
-  "server_port": 3000
-}
-```
-
-**Campos requeridos:**
-| Campo | Tipo | Formato | Descripción |
-|-------|------|---------|------------|
-| `server_ip` | string | x.x.x.x | IP del servidor |
-| `server_port` | number | 1-65535 | Puerto del servidor |
-
-**Ejemplo en panel admin:**
-```
-Device: SIM001
-Command: SET_WEB_SERVER_INFO
-Parameters: {"server_ip":"10.0.0.50","server_port":3000}
-```
-
-**Respuesta esperada:**
-```json
-{"status": "ok"}
-```
-
-**Notas:**
-- En arquitectura actual (push), el dispositivo ya conoce la dirección
-- Se usa para reconfiguración remota
-- El dispositivo se conectará a esta dirección en próximos polls
+**No existe GET_FK_NAME — no hace falta pedirlo:**
+El dispositivo manda su `fk_name` por su cuenta en cada `receive_cmd` (su poll,
+cada ~11s en el firmware `WS535BW1_BSCS_v1.5.31`), junto con `fk_time` y
+`fk_info`. El servidor lo guarda automático en `devices.fk_name`
+([lib/handlers/protocol-handlers.ts](../lib/handlers/protocol-handlers.ts)).
+Para leerlo, consulta la tabla `devices` o el dashboard — no encoles ningún
+comando. Si el dispositivo nunca tuvo nombre, el equipo manda `fk_name: ""` y
+el servidor lo guarda como `null`.
 
 ---
 
@@ -215,6 +188,13 @@ Parameters: {"user_id":"U042","user_name":"María López"}
 - No requiere que el usuario exista previamente
 - Si no existe, lo crea
 - Útil para corregir errores de entrada o cambios de nombre
+- **Verificado en firmware `WS535BW1_BSCS_v1.5.31`:** único comando seguro para
+  renombrar un usuario existente sin afectar privilegio ni datos biométricos —
+  a diferencia de `SET_USER_INFO` (ver advertencia en esa sección)
+- **⚠️ El nombre se trunca a 8 caracteres**, sin aviso ni error. Verificado:
+  `"Jesus Renombrado"` quedó guardado como `"Jesus Re"`. No confiar en el
+  límite de 128 documentado más arriba — ese es el límite teórico del
+  protocolo, no el que aplica este firmware
 
 ---
 
@@ -247,7 +227,7 @@ Parameters: {"user_id":"U042","user_name":"María López"}
 ```
 Device: SIM001
 Command: SET_USER_PRIVILEGE
-Parameters: {"user_id":"U010","user_privilege":"OPERATOR"}
+Parameters: {"user_id":"U010","user_privilege":"MANAGER"}
 ```
 
 **Respuesta esperada:**
@@ -256,9 +236,19 @@ Parameters: {"user_id":"U010","user_privilege":"OPERATOR"}
 ```
 
 **Notas:**
-- Los cambios aplican inmediatamente
-- Es el único comando que afecta permisos en el dispositivo
-- MANAGER tiene acceso a funciones administrativas del dispositivo
+- No dispara el reindexado de `SET_USER_INFO` — verificado en firmware
+  `WS535BW1_BSCS_v1.5.31`: no genera eventos `realtime_enroll_data`
+  inesperados y las huellas del usuario sobreviven intactas
+- Es el comando correcto para cambiar solo el privilegio de un usuario
+  existente
+
+**⚠️ Solo `MANAGER` fue verificado funcionando en este firmware.** Al probar
+`{"user_id":"1","user_privilege":"OPERATOR"}`, el dispositivo respondió
+`OK` pero el privilegio quedó en `USER` — el valor se ignoró en silencio, sin
+error. No se probaron `REGISTER` ni `USER` explícitamente. Es posible que este
+firmware use códigos numéricos en vez de estos strings para niveles distintos
+de `MANAGER`, pero eso no está confirmado — no lo asumas sin probarlo primero
+contra tu dispositivo real y verificar con un `GET_USER_INFO` posterior.
 
 ---
 
@@ -295,6 +285,15 @@ Parameters: {"user_id":"U050"}
 - Los logs históricos se mantienen
 - Se recomienda hacer backup antes de borrar usuarios importantes
 
+**⚠️ El `cmd_return_code` de este comando no es confiable — verificado contra
+hardware real (firmware `WS535BW1_BSCS_v1.5.31`, dos dispositivos, cuatro
+usuarios distintos):** varias eliminaciones devolvieron `cmd_return_code:
+"Error"` pero un `GET_USER_ID_LIST` posterior confirmó que el usuario sí había
+sido borrado. No asumas que `Error` significa que la eliminación falló — la
+única forma confiable de saberlo es volver a consultar con `GET_USER_INFO` o
+`GET_USER_ID_LIST` después. El panel admin ya hace esto automáticamente
+(`DELETE_USER` siempre verifica antes de reportar éxito o fracaso).
+
 ---
 
 ### GET_USER_INFO
@@ -319,20 +318,40 @@ Command: GET_USER_INFO
 Parameters: {"user_id":"U025"}
 ```
 
-**Respuesta esperada:**
+**Respuesta cruda del dispositivo** (capturada del equipo real, usuario con una huella registrada):
 ```json
 {
-  "user_id": "U025",
-  "user_name": "Carlos Rodríguez",
-  "user_privilege": "USER",
-  "user_photo": "BIN_1",
+  "user_id": "1",
+  "user_name": "jesus",
+  "user_privilege": "MANAGER",
   "enroll_data_array": [
-    {"backup_number": 0},
-    {"backup_number": 1},
-    {"backup_number": 10}
+    {"backup_number": 0, "enroll_data": "BIN_1"}
   ]
 }
 ```
+
+Igual que en `GET_USER_ID_LIST`, cada `"BIN_N"` es un placeholder que apunta al
+bloque binario adjunto (`user_photo` y cada `enroll_data` de
+`enroll_data_array` pueden traer uno). Un fingerprint o rostro es un template
+binario propietario del dispositivo — no hay una forma "decodificada" de
+mostrarlo como con los IDs numéricos. Lo único objetivo y siempre correcto que
+se puede dar es su tamaño real, así que el servidor agrega `<campo>_size`
+junto a cada referencia, y `<campo>_text` únicamente cuando esos bytes resultan
+ser texto imprimible (el caso real de una contraseña o número de tarjeta, no
+una suposición basada en `backup_number`):
+
+```json
+{
+  "user_id": "1",
+  "user_name": "jesus",
+  "user_privilege": "MANAGER",
+  "enroll_data_array": [
+    {"backup_number": 0, "enroll_data": "BIN_1", "enroll_data_size": 612}
+  ]
+}
+```
+
+Así se ve directamente en `/admin/commands` al expandir el comando.
 
 **Campos de respuesta:**
 | Campo | Tipo | Descripción |
@@ -340,8 +359,12 @@ Parameters: {"user_id":"U025"}
 | `user_id` | string | ID del usuario |
 | `user_name` | string | Nombre completo |
 | `user_privilege` | string | Nivel de privilegios |
-| `user_photo` | BIN_1 | Foto binaria (opcional) |
-| `enroll_data_array` | array | Array de datos biométricos registrados |
+| `user_photo` | string | Placeholder `"BIN_N"` si tiene foto (opcional) |
+| `user_photo_size` | number | **Agregado por el servidor.** Tamaño real en bytes |
+| `user_photo_text` | string | **Agregado por el servidor**, solo si la foto fuera texto imprimible (nunca ocurre con JPG/PNG reales) |
+| `enroll_data_array` | array | Datos biométricos registrados |
+| `enroll_data_array[].enroll_data_size` | number | **Agregado por el servidor.** Tamaño real en bytes del template |
+| `enroll_data_array[].enroll_data_text` | string | **Agregado por el servidor**, solo si esos bytes son texto imprimible (típico en password/ID card) |
 
 **Backup numbers (enroll_data_array):**
 | Número | Tipo | Descripción |
@@ -354,11 +377,80 @@ Parameters: {"user_id":"U025"}
 **Notas:**
 - Puede retornar >25KB si hay mucha data biométrica
 - Se fragmenta automáticamente en bloques de 8KB si es necesario
-- user_photo es binario, no se muestra en panel admin
+- `user_photo`/`enroll_data` siguen siendo binarios — no se pueden visualizar
+  en el panel admin, solo inspeccionar su tamaño (y texto, si aplica)
+
+**⚠️ Se cuelga de forma consistente al consultar un `user_id` que no existe.**
+Verificado repetidamente contra hardware real (dispositivo `2023081133`,
+2026-08-18): en **todos** los intentos de sondear un ID genuinamente nuevo
+(nunca usado antes), el comando quedó entregado (`RUN`) sin que el
+dispositivo mandara jamás un `send_cmd_result` — mientras tanto, el equipo
+seguía haciendo su polling normal como si nada, y solo se resolvió al
+vencer la barrida de operaciones (3 min). En cambio, consultar un ID que
+**sí** existe siempre respondió en segundos, sin excepción, en todas las
+pruebas. Esto no es ocasional: si vas a usar este comando para "¿existe
+este usuario?" (como hace `CREATE_USER` en el panel), asume que vas a
+esperar el timeout completo cada vez que el ID resulte estar libre — no
+hay forma conocida de acortar esa espera seguramente, porque no hay señal
+para distinguir "no existe" de "existe pero está respondiendo lento" antes
+de que se cumpla el timeout, y confundir esos dos casos aquí dispararía el
+reindexado destructivo de `SET_USER_INFO` sobre un usuario real.
+
+**`GET_USER_ID_LIST` no es una alternativa válida para este chequeo** — ver
+su propia advertencia: no enumera usuarios sin huella registrada, así que
+"no aparece en la lista" no significa "el ID está libre".
 
 ---
 
 ### SET_USER_INFO
+
+> ## ⚠️ No usar para editar un usuario existente — usa SET_USER_NAME / SET_USER_PRIVILEGE
+>
+> **Verificado byte a byte en firmware `WS535BW1_BSCS_v1.5.31` (2026-08-16):**
+> mandar `SET_USER_INFO` a un usuario que ya tiene huellas registradas, sin
+> incluir `enroll_data_array`, dispara una **reconstrucción interna de toda la
+> tabla de usuarios del dispositivo** — no solo del usuario que tocaste.
+>
+> Evidencia capturada con el sniffer: al enviar
+> `{"user_id":"1","user_name":"Jesus Paris","user_privilege":"MANAGER"}`
+> (usuario con una huella ya registrada), el dispositivo confirmó `OK` y acto
+> seguido, **sin que se lo pidiéramos**, mandó dos eventos `realtime_enroll_data`
+> no solicitados para OTROS usuarios (2 y 3), cada uno con su huella completa —
+> la firma de un reindexado completo, no de una simple escritura de campo.
+>
+> Durante esa ventana (en la prueba, ~7 minutos), el propio dispositivo
+> reportó al usuario editado con el privilegio reseteado a `USER` y
+> `enroll_data_array: []` — es decir, **el dispositivo mismo dijo que sus
+> datos estaban borrados**, no fue un problema de caché del servidor. Pasados
+> esos minutos, sin mandar ningún comando adicional, el dispositivo se
+> auto-corrigió y volvió a reportar `MANAGER` con la huella intacta.
+>
+> **No hay garantía de que esa reconciliación automática ocurra siempre ni en
+> cuánto tiempo.** Para **editar** un usuario existente:
+> - Cambiar el nombre → [`SET_USER_NAME`](#set_user_name) (verificado seguro, sin efectos secundarios)
+> - Cambiar el privilegio → [`SET_USER_PRIVILEGE`](#set_user_privilege) (verificado seguro, sin efectos secundarios — aunque solo `MANAGER` se confirmó aplicando correctamente)
+>
+> ## ⚠️ Tampoco confirmado que sirva para dar de alta usuarios nuevos
+>
+> Una versión anterior de esta nota recomendaba `SET_USER_INFO` para crear
+> usuarios nuevos sin biométricos — esa recomendación **nunca se verificó
+> contra hardware real**, era una inferencia ("si es destructivo sobre
+> existentes, debe ser para crear"). Al verificarla (dispositivo
+> `2023081133`, 2026-08-18): **tres intentos de crear un usuario nuevo con
+> IDs nunca antes usados (`10`, `11`, y con pausas reales de 20s entre pasos
+> para descartar ráfaga) devolvieron `cmd_return_code: "OK"` los tres, pero
+> un `GET_USER_ID_LIST` posterior confirmó que el usuario nunca se creó** —
+> ni una sola vez. El `OK` no es fiable para saber si esto funcionó, igual
+> que con `DELETE_USER`.
+>
+> No está confirmado si esto es una limitación general del firmware o
+> específica de ese dispositivo — falta probar contra `2023081158`. Hasta
+> entonces, no asumas que puedes dar de alta usuarios completamente nuevos
+> por software; puede que este firmware solo permita crear el registro de un
+> usuario mediante el enrolamiento físico en el equipo (huella o teclado),
+> y que `SET_USER_INFO`/`SET_USER_NAME`/`SET_USER_PRIVILEGE` solo sirvan para
+> ajustar campos de un usuario que ya existe por ese camino.
+
 **Descripción:** Crea o actualiza un usuario completo con todos sus datos
 
 **Parámetros JSON:**
@@ -421,10 +513,13 @@ Parameters: {
 ```
 
 **Notas:**
-- Es el comando más completo para crear/actualizar usuarios
-- Si el usuario ya existe, lo actualiza (excepto datos biométricos)
+- Pensado para dar de alta usuarios nuevos, no para editar uno existente —
+  ver advertencia arriba
+- **"lo actualiza excepto datos biométricos" es la intención original de
+  este comando, pero NO es lo que se observó**: en un usuario con huellas ya
+  registradas, sí las afecta (al menos transitoriamente, vía el reindexado)
 - Los datos biométricos deben enviarse por separado con SET_ENROLL_DATA
-- Puede requefrir fragmentación si hay mucha data
+- Puede requerir fragmentación si hay mucha data
 
 ---
 
@@ -469,7 +564,7 @@ Command: GET_ENROLL_DATA
 Parameters: {"user_id":"U025","backup_number":10}
 ```
 
-**Respuesta esperada:**
+**Respuesta cruda del dispositivo:**
 ```json
 {
   "enroll_data": "BIN_1",
@@ -477,8 +572,21 @@ Parameters: {"user_id":"U025","backup_number":10}
 }
 ```
 
+Mismo caso que `GET_USER_INFO`: `"BIN_1"` es un placeholder. El servidor agrega
+`enroll_data_size` (siempre) y `enroll_data_text` (solo si son bytes
+imprimibles — típico de password/ID card):
+
+```json
+{
+  "enroll_data": "BIN_1",
+  "enroll_data_size": 612,
+  "status": "ok"
+}
+```
+
 **Notas:**
-- Retorna datos binarios del biométrico
+- Retorna datos binarios del biométrico — decodificable solo en tamaño (y
+  texto, cuando aplica); un fingerprint o rostro no tiene forma legible
 - Si el dato no existe, retorna error
 - Útil para verificar qué datos están registrados
 - Puede ser >25KB para datos de rostro (se fragmenta)
@@ -572,26 +680,76 @@ Parameters: {
 }
 ```
 
-**Respuesta esperada:**
+**Respuesta cruda del dispositivo:**
 ```json
 {
-  "logCount": 1250,
-  "oneLogSize": 64,
+  "log_count": "64",
+  "one_log_size": "12",
   "log_array": "BIN_1"
 }
 ```
 
+Nota: `log_count` y `one_log_size` llegan como **strings**, no como números —
+a diferencia de `user_id_count`/`one_user_id_size` de `GET_USER_ID_LIST`, que sí
+llegan numéricos. Es una inconsistencia real del firmware, no un error de esta
+documentación.
+
+Igual que en `GET_USER_ID_LIST`, `"BIN_1"` es un placeholder. El servidor
+decodifica el binario automáticamente y agrega `logs`, un array con cada
+marcación ya legible:
+
+```json
+{
+  "log_count": "64",
+  "one_log_size": "12",
+  "log_array": "BIN_1",
+  "log_array_size": 768,
+  "logs": [
+    {"user_id": "1", "verify_mode": "1", "io_mode": 0, "io_time": "20000101071429"},
+    {"user_id": "1", "verify_mode": "1", "io_mode": 0, "io_time": "20000101071430"}
+  ]
+}
+```
+
+Así se ve directamente en `/admin/commands` al expandir el comando.
+
 **Campos de respuesta:**
 | Campo | Tipo | Descripción |
 |-------|------|------------|
-| `logCount` | number | Total de logs en rango |
-| `oneLogSize` | number | Bytes por log |
-| `log_array` | BIN_1 | Datos binarios de todos los logs |
+| `log_count` | string | Total de logs (numérico como texto) |
+| `one_log_size` | string | Bytes por registro en el binario — **12**, no 64 |
+| `log_array` | string | Placeholder `"BIN_1"`, referencia al binario adjunto |
+| `log_array_size` | number | **Agregado por el servidor.** Tamaño real en bytes |
+| `logs` | array | **Agregado por el servidor.** Cada marcación ya decodificada: `user_id`, `verify_mode`, `io_mode`, `io_time` |
 
-**Estructura de cada log (64 bytes típicamente):**
+**Cómo se decodifica (`decodeLogData` en [lib/protocol.ts](../lib/protocol.ts)):**
+Cada registro ocupa **12 bytes** (no 64 — ese número era una suposición previa
+sin verificar). Estructura confirmada byte a byte contra 64 registros reales
+del dispositivo `2023081133`, cruzando contra los mismos logs ya capturados
+por `realtime_glog`:
+
 ```
-[user_id (4 bytes)] [timestamp (8 bytes)] [verify_mode (1 byte)] [io_mode (1 byte)] [...]
+bytes 0-3   user_id, uint32 little-endian
+byte  4     reservado (siempre 1 en las capturas)
+byte  5     io_mode
+byte  6     verify_mode
+byte  7     segundos (0-59, byte crudo)
+bytes 8-11  fecha/hora empaquetada en bits (uint32 LE):
+              bits 0-1   reservado (siempre 01)
+              bits 2-7   año - 1964
+              bits 8-11  reservado (siempre 0001)
+              bits 12-15 mes
+              bits 16-20 día
+              bits 21-25 hora (repartida en dos tramos de bits)
+              bits 26-31 minuto
 ```
+
+Los 64 registros decodificados coincidieron exactamente (usuario, modo,
+fecha/hora completa hasta el segundo) contra los logs ya conocidos por
+`realtime_glog`. Los bits marcados "reservado" nunca variaron en la muestra
+(4 años distintos probados: 2000, 2015, 2025, 2026), pero con un solo
+dispositivo de referencia podrían tener un significado que esta muestra no
+llegó a activar — no se les asume un valor por decoración.
 
 **Notas:**
 - Puede retornar MUCHA data (>100MB para un año completo)
@@ -674,7 +832,25 @@ Parameters: {}
 ---
 
 ### GET_USER_ID_LIST
-**Descripción:** Obtiene listado de todos los usuarios registrados
+**Descripción:** Obtiene un listado de usuarios registrados — **no todos, ver advertencia**
+
+> ## ⚠️ No enumera todos los usuarios — verificado contra hardware real
+>
+> **Dispositivo `2023081133`, 2026-08-18:** `GET_DEVICE_STATUS` reportó
+> `total_user_count: 6` (`user_count: 3` + `manager_count: 3`), pero este
+> comando, consultado en el mismo momento, devolvió solo 3 IDs — exactamente
+> los 3 con privilegio `MANAGER` (que también son, en esta muestra, los 3
+> únicos con huella enrolada). Se confirmó con `GET_USER_INFO` directo que
+> los 3 usuarios faltantes (privilegio `USER`, sin huella) sí existen de
+> verdad en el equipo — simplemente no aparecen en esta lista.
+>
+> No se pudo determinar si el filtro es por privilegio, por tener biometría
+> enrolada, o ambos a la vez (los 3 casos coincidían en esta muestra). Lo
+> que sí queda confirmado: **este comando no sirve como fuente de verdad de
+> "qué usuarios existen".** No lo uses para decidir si un `user_id` está
+> libre (usa `GET_USER_INFO` sobre ese ID puntual) ni para podar una caché
+> local de usuarios que ya no están (una versión anterior del panel lo hacía
+> y borraba cuentas reales que seguían existiendo en el equipo).
 
 **Parámetros JSON:** (vacío)
 ```json
@@ -688,27 +864,59 @@ Command: GET_USER_ID_LIST
 Parameters: {}
 ```
 
-**Respuesta esperada:**
+**Respuesta cruda del dispositivo:**
 ```json
 {
-  "userIdCount": 250,
-  "oneUserIdSize": 16,
+  "user_id_count": 3,
+  "one_user_id_size": 8,
   "user_id_array": "BIN_1"
 }
 ```
 
+`user_id_array: "BIN_1"` es solo un placeholder — apunta al bloque binario
+adjunto, no son los IDs en sí. El servidor lo decodifica automáticamente antes
+de guardarlo, y agrega el campo `user_ids` con la lista legible:
+
+```json
+{
+  "user_id_count": 3,
+  "one_user_id_size": 8,
+  "user_id_array": "BIN_1",
+  "user_ids": ["1", "2", "3"]
+}
+```
+
+Así se ve directamente en `/admin/commands` al expandir el comando — no hace
+falta decodificar nada a mano.
+
 **Campos de respuesta:**
 | Campo | Tipo | Descripción |
 |-------|------|------------|
-| `userIdCount` | number | Total de usuarios |
-| `oneUserIdSize` | number | Bytes por user_id |
-| `user_id_array` | BIN_1 | Datos binarios con IDs |
+| `user_id_count` | number | Total de usuarios |
+| `one_user_id_size` | number | Bytes por registro de usuario en el binario |
+| `user_id_array` | string | Placeholder `"BIN_1"`, referencia al binario adjunto |
+| `user_ids` | string[] | **Agregado por el servidor.** Lista de IDs ya decodificados |
+
+**Cómo se decodifica (`decodeUserIdList` en [lib/protocol.ts](../lib/protocol.ts)):**
+Cada usuario ocupa `one_user_id_size` bytes en el binario; el ID son los
+primeros 4 bytes como `uint32` little-endian. Verificado contra el firmware
+`WS535BW1_BSCS_v1.5.31` cruzando con los `user_id` en texto plano ("1", "2")
+que el mismo equipo manda en `realtime_glog`:
+
+```
+01 00 00 00 01 01 08 00   → usuario 1
+02 00 00 00 02 01 08 00   → usuario 2
+03 00 00 00 01 01 08 00   → usuario 3
+```
+
+Los 4 bytes restantes de cada registro varían de forma que no coincide con
+privilegio ni con los conteos de `GET_DEVICE_STATUS` — su significado no está
+confirmado, así que solo se decodifica el ID.
 
 **Notas:**
-- Retorna lista binaria de todos los IDs
 - Puede ser >25KB (se fragmenta automáticamente)
 - Útil para sincronización de usuarios con servidor central
-- No incluye datos del usuario, solo IDs
+- No incluye nombre ni privilegio — usar `GET_USER_INFO` por cada ID
 - Para obtener datos usar GET_USER_INFO por cada usuario
 
 ---
@@ -744,7 +952,6 @@ Todos los comandos se usan igual en el panel admin:
 | CLEAR_LOG_DATA | Logs | `{}` | `{}` |
 | GET_USER_ID_LIST | Listado | `{}` | `{}` |
 | CLEAR_ENROLL_DATA | Biometría | `{}` | `{}` |
-| SET_WEB_SERVER_INFO | Config | server_ip, server_port | `{"server_ip":"192.168.1.1","server_port":3000}` |
 
 ---
 

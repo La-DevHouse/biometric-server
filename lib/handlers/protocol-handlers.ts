@@ -1,11 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
-import { parseBody, buildResponse, toDeviceTime } from "@/lib/protocol";
+import {
+  parseBody,
+  buildResponse,
+  toDeviceTime,
+  decodeUserIdList,
+  decodeLogData,
+  annotateBinaryRefs,
+} from "@/lib/protocol";
 import {
   runAsync,
   getAsync,
   allAsync,
 } from "@/lib/db";
 import { logRawTraffic } from "./index";
+import { upsertUserFromInfo, upsertDeviceStatus } from "@/lib/operations/persist";
+import { advanceOperationForCommand, sweepStaleOperations } from "@/lib/operations/advance";
+import { finishOperation } from "@/lib/operations/queue";
 
 const NO_CMD_STRATEGY = process.env.NO_CMD_STRATEGY || "ok_empty";
 
@@ -18,6 +28,14 @@ export async function handleReceiveCmd(
     const resp = buildResponse({ responseCode: "ERROR" });
     await logRawTraffic("out", null, "receive_cmd", resp.headers, resp.body);
     return new NextResponse(resp.body, { status: 400, headers: resp.headers });
+  }
+
+  // No cron in this stack — devices poll every ~10s regardless, so that's a
+  // free heartbeat for expiring operations whose device never comes back.
+  try {
+    await sweepStaleOperations();
+  } catch (err) {
+    console.error("[operations] fallo en la barrida de operaciones expiradas:", err);
   }
 
   const { json } = parseBody(requestBody);
@@ -64,6 +82,17 @@ export async function handleReceiveCmd(
     // Mark command as RUN
     await runAsync(
       `UPDATE commands SET status = 'RUN', updated_at = unixepoch('now') * 1000 WHERE trans_id = ?`,
+      [command.trans_id]
+    );
+
+    // If this command belongs to an operation, the device just picked it
+    // up — flip queued/waiting to sent. Deliberately excludes 'verifying':
+    // a verification GET_USER_INFO in flight should keep reading as such,
+    // not revert to a generic "sent".
+    await runAsync(
+      `UPDATE operations
+          SET stage = 'sent', updated_at = unixepoch('now') * 1000
+        WHERE current_trans_id = ? AND stage IN ('queued','waiting')`,
       [command.trans_id]
     );
 
@@ -177,6 +206,29 @@ export async function handleSendCmdResult(
   const { json: resultJson, binaries } = parseBody(finalData);
   const resultBinary = binaries.length > 0 ? binaries[0] : null;
 
+  const command = await getAsync<{ cmd_code: string; op_id: number | null }>(
+    `SELECT cmd_code, op_id FROM commands WHERE trans_id = ?`,
+    [transId]
+  );
+
+  // Results reference attached binaries as opaque "BIN_1"/"BIN_2" placeholders
+  // the admin panel can't show usefully as-is. Annotate every one with its
+  // real size (and text, when it happens to be printable) before storing, so
+  // result_json is worth looking at rather than just what arrived on the wire.
+  let storedResultJson = annotateBinaryRefs(resultJson, binaries);
+  if (command?.cmd_code === "GET_USER_ID_LIST" && resultJson) {
+    const userIds = decodeUserIdList(resultJson, binaries);
+    if (userIds) {
+      storedResultJson = { ...storedResultJson, user_ids: userIds };
+    }
+  }
+  if (command?.cmd_code === "GET_LOG_DATA" && resultJson) {
+    const logs = decodeLogData(resultJson, binaries);
+    if (logs) {
+      storedResultJson = { ...storedResultJson, logs };
+    }
+  }
+
   // Update command
   await runAsync(
     `UPDATE commands SET
@@ -188,22 +240,46 @@ export async function handleSendCmdResult(
      WHERE trans_id = ?`,
     [
       cmdReturnCode === "OK" ? "RESULT" : "ERROR",
-      resultJson ? JSON.stringify(resultJson) : null,
+      storedResultJson ? JSON.stringify(storedResultJson) : null,
       resultBinary,
       cmdReturnCode,
       transId,
     ]
   );
 
-  // Special handling for certain commands
-  if (cmdReturnCode === "OK" && resultJson) {
-    const command = await getAsync<{ cmd_code: string }>(
-      `SELECT cmd_code FROM commands WHERE trans_id = ?`,
-      [transId]
-    );
+  // Special handling for certain commands (runs for ad-hoc commands too, not
+  // just ones that belong to an operation)
+  if (cmdReturnCode === "OK" && resultJson && command) {
+    await handleCommandResult(devId, command.cmd_code, resultJson, binaries);
+  }
 
-    if (command) {
-      await handleCommandResult(devId, command.cmd_code, resultJson);
+  // Advance the parent operation, if this command belongs to one. Isolated
+  // in its own try/catch: a bug here must never cost the device its HTTP
+  // 200 — the firmware does not retry send_cmd_result, so losing that
+  // response would lose the result forever.
+  if (command?.op_id) {
+    try {
+      await advanceOperationForCommand({
+        opId: command.op_id,
+        devId,
+        transId: Number(transId),
+        cmdCode: command.cmd_code,
+        ok: cmdReturnCode === "OK",
+        returnCode: cmdReturnCode,
+        resultJson,
+        binaries,
+      });
+    } catch (err) {
+      console.error("[operations] fallo al avanzar la operación", command.op_id, err);
+      try {
+        await finishOperation(
+          command.op_id,
+          "error",
+          `Fallo interno al avanzar la operación: ${String(err)}`
+        );
+      } catch (inner) {
+        console.error("[operations] no se pudo ni registrar el fallo:", inner);
+      }
     }
   }
 
@@ -218,43 +294,23 @@ export async function handleSendCmdResult(
 async function handleCommandResult(
   devId: string,
   cmdCode: string,
-  resultJson: Record<string, any>
+  resultJson: Record<string, any>,
+  binaries: Buffer[]
 ) {
   // Process results from commands that update state
   switch (cmdCode) {
     case "GET_DEVICE_STATUS":
-      // Could update device status if needed
-      break;
-
-    case "GET_USER_ID_LIST":
-      // Parse user list from result
-      if (resultJson.user_id_array && resultJson.user_id_count) {
-        // Binary parsing would go here
-      }
+      await upsertDeviceStatus(devId, resultJson);
       break;
 
     case "GET_LOG_DATA":
-      // Log data would be processed here
+      // Bulk log sync is handled by the SYNC_LOGS operation chain
+      // (lib/operations/advance.ts), not here — an ad-hoc GET_LOG_DATA from
+      // the raw command form is for inspection, not archival.
       break;
 
     case "GET_USER_INFO":
-      // User info update
-      if (resultJson.user_id && resultJson.user_name) {
-        const userId = resultJson.user_id;
-        const userName = resultJson.user_name;
-        const userPrivilege = resultJson.user_privilege;
-        const userPhoto = resultJson.user_photo;
-
-        await runAsync(
-          `INSERT INTO users (dev_id, user_id, user_name, user_privilege, user_photo)
-           VALUES (?, ?, ?, ?, ?)
-           ON CONFLICT(dev_id, user_id) DO UPDATE SET
-             user_name = excluded.user_name,
-             user_privilege = excluded.user_privilege,
-             user_photo = excluded.user_photo`,
-          [devId, userId, userName, userPrivilege, userPhoto]
-        );
-      }
+      await upsertUserFromInfo(devId, resultJson, binaries);
       break;
   }
 }

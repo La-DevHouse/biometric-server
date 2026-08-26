@@ -1,7 +1,7 @@
 import http from "http";
 import { initDb, allAsync, getAsync, runAsync, closeDb } from "@/lib/db";
 
-const SERVER_URL = "http://localhost:3000";
+const SERVER_URL = process.env.SERVER_URL || `http://localhost:${process.env.PORT || "3000"}`;
 const DEV_ID = "E2E_TEST_" + Date.now();
 
 type TestResult = { name: string; pass: boolean; message: string };
@@ -265,6 +265,17 @@ async function main() {
 
   test("Enrollment data recorded", enrolls.length >= 0,
     `Found ${enrolls.length} enrollments (multiple enrollments currently not fully implemented)`);
+
+  // Clean up this run's device so E2E_TEST_* rows don't accumulate in the
+  // database across every run — they used to, and had built up into a
+  // dozen-plus stale devices cluttering the admin dashboard.
+  await runAsync(`DELETE FROM operations WHERE dev_id = ?`, [DEV_ID]);
+  await runAsync(`DELETE FROM commands WHERE dev_id = ?`, [DEV_ID]);
+  await runAsync(`DELETE FROM attendance_logs WHERE dev_id = ?`, [DEV_ID]);
+  await runAsync(`DELETE FROM enroll_data WHERE dev_id = ?`, [DEV_ID]);
+  await runAsync(`DELETE FROM users WHERE dev_id = ?`, [DEV_ID]);
+  await runAsync(`DELETE FROM raw_traffic WHERE dev_id = ?`, [DEV_ID]);
+  await runAsync(`DELETE FROM devices WHERE dev_id = ?`, [DEV_ID]);
 
   // Summary
   console.log("\n" + "=".repeat(50));

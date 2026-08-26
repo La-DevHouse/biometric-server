@@ -1,0 +1,421 @@
+{
+  "GET_DEVICE_STATUS": {
+    "total_user_count": "3",
+    "user_count": "0",
+    "manager_count": "3",
+    "fp_count": "3",
+    "password_count": "0",
+    "idcard_count": "0",
+    "total_log_count": "33"
+  },
+  "GET_USER_ID_LIST": {
+    "user_id_count": 3,
+    "one_user_id_size": 8,
+    "user_id_array": "BIN_1",
+    "user_ids": ["1", "2", "3"]
+  },
+  "GET_USER_INFO": {
+    "user_id": "1",
+    "user_name": "Jesus Re",
+    "user_privilege": "MANAGER",
+    "enroll_data_array": [
+      {
+        "backup_number": 0,
+        "enroll_data": "BIN_1",
+        "enroll_data_size": 612
+      }
+    ]
+  },
+  "GET_LOG_DATA": {
+    "log_count": "64",
+    "one_log_size": "12",
+    "log_array": "BIN_1",
+    "log_array_size": 768,
+    "logs": [
+      {
+        "user_id": "1",
+        "verify_mode": "1",
+        "io_mode": 0,
+        "io_time": "20000101071429"
+      },
+      {
+        "user_id": "1",
+        "verify_mode": "1",
+        "io_mode": 0,
+        "io_time": "20000101071430"
+      },
+      {
+        "user_id": "1",
+        "verify_mode": "1",
+        "io_mode": 0,
+        "io_time": "20000101071433"
+      },
+      {
+        "user_id": "1",
+        "verify_mode": "1",
+        "io_mode": 0,
+        "io_time": "20000101071438"
+      },
+      {
+        "user_id": "1",
+        "verify_mode": "1",
+        "io_mode": 0,
+        "io_time": "20000101071440"
+      },
+      {
+        "user_id": "1",
+        "verify_mode": "1",
+        "io_mode": 0,
+        "io_time": "20000101071441"
+      },
+      {
+        "user_id": "1",
+        "verify_mode": "1",
+        "io_mode": 0,
+        "io_time": "20000101071442"
+      },
+      {
+        "user_id": "1",
+        "verify_mode": "1",
+        "io_mode": 0,
+        "io_time": "20000101071443"
+      },
+      {
+        "user_id": "1",
+        "verify_mode": "1",
+        "io_mode": 0,
+        "io_time": "20000101071445"
+      },
+      {
+        "user_id": "1",
+        "verify_mode": "1",
+        "io_mode": 0,
+        "io_time": "20000101071446"
+      },
+      {
+        "user_id": "1",
+        "verify_mode": "1",
+        "io_mode": 0,
+        "io_time": "20000101071447"
+      },
+      {
+        "user_id": "1",
+        "verify_mode": "1",
+        "io_mode": 0,
+        "io_time": "20000101071448"
+      },
+      {
+        "user_id": "1",
+        "verify_mode": "1",
+        "io_mode": 0,
+        "io_time": "20000101071450"
+      },
+      {
+        "user_id": "1",
+        "verify_mode": "1",
+        "io_mode": 0,
+        "io_time": "20000101071459"
+      },
+      {
+        "user_id": "1",
+        "verify_mode": "1",
+        "io_mode": 0,
+        "io_time": "20000101071501"
+      },
+      {
+        "user_id": "1",
+        "verify_mode": "1",
+        "io_mode": 0,
+        "io_time": "20000101071747"
+      },
+      {
+        "user_id": "1",
+        "verify_mode": "1",
+        "io_mode": 0,
+        "io_time": "20000101072612"
+      },
+      {
+        "user_id": "1",
+        "verify_mode": "1",
+        "io_mode": 0,
+        "io_time": "20000101072613"
+      },
+      {
+        "user_id": "1",
+        "verify_mode": "1",
+        "io_mode": 0,
+        "io_time": "20000101072707"
+      },
+      {
+        "user_id": "1",
+        "verify_mode": "1",
+        "io_mode": 0,
+        "io_time": "20000101072708"
+      },
+      {
+        "user_id": "1",
+        "verify_mode": "1",
+        "io_mode": 0,
+        "io_time": "20000101072901"
+      },
+      {
+        "user_id": "1",
+        "verify_mode": "1",
+        "io_mode": 0,
+        "io_time": "20000101072902"
+      },
+      {
+        "user_id": "1",
+        "verify_mode": "1",
+        "io_mode": 0,
+        "io_time": "20250605101447"
+      },
+      {
+        "user_id": "1",
+        "verify_mode": "1",
+        "io_mode": 0,
+        "io_time": "20250605101450"
+      },
+      {
+        "user_id": "1",
+        "verify_mode": "1",
+        "io_mode": 0,
+        "io_time": "20250605101451"
+      },
+      {
+        "user_id": "1",
+        "verify_mode": "1",
+        "io_mode": 0,
+        "io_time": "20250605101453"
+      },
+      {
+        "user_id": "1",
+        "verify_mode": "1",
+        "io_mode": 0,
+        "io_time": "20250605101455"
+      },
+      {
+        "user_id": "1",
+        "verify_mode": "1",
+        "io_mode": 0,
+        "io_time": "20250605101658"
+      },
+      {
+        "user_id": "1",
+        "verify_mode": "1",
+        "io_mode": 0,
+        "io_time": "20250605101702"
+      },
+      {
+        "user_id": "1",
+        "verify_mode": "1",
+        "io_mode": 0,
+        "io_time": "20250605101822"
+      },
+      {
+        "user_id": "1",
+        "verify_mode": "1",
+        "io_mode": 0,
+        "io_time": "20250605101825"
+      },
+      {
+        "user_id": "1",
+        "verify_mode": "1",
+        "io_mode": 0,
+        "io_time": "20250605101826"
+      },
+      {
+        "user_id": "1",
+        "verify_mode": "1",
+        "io_mode": 0,
+        "io_time": "20250605102002"
+      },
+      {
+        "user_id": "1",
+        "verify_mode": "1",
+        "io_mode": 0,
+        "io_time": "20250605102003"
+      },
+      {
+        "user_id": "1",
+        "verify_mode": "1",
+        "io_mode": 0,
+        "io_time": "20250605102005"
+      },
+      {
+        "user_id": "1",
+        "verify_mode": "1",
+        "io_mode": 0,
+        "io_time": "20250605102006"
+      },
+      {
+        "user_id": "1",
+        "verify_mode": "1",
+        "io_mode": 0,
+        "io_time": "20250605102013"
+      },
+      {
+        "user_id": "1",
+        "verify_mode": "1",
+        "io_mode": 0,
+        "io_time": "20250605102015"
+      },
+      {
+        "user_id": "1",
+        "verify_mode": "1",
+        "io_mode": 0,
+        "io_time": "20250605102020"
+      },
+      {
+        "user_id": "1",
+        "verify_mode": "1",
+        "io_mode": 0,
+        "io_time": "20250605102021"
+      },
+      {
+        "user_id": "1",
+        "verify_mode": "1",
+        "io_mode": 0,
+        "io_time": "20250605102724"
+      },
+      {
+        "user_id": "1",
+        "verify_mode": "1",
+        "io_mode": 0,
+        "io_time": "20250606000029"
+      },
+      {
+        "user_id": "1",
+        "verify_mode": "1",
+        "io_mode": 0,
+        "io_time": "20250606000030"
+      },
+      {
+        "user_id": "1",
+        "verify_mode": "1",
+        "io_mode": 0,
+        "io_time": "20250606000129"
+      },
+      {
+        "user_id": "1",
+        "verify_mode": "1",
+        "io_mode": 0,
+        "io_time": "20250606000133"
+      },
+      {
+        "user_id": "2",
+        "verify_mode": "1",
+        "io_mode": 0,
+        "io_time": "20250606000136"
+      },
+      {
+        "user_id": "2",
+        "verify_mode": "1",
+        "io_mode": 0,
+        "io_time": "20250606000137"
+      },
+      {
+        "user_id": "1",
+        "verify_mode": "1",
+        "io_mode": 0,
+        "io_time": "20250606000225"
+      },
+      {
+        "user_id": "2",
+        "verify_mode": "1",
+        "io_mode": 0,
+        "io_time": "20250606000233"
+      },
+      {
+        "user_id": "1",
+        "verify_mode": "1",
+        "io_mode": 0,
+        "io_time": "20250606001320"
+      },
+      {
+        "user_id": "2",
+        "verify_mode": "1",
+        "io_mode": 0,
+        "io_time": "20250606001329"
+      },
+      {
+        "user_id": "2",
+        "verify_mode": "1",
+        "io_mode": 0,
+        "io_time": "20250606001332"
+      },
+      {
+        "user_id": "1",
+        "verify_mode": "1",
+        "io_mode": 0,
+        "io_time": "20250606001533"
+      },
+      {
+        "user_id": "1",
+        "verify_mode": "1",
+        "io_mode": 0,
+        "io_time": "20250606001534"
+      },
+      {
+        "user_id": "1",
+        "verify_mode": "1",
+        "io_mode": 0,
+        "io_time": "20250606001537"
+      },
+      {
+        "user_id": "3",
+        "verify_mode": "33",
+        "io_mode": 0,
+        "io_time": "20250608090945"
+      },
+      {
+        "user_id": "1",
+        "verify_mode": "1",
+        "io_mode": 0,
+        "io_time": "20150101000154"
+      },
+      {
+        "user_id": "1",
+        "verify_mode": "1",
+        "io_mode": 0,
+        "io_time": "20150101000155"
+      },
+      {
+        "user_id": "1",
+        "verify_mode": "1",
+        "io_mode": 0,
+        "io_time": "20150101000300"
+      },
+      {
+        "user_id": "1",
+        "verify_mode": "1",
+        "io_mode": 0,
+        "io_time": "20150101000302"
+      },
+      {
+        "user_id": "4",
+        "verify_mode": "33",
+        "io_mode": 0,
+        "io_time": "20150101000008"
+      },
+      {
+        "user_id": "5",
+        "verify_mode": "33",
+        "io_mode": 0,
+        "io_time": "20150101000132"
+      },
+      {
+        "user_id": "5",
+        "verify_mode": "33",
+        "io_mode": 0,
+        "io_time": "20260816132048"
+      },
+      {
+        "user_id": "5",
+        "verify_mode": "33",
+        "io_mode": 0,
+        "io_time": "20260816133832"
+      }
+    ]
+  }
+}

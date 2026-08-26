@@ -76,17 +76,8 @@ Network Settings → Web Server
   Protocol: HTTP
 ```
 
-**O via comando del servidor (después de conectado):**
-
-Desde panel admin:
-```
-Device: <dev_id>
-Command: SET_WEB_SERVER_INFO
-Parameters: {
-  "server_ip": "192.168.1.100",
-  "server_port": 3000
-}
-```
+Esto se configura únicamente desde el menú del dispositivo — no hay comando
+del servidor para reconfigurar la IP/puerto de forma remota.
 
 ### 3. Sincronizar reloj del dispositivo
 
@@ -256,7 +247,7 @@ Parameters: {"user_id": "U001"}
 **Causas comunes:**
 1. `last_seen_at` es NULL → No ha enviado petición aún
 2. Dispositivo configurado con IP incorrecta → Cambiar en interfaz del dispositivo
-3. Puerto incorrecto → SET_WEB_SERVER_INFO con puerto correcto
+3. Puerto incorrecto → Cambiar el puerto en la interfaz del dispositivo
 
 **Solución:**
 ```

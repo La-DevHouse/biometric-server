@@ -4,7 +4,7 @@ import * as crypto from "crypto";
 import { parseBody } from "@/lib/protocol";
 
 const DEV_ID = process.env.DEV_ID || "SIM001";
-const SERVER_URL = process.env.SERVER_URL || "http://localhost:3000";
+const SERVER_URL = process.env.SERVER_URL || `http://localhost:${process.env.PORT || "3000"}`;
 const POLL_INTERVAL = parseInt(process.env.POLL_INTERVAL || "5000");
 
 // Fake device state
