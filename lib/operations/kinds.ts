@@ -39,7 +39,7 @@ export type Privilege = "USER" | "MANAGER" | "OPERATOR" | "REGISTER";
 
 // Firmware WS535BW1_BSCS_v1.5.31 only reliably applies MANAGER — sending
 // OPERATOR returned cmd_return_code:OK but the device silently kept USER.
-// Verified against real hardware; see docs/COMANDOS.md.
+// Verified against real hardware; see docs/05-commands-catalog.md.
 export const RELIABLE_PRIVILEGES: ReadonlySet<Privilege> = new Set([
   "USER",
   "MANAGER",

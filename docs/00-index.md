@@ -1,0 +1,15 @@
+# Índice de documentación
+
+Orden pensado como ruta de onboarding: de por qué existe el proyecto, a cómo está construido, a cómo se conecta con el mundo real, a dónde corre.
+
+| #   | Documento                                                    | Contenido                                                                                                                                                                                                                   |
+| --- | ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 01  | [`01-requirements.md`](./01-requirements.md)                 | Alcance contractual de Fase 1 — qué incluye, qué no, hitos, supuestos (de la propuesta comercial a Grupo ALCO)                                                                                                              |
+| 02  | [`02-architecture.md`](./02-architecture.md)                 | Estado del código, decisiones de stack ya tomadas, plan de separación en servicios                                                                                                                                          |
+| 03  | [`03-device-network.md`](./03-device-network.md)             | Cómo se conecta el dispositivo en producción: modelo de red, configuración requerida en el equipo, implicaciones de IP/puerto fijos                                                                                         |
+| 04  | [`04-device-protocol-real.md`](./04-device-protocol-real.md) | Reverse-engineering del protocolo verificado contra hardware real: framing, formato de bytes, caso "dispositivo mudo" resuelto                                                                                              |
+| 05  | [`05-commands-catalog.md`](./05-commands-catalog.md)         | Catálogo completo de comandos, con gotchas verificados contra hardware (fiabilidad de `cmd_return_code`, límites reales de campos, comportamiento no documentado)                                                           |
+| 06  | [`06-infrastructure.md`](./06-infrastructure.md)             | Hetzner, Coolify, networking, firewall — estado del servidor de desarrollo y plan de migración a producción                                                                                                                 |
+| 07  | `07-admin-ux-spec.md`                                        | _(reservado, sin escribir todavía)_ — vistas, acciones y modelo de datos para administración de empresas/empleados/horarios/reportes (Hitos 3–5), basado en relevamiento del sistema legacy Adempiere como referencia de UX |
+
+Ver también, en el root del repo: `README.md` (overview técnico general — la sección de formato de body ahora apunta a `04-device-protocol-real.md`, que tiene el detalle completo con dumps de bytes), `CLAUDE.md` (punto de entrada para agentes), `AGENTS.md`.

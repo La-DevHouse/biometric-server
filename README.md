@@ -128,12 +128,19 @@ raw_traffic (id, direction IN/OUT, dev_id, request_code, headers_json,
 
 ### Body del protocolo
 
-**Formato:** JSON UTF-8 + binarios opcionales concatenados
-- El JSON se parsea hasta encontrar cierre de llaves (respetando strings y escapes)
-- Lo que sigue es binario puro
-- Para múltiples binarios (BIN_1, BIN_2...) sin delimitación, se envía como un bloque único
+**Formato real:** secuencia de bloques con prefijo de longitud (`uint32` little-endian), verificado contra hardware real. El bloque 0 es el JSON UTF-8 terminado en NUL; los bloques siguientes son los binarios (`BIN_1`, `BIN_2`…) que el JSON referencia. Las respuestas del servidor usan el mismo framing (`buildResponse` en `lib/protocol.ts` lo arma, agregando los headers `blk_no: 0` y `blk_len`).
 
-**Ejemplo:** `{"user_id":"U001","photo":"BIN_1"}<binary_data_1><binary_data_2>...`
+`parseBody` en `lib/protocol.ts` acepta además la forma plana (JSON crudo sin framing) para simulador/e2e/curl, detectándola por el `{` inicial.
+
+Detalle completo del formato, con dumps de bytes verificados: **`docs/04-device-protocol-real.md`** → "Formato real del body".
+
+**Ejemplo (framed):**
+```
+41 00 00 00                              ← uint32 LE = 65 (longitud del bloque 0)
+{"user_id_count":3,"one_user_id_size":8,"user_id_array":"BIN_1"}00   ← JSON + NUL
+18 00 00 00                              ← uint32 LE = 24 (longitud del bloque 1)
+<24 bytes binarios>                      ← BIN_1
+```
 
 ### Tipos de petición del dispositivo
 
@@ -445,10 +452,9 @@ NO_CMD_STRATEGY=error npm run dev
 
 ### Limitaciones y trade-offs
 
-1. **Múltiples binarios (BIN_1, BIN_2, ...):**
-   - Sin delimitación explícita en el protocolo, no es posible separar múltiples binarios sin información de tamaños
-   - Solución actual: se concatenan como un bloque único
-   - TODO: Implementar parsing de tamaños si se tiene especificación completa del protocolo
+1. **Framing de múltiples binarios (BIN_1, BIN_2, ...):** resuelto.
+   - El body real usa bloques con prefijo de longitud `uint32` LE — cada binario es su propio bloque, sin ambigüedad de tamaños. Ver `docs/04-device-protocol-real.md`.
+   - `parseBody` en `lib/protocol.ts` implementa el parsing por bloques (y mantiene el modo plano para simulador/e2e/curl).
 
 2. **Handler de ENROLL_DATA simplificado:**
    - Actualmente inserta solo usuario y primer enrollment

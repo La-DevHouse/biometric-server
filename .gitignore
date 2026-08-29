@@ -39,3 +39,9 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Graphify (graphify-out/ se commitea: graph.json, graph.html, GRAPH_REPORT.md,
+# manifest.json, .graphify_labels.json* — solo lo transitorio se ignora)
+graphify-out/cost.json
+graphify-out/cache/
+graphify-out/20[0-9][0-9]-[0-9][0-9]-[0-9][0-9]/

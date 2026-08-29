@@ -1073,7 +1073,8 @@ Cambiar múltiples usuarios de USER a OPERATOR:
 ## Soporte
 
 Para más detalles técnicos, ver:
-- [README.md](README.md) — Arquitectura general
+- [README.md](../README.md) — Arquitectura general
+- [04-device-protocol-real.md](04-device-protocol-real.md) — Protocolo verificado contra hardware
 - `/admin/traffic` — Inspector de tráfico HTTP
 - `/admin/logs` — Logs de asistencia
 - `scripts/e2e.ts` — Ejemplos de uso en código

@@ -1,7 +1,7 @@
 /**
  * Registry driving the raw command form in Diagnóstico. `params` maps each
  * field name to placeholder text (not a default value) — this is the tool
- * that found every firmware quirk documented in docs/COMANDOS.md, so it
+ * that found every firmware quirk documented in docs/05-commands-catalog.md, so it
  * intentionally stays low-level (one command, its raw params) rather than
  * being folded into the higher-level lib/operations vocabulary.
  */
