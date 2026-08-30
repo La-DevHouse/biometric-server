@@ -8,7 +8,7 @@
 
 services:
   db:
-    image: postgres:18
+    image: postgres:18-alpine
     environment:
       POSTGRES_USER: biometric
       POSTGRES_PASSWORD: biometric
