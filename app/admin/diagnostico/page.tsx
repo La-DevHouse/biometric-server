@@ -6,7 +6,10 @@ import { Card, CardKicker, CardTitle } from "@/components/ui/Card";
 import { Tag } from "@/components/ui/Tag";
 import { EmptyState } from "@/components/ui/EmptyState";
 
-export const revalidate = 3;
+// force-dynamic: la página pega a Postgres en un Server Component; con `revalidate`
+// Next intenta prerenderizarla en `next build`, lo que exige la BD accesible en
+// build time (falla en Coolify: el hostname interno no resuelve en el builder).
+export const dynamic = "force-dynamic";
 
 interface CommandRow {
   trans_id: number;

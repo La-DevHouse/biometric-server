@@ -8,7 +8,10 @@ export const metadata = {
   description: "Panel de administración del servidor biométrico",
 };
 
-export const revalidate = 3;
+// force-dynamic: la página pega a Postgres en un Server Component; con `revalidate`
+// Next intenta prerenderizarla en `next build`, lo que exige la BD accesible en
+// build time (falla en Coolify: el hostname interno no resuelve en el builder).
+export const dynamic = "force-dynamic";
 
 export default async function AdminLayout({ children }: { children: ReactNode }) {
   await initDb();

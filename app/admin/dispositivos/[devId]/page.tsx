@@ -12,7 +12,10 @@ import { ClearLogsDialog } from "@/components/admin/ClearLogsDialog";
 import { ClearEnrollDialog } from "@/components/admin/ClearEnrollDialog";
 import { syncClockAction, refreshStatusAction } from "@/app/admin/actions";
 
-export const revalidate = 3;
+// force-dynamic: la página pega a Postgres en un Server Component; con `revalidate`
+// Next intenta prerenderizarla en `next build`, lo que exige la BD accesible en
+// build time (falla en Coolify: el hostname interno no resuelve en el builder).
+export const dynamic = "force-dynamic";
 
 interface DeviceDetail {
   dev_id: string;
