@@ -3,7 +3,7 @@
 // has to trust one insertion point when it looks up an operation by
 // `current_trans_id`.
 
-import { runAsync, getAsync } from "@/lib/db";
+import { runAsync, getAsync, NOW_MS } from "@/lib/db";
 import { OperationKind, OperationStage } from "./kinds";
 
 export async function queueCommandForOperation(
@@ -14,12 +14,13 @@ export async function queueCommandForOperation(
 ): Promise<number> {
   const { lastID } = await runAsync(
     `INSERT INTO commands (dev_id, cmd_code, cmd_param, status, op_id)
-     VALUES (?, ?, ?, 'WAIT', ?)`,
+     VALUES (?, ?, ?, 'WAIT', ?)
+     RETURNING trans_id`,
     [devId, cmdCode, JSON.stringify(params), opId]
   );
   await runAsync(
     `UPDATE operations
-        SET current_trans_id = ?, updated_at = unixepoch('now') * 1000
+        SET current_trans_id = ?, updated_at = ${NOW_MS}
       WHERE id = ?`,
     [lastID, opId]
   );
@@ -39,7 +40,8 @@ export interface CreateOperationInput {
 export async function createOperation(input: CreateOperationInput): Promise<number> {
   const { lastID } = await runAsync(
     `INSERT INTO operations (kind, label, dev_id, user_id, params_json, step_total, plan_json)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?)
+     RETURNING id`,
     [
       input.kind,
       input.label,
@@ -68,7 +70,7 @@ export async function setStage(
   stage: OperationStage,
   patch: SetStagePatch = {}
 ): Promise<void> {
-  const sets: string[] = ["stage = ?", "updated_at = unixepoch('now') * 1000"];
+  const sets: string[] = ["stage = ?", `updated_at = ${NOW_MS}`];
   const params: unknown[] = [stage];
 
   if (patch.stepIndex !== undefined) {
@@ -113,7 +115,7 @@ export async function finishOperation(
   await runAsync(
     `UPDATE operations
         SET stage = ?, ${noteColumn} = ?, current_trans_id = NULL,
-            finished_at = unixepoch('now') * 1000, updated_at = unixepoch('now') * 1000
+            finished_at = ${NOW_MS}, updated_at = ${NOW_MS}
       WHERE id = ?`,
     [stage, note, opId]
   );

@@ -3,7 +3,7 @@
 // (no Next imports) so it stays unit-testable; the 'use server' boundary
 // lives in app/admin/**/actions.ts, which just calls through to these.
 
-import { initDb, allAsync, getAsync, runAsync } from "@/lib/db";
+import { initDb, allAsync, getAsync, runAsync, NOW_MS } from "@/lib/db";
 import {
   OperationKind,
   OperationStage,
@@ -94,7 +94,7 @@ async function findActiveOperation(
 ): Promise<number | null> {
   const row = await getAsync<{ id: number }>(
     `SELECT id FROM operations
-      WHERE kind = ? AND dev_id = ? AND user_id IS ?
+      WHERE kind = ? AND dev_id = ? AND user_id IS NOT DISTINCT FROM ?
         AND stage NOT IN ('done','mismatch','error','canceled')
       ORDER BY id DESC LIMIT 1`,
     [kind, devId, userId ?? null]
@@ -490,7 +490,7 @@ export async function cancelOperation(id: number): Promise<{ ok: boolean; reason
   // 3-10 minute stale-sweep gets to it, with no way to close it sooner.
   const { changes } = await runAsync(
     `UPDATE commands SET status = 'ERROR', cmd_return_code = 'CANCELED',
-            updated_at = unixepoch('now') * 1000
+            updated_at = ${NOW_MS}
       WHERE trans_id = ? AND status IN ('WAIT','RUN')`,
     [op.current_trans_id]
   );

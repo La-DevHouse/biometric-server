@@ -1,13 +1,22 @@
 import { test } from "node:test";
 import { strict as assert } from "node:assert";
 
-// lib/db.ts computes its database path at module-eval time from
-// process.env.BIOMETRIC_DB_PATH. A static `import` of lib/db (or anything
-// that transitively imports it) would be hoisted above this assignment by
-// the CommonJS transpile tsx applies to .ts files in this project — so the
-// env var has to be set before an explicit `require()`, which is NOT
-// hoisted. Verified empirically before relying on it here.
-process.env.BIOMETRIC_DB_PATH = ":memory:";
+// lib/db.ts reads DATABASE_URL at module-eval time. A static `import` of
+// lib/db (or anything that transitively imports it) would be hoisted above
+// this assignment by the CommonJS transpile tsx applies — so the env var has
+// to be set before an explicit `require()`, which is NOT hoisted. Verified
+// empirically before relying on it here.
+//
+// Los tests corren contra una base Postgres separada (biometric_test),
+// creada y migrada por scripts/test-db-setup.ts (el `pretest` de npm).
+{
+  const base =
+    process.env.DATABASE_URL ??
+    "postgresql://biometric:biometric@localhost:55432/biometric?schema=public";
+  process.env.DATABASE_URL =
+    process.env.TEST_DATABASE_URL ??
+    base.replace(/(\/\/[^/]+\/)[^/?]+/, "$1biometric_test");
+}
 
 const db = require("../lib/db") as typeof import("../lib/db");
 const ops = require("../lib/operations") as typeof import("../lib/operations");
@@ -23,7 +32,7 @@ async function freshDb() {
      DELETE FROM users; DELETE FROM attendance_logs; DELETE FROM enroll_data;`
   );
   await db.runAsync(
-    `INSERT INTO devices (dev_id, last_seen_at) VALUES (?, unixepoch('now') * 1000)`,
+    `INSERT INTO devices (dev_id, last_seen_at) VALUES (?, ${db.NOW_MS})`,
     [DEV_A]
   );
 }

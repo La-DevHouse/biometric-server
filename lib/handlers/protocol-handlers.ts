@@ -11,6 +11,7 @@ import {
   runAsync,
   getAsync,
   allAsync,
+  NOW_MS,
 } from "@/lib/db";
 import { logRawTraffic } from "./index";
 import { upsertUserFromInfo, upsertDeviceStatus } from "@/lib/operations/persist";
@@ -55,13 +56,13 @@ export async function handleReceiveCmd(
 
   await runAsync(
     `INSERT INTO devices (dev_id, fk_name, firmware, fk_bin_data_lib, supported_enroll_data, last_seen_at)
-     VALUES (?, ?, ?, ?, ?, unixepoch('now') * 1000)
+     VALUES (?, ?, ?, ?, ?, ${NOW_MS})
      ON CONFLICT(dev_id) DO UPDATE SET
        fk_name = excluded.fk_name,
        firmware = excluded.firmware,
        fk_bin_data_lib = excluded.fk_bin_data_lib,
        supported_enroll_data = excluded.supported_enroll_data,
-       last_seen_at = unixepoch('now') * 1000`,
+       last_seen_at = ${NOW_MS}`,
     [devId, fkName, firmware, fkBinDataLib, supportedEnrollData]
   );
 
@@ -81,7 +82,7 @@ export async function handleReceiveCmd(
   if (command) {
     // Mark command as RUN
     await runAsync(
-      `UPDATE commands SET status = 'RUN', updated_at = unixepoch('now') * 1000 WHERE trans_id = ?`,
+      `UPDATE commands SET status = 'RUN', updated_at = ${NOW_MS} WHERE trans_id = ?`,
       [command.trans_id]
     );
 
@@ -91,7 +92,7 @@ export async function handleReceiveCmd(
     // not revert to a generic "sent".
     await runAsync(
       `UPDATE operations
-          SET stage = 'sent', updated_at = unixepoch('now') * 1000
+          SET stage = 'sent', updated_at = ${NOW_MS}
         WHERE current_trans_id = ? AND stage IN ('queued','waiting')`,
       [command.trans_id]
     );
@@ -236,7 +237,7 @@ export async function handleSendCmdResult(
        result_json = ?,
        result_binary = ?,
        cmd_return_code = ?,
-       updated_at = unixepoch('now') * 1000
+       updated_at = ${NOW_MS}
      WHERE trans_id = ?`,
     [
       cmdReturnCode === "OK" ? "RESULT" : "ERROR",

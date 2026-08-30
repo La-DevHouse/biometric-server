@@ -8,7 +8,10 @@ import { Table, Th, Td, Tr } from "@/components/ui/Table";
 import { LinkBtn } from "@/components/ui/Btn";
 import { EmptyState } from "@/components/ui/EmptyState";
 
-export const revalidate = 3;
+// force-dynamic (no ISR): con Postgres, `revalidate` haría que Next intente
+// prerenderizar esta página en `next build` — lo que exige la base accesible en
+// build time. El panel es para 4 usuarios internos y quiere datos en vivo igual.
+export const dynamic = "force-dynamic";
 
 interface DeviceRow {
   dev_id: string;

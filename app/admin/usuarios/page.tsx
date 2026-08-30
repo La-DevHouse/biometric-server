@@ -37,8 +37,8 @@ async function getData(devId: string | undefined) {
        FROM users u
        LEFT JOIN enroll_data e ON e.dev_id = u.dev_id AND e.user_id = u.user_id
       WHERE u.dev_id = ?
-      GROUP BY u.user_id
-      ORDER BY CAST(u.user_id AS INTEGER), u.user_id`,
+      GROUP BY u.id
+      ORDER BY NULLIF(regexp_replace(u.user_id, '\\D', '', 'g'), '')::bigint NULLS LAST, u.user_id`,
     [effectiveDevId]
   );
 

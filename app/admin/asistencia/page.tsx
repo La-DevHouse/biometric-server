@@ -20,7 +20,7 @@ interface AttendanceRow {
   user_id: string;
   verify_mode: string | null;
   io_time: string | null;
-  has_image: number;
+  has_image: boolean;
   display_name: string;
   device_name: string;
 }
@@ -49,7 +49,8 @@ async function getData(filters: { dev?: string; user?: string; from?: string; to
   );
 
   const users = await allAsync<{ dev_id: string; user_id: string; user_name: string | null }>(
-    `SELECT dev_id, user_id, user_name FROM users ORDER BY dev_id, CAST(user_id AS INTEGER), user_id`
+    `SELECT dev_id, user_id, user_name FROM users
+      ORDER BY dev_id, NULLIF(regexp_replace(user_id, '\\D', '', 'g'), '')::bigint NULLS LAST, user_id`
   );
 
   const conditions: string[] = [];

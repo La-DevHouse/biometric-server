@@ -721,7 +721,7 @@ marca el dispositivo, así que detén el dev server antes. Configurable con
 
 ## Recursos adicionales
 
-- [COMANDOS.md](COMANDOS.md) — Catálogo completo de comandos
-- [README.md](README.md) — Arquitectura y flujo general
+- [05-commands-catalog.md](05-commands-catalog.md) — Catálogo completo de comandos
+- [README.md](../README.md) — Arquitectura y flujo general
 - `/admin/traffic` — Visor de tráfico en tiempo real
 - `/admin/logs` — Historial de marcaciones

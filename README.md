@@ -6,7 +6,7 @@ Este es un servidor Next.js 16 que implementa un **protocolo HTTP de bajo nivel 
 
 **Stack tecnológico:**
 - **Framework:** Next.js 16 (App Router, TypeScript)
-- **Base de datos:** SQLite con sqlite3
+- **Base de datos:** PostgreSQL con Prisma (`@prisma/adapter-pg`; el hot path del protocolo usa SQL crudo, no modelos Prisma). Ver `docs/02-architecture.md` y `prisma/README.md`.
 - **Servidor:** Node.js (runtime: nodejs)
 - **UI:** React + Tailwind CSS
 - **Testing:** node:test + scripts TypeScript
@@ -50,7 +50,7 @@ Este es un servidor Next.js 16 que implementa un **protocolo HTTP de bajo nivel 
 └─────────────────┘                    └──────────────────┘
                                              ↓
                                         ┌──────────────┐
-                                        │  SQLite DB   │
+                                        │ PostgreSQL   │
                                         │ ┌──────────┐ │
                                         │ │ devices  │ │
                                         │ │ commands │ │
@@ -68,7 +68,7 @@ Este es un servidor Next.js 16 que implementa un **protocolo HTTP de bajo nivel 
 | Dispatcher | `lib/handlers/index.ts` | Despacho por `request_code`, logging de tráfico |
 | Protocol Handlers | `lib/handlers/protocol-handlers.ts` | Lógica de 4 tipos de request (receive_cmd, send_cmd_result, realtime_glog, realtime_enroll_data) |
 | Protocol Parser | `lib/protocol.ts` | Parseo de JSON + binarios, construcción de respuestas |
-| Database | `lib/db.ts` | Conexión SQLite singleton, funciones async wrapper |
+| Database | `lib/db.ts` | `pg.Pool` singleton + cliente Prisma sobre el mismo pool; 4 helpers async (`runAsync`/`getAsync`/`allAsync`/`execAsync`), `NOW_MS`, `toPg` |
 | Admin UI | `app/admin/**` | Dashboard, commandos, logs, traffic viewer (SSR, revalidación 3s) |
 | Simulator | `scripts/simulator.ts` | Cliente HTTP que simula dispositivo real |
 | E2E Tests | `scripts/e2e.ts` | Validación end-to-end de flujos completos |
@@ -128,12 +128,19 @@ raw_traffic (id, direction IN/OUT, dev_id, request_code, headers_json,
 
 ### Body del protocolo
 
-**Formato:** JSON UTF-8 + binarios opcionales concatenados
-- El JSON se parsea hasta encontrar cierre de llaves (respetando strings y escapes)
-- Lo que sigue es binario puro
-- Para múltiples binarios (BIN_1, BIN_2...) sin delimitación, se envía como un bloque único
+**Formato real:** secuencia de bloques con prefijo de longitud (`uint32` little-endian), verificado contra hardware real. El bloque 0 es el JSON UTF-8 terminado en NUL; los bloques siguientes son los binarios (`BIN_1`, `BIN_2`…) que el JSON referencia. Las respuestas del servidor usan el mismo framing (`buildResponse` en `lib/protocol.ts` lo arma, agregando los headers `blk_no: 0` y `blk_len`).
 
-**Ejemplo:** `{"user_id":"U001","photo":"BIN_1"}<binary_data_1><binary_data_2>...`
+`parseBody` en `lib/protocol.ts` acepta además la forma plana (JSON crudo sin framing) para simulador/e2e/curl, detectándola por el `{` inicial.
+
+Detalle completo del formato, con dumps de bytes verificados: **`docs/04-device-protocol-real.md`** → "Formato real del body".
+
+**Ejemplo (framed):**
+```
+41 00 00 00                              ← uint32 LE = 65 (longitud del bloque 0)
+{"user_id_count":3,"one_user_id_size":8,"user_id_array":"BIN_1"}00   ← JSON + NUL
+18 00 00 00                              ← uint32 LE = 24 (longitud del bloque 1)
+<24 bytes binarios>                      ← BIN_1
+```
 
 ### Tipos de petición del dispositivo
 
@@ -251,9 +258,10 @@ El servidor puede encolar estos comandos para que el dispositivo los ejecute:
 
 ```bash
 npm install
+cp .env.example .env
+docker compose up -d db          # Postgres local (puerto 55432)
+npm run db:migrate:deploy        # aplica prisma/migrations
 ```
-
-Genera el archivo `data/biometric.db` automáticamente.
 
 ### 2. Iniciar servidor de desarrollo
 
@@ -410,14 +418,15 @@ Accede a `/admin/traffic` para ver:
 ### Inspeccionar base de datos
 
 ```bash
-# Listar dispositivos
-sqlite3 data/biometric.db "SELECT * FROM devices;"
+# Con el Postgres local del docker-compose (puerto 55432):
+PSQL="docker compose exec -T db psql -U biometric -d biometric -c"
 
-# Ver comandos pendientes
-sqlite3 data/biometric.db "SELECT * FROM commands WHERE status='WAIT';"
+$PSQL "SELECT * FROM devices;"
+$PSQL "SELECT * FROM commands WHERE status='WAIT';"
+$PSQL "SELECT * FROM attendance_logs LIMIT 10;"
 
-# Ver logs de asistencia
-sqlite3 data/biometric.db "SELECT * FROM attendance_logs LIMIT 10;"
+# O la GUI de Prisma:
+npm run db:studio
 ```
 
 ---
@@ -445,20 +454,18 @@ NO_CMD_STRATEGY=error npm run dev
 
 ### Limitaciones y trade-offs
 
-1. **Múltiples binarios (BIN_1, BIN_2, ...):**
-   - Sin delimitación explícita en el protocolo, no es posible separar múltiples binarios sin información de tamaños
-   - Solución actual: se concatenan como un bloque único
-   - TODO: Implementar parsing de tamaños si se tiene especificación completa del protocolo
+1. **Framing de múltiples binarios (BIN_1, BIN_2, ...):** resuelto.
+   - El body real usa bloques con prefijo de longitud `uint32` LE — cada binario es su propio bloque, sin ambigüedad de tamaños. Ver `docs/04-device-protocol-real.md`.
+   - `parseBody` en `lib/protocol.ts` implementa el parsing por bloques (y mantiene el modo plano para simulador/e2e/curl).
 
 2. **Handler de ENROLL_DATA simplificado:**
    - Actualmente inserta solo usuario y primer enrollment
    - Múltiples enrollments en el mismo request comentado (debug pending)
-   - TODO: Investigar issue de async/await en iteración de arrays con sqlite3
 
-3. **sqlite3 vs better-sqlite3:**
-   - Se usó `sqlite3` (callback-based) en lugar de `better-sqlite3` (sync)
-   - Razón: `better-sqlite3` requiere compilación en Windows (Visual Studio)
-   - `sqlite3` tiene pre-built binaries, pero es asincrónico (menos conveniente pero funciona)
+3. **PostgreSQL + Prisma:**
+   - `lib/db.ts` usa un `pg.Pool` compartido; los 4 helpers async se conservan como shim delgado sobre `pool.query` para que el hot path (`lib/handlers/**`, `lib/operations/**`) cambie lo mínimo — sigue con SQL crudo, no modelos Prisma.
+   - Prisma (`@prisma/adapter-pg`, sin binario de query-engine) queda listo para las tablas de dominio nuevas y el CRUD del admin.
+   - Migración desde SQLite: ver `docs/02-architecture.md`. Antes se usaba el driver `sqlite3` (callback); el motivo histórico de no usar `better-sqlite3` (compilación en Windows) ya no aplica.
 
 4. **Next.js 16 con App Router:**
    - `app/route.ts` con `runtime: nodejs` y `dynamic: force-dynamic`

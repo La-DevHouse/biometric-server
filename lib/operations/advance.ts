@@ -6,7 +6,7 @@
 // losing that response loses the result forever).
 
 import { decodeUserIdList, decodeLogData } from "@/lib/protocol";
-import { runAsync, allAsync, getAsync } from "@/lib/db";
+import { runAsync, allAsync, getAsync, NOW_MS } from "@/lib/db";
 import { TERMINAL_STAGES, OperationKind } from "./kinds";
 import { getOperationRow, setStage, finishOperation, queueCommandForOperation, OperationRow } from "./queue";
 import { insertAttendanceLogs, upsertUserFromInfo, UserInfoResult } from "./persist";
@@ -494,7 +494,7 @@ export async function sweepStaleOperations(): Promise<number> {
     if (transId) {
       await runAsync(
         `UPDATE commands SET status = 'ERROR', cmd_return_code = 'TIMEOUT',
-                updated_at = unixepoch('now') * 1000
+                updated_at = ${NOW_MS}
           WHERE trans_id = ? AND status IN ('WAIT','RUN')`,
         [transId]
       );

@@ -39,3 +39,18 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Graphify (graphify-out/ se commitea: graph.json, graph.html, GRAPH_REPORT.md,
+# manifest.json, .graphify_labels.json* — solo lo transitorio se ignora)
+graphify-out/cost.json
+graphify-out/cache/
+graphify-out/20[0-9][0-9]-[0-9][0-9]-[0-9][0-9]/
+# base de datos SQLite legacy (ahora Postgres)
+/data
+
+# Relevamiento Adempiere: material crudo con PII del cliente — fuera de git.
+# Los .md sintetizados sí se commitean.
+docs/adempiere/screenshots/**
+!docs/adempiere/screenshots/README.md
+docs/adempiere/exports/**
+!docs/adempiere/exports/README.md

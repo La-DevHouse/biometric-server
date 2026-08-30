@@ -4,7 +4,8 @@ async function verify() {
   await initDb();
 
   const tables = await allAsync<{ name: string }>(
-    `SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'`
+    `SELECT tablename AS name FROM pg_tables
+      WHERE schemaname = 'public' AND tablename NOT LIKE '\\_prisma\\_%'`
   );
 
   const expectedTables = [
@@ -15,6 +16,7 @@ async function verify() {
     "enroll_data",
     "block_buffer",
     "raw_traffic",
+    "operations",
   ];
 
   const tableNames = tables.map(t => t.name);
