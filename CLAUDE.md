@@ -28,7 +28,7 @@ Ver `docs/00-index.md` para el índice completo con descripción de cada documen
 - **La IP y el puerto del servidor quedan quemados físicamente en cada dispositivo desplegado.** No hay forma remota de reconfigurarlos. Tratar la región del servidor y el puerto de ingesta como decisiones de una sola vez.
 - **El tráfico de dispositivos nunca pasa por Traefik ni por Cloudflare Tunnel** (enrutan por hostname; el dispositivo no manda ninguno). Requiere puerto dedicado con mapeo directo Docker. Ver `docs/06-infrastructure.md`.
 - **Servidor de desarrollo está en Nuremberg; producción va en Ashburn** por latencia medida (~2x mejor). No desplegar dispositivos reales contra el servidor de Nuremberg.
-- **Migración de SQLite a Postgres: pendiente de ejecutar.** El PoC arrancó con SQLite, pero se decidió migrar a un contenedor `postgres-alco` separado en Coolify — no se ha hecho todavía. No reintroduce Directus, solo cambia el motor de base de datos. Ver `docs/02-architecture.md`.
+- **Migración de SQLite a Postgres: HECHA en código (2026-08-30).** El código corre sobre PostgreSQL + Prisma (`@prisma/adapter-pg`; el hot path del protocolo sigue con SQL crudo vía los 4 helpers de `lib/db.ts`, no modelos Prisma). Schema en `prisma/schema.prisma` + `prisma/migrations/`. Local: `docker compose up -d db` (puerto 55432) + `npm run db:migrate:deploy`. **Falta solo** crear el servicio `postgres-alco` en Coolify y desplegar. No reintrodujo Directus. Ver `docs/02-architecture.md` y `prisma/README.md`.
 - **Migración de huellas entre dispositivos: funcionalidad pendiente, confirmada como necesaria por el cliente, no lograda todavía.** Ver `docs/02-architecture.md`.
 
 ## Verificar antes de confiar

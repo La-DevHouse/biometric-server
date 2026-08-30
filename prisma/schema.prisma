@@ -1,0 +1,163 @@
+// Prisma schema — biometric-server
+//
+// PR1 de la migración SQLite→Postgres (ver docs/08-data-model.md §7 y el plan de
+// Fase 2). Este archivo contiene SOLO las 8 tablas de protocolo, porteadas 1:1
+// de lib/db.ts (BASE_SCHEMA_SQL + migraciones addColumnIfMissing).
+//
+// Reglas de esta capa (no cambiar sin revisar docs/02-architecture.md):
+//   - Timestamps en epoch-millis: `BigInt` (bigint en PG). El hot path hace
+//     aritmética con Date.now(); lib/db.ts registra un type-parser int8→Number.
+//   - SIN foreign keys. Los handlers realtime insertan en attendance_logs/users
+//     sin garantizar que exista antes la fila de devices.
+//   - Los CHECK de status/stage/direction se agregan como SQL crudo en la
+//     migración (Prisma no los expresa). Ver docs/08 §6.
+//   - Identificadores en snake_case, sin @map, para casar con el SQL crudo.
+//
+// Los modelos de dominio (empresas, empleados, asistencia, etc. — docs/08 §4) se
+// agregan en la migración 0002, en un PR aparte.
+
+generator client {
+  provider = "prisma-client-js"
+  // Prisma 6.x: driver adapters GA, sin previewFeatures. El cliente se instancia
+  // en lib/db.ts con `new PrismaClient({ adapter: new PrismaPg(pool) })`.
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// Identidad y heartbeat de cada equipo biométrico. `stat_*` los llena
+/// GET_DEVICE_STATUS (lib/operations/persist.ts).
+model devices {
+  dev_id                String  @id
+  fk_name               String?
+  firmware              String?
+  fk_bin_data_lib       String?
+  supported_enroll_data String?
+  last_seen_at          BigInt?
+  created_at            BigInt  @default(dbgenerated("(extract(epoch from now()) * 1000)::bigint"))
+  stat_user_count       Int?
+  stat_manager_count    Int?
+  stat_fp_count         Int?
+  stat_log_count        Int?
+  stat_updated_at       BigInt?
+}
+
+/// Cola de comandos hacia el equipo. `status`: WAIT→RUN→RESULT|ERROR (CHECK en
+/// la migración). `op_id` liga a operations (sin FK).
+model commands {
+  trans_id        Int     @id @default(autoincrement())
+  dev_id          String
+  cmd_code        String
+  cmd_param       String?
+  cmd_binary      Bytes?
+  status          String  @default("WAIT")
+  result_json     String?
+  result_binary   Bytes?
+  cmd_return_code String?
+  created_at      BigInt  @default(dbgenerated("(extract(epoch from now()) * 1000)::bigint"))
+  updated_at      BigInt  @default(dbgenerated("(extract(epoch from now()) * 1000)::bigint"))
+  op_id           Int?
+
+  @@index([dev_id, status])
+  @@index([op_id])
+}
+
+/// Marcaje crudo (ingesta inmutable). `io_time` es "YYYYMMDDhhmmss" como texto.
+/// La unicidad natural (dev_id,user_id,io_time) era best-effort en SQLite; acá es
+/// real (arranque limpio, sin duplicados). La dedup a nivel app se mantiene.
+model attendance_logs {
+  id          Int     @id @default(autoincrement())
+  dev_id      String
+  user_id     String
+  verify_mode String?
+  io_mode     Int?
+  io_time     String?
+  log_image   Bytes?
+  received_at BigInt  @default(dbgenerated("(extract(epoch from now()) * 1000)::bigint"))
+
+  @@unique([dev_id, user_id, io_time], map: "ux_attendance_natural")
+  @@index([dev_id])
+}
+
+/// Enrolados del equipo (NO usuarios de la app). Clave natural (dev_id,user_id).
+model users {
+  id             Int     @id @default(autoincrement())
+  dev_id         String
+  user_id        String
+  user_name      String?
+  user_privilege String?
+  user_photo     Bytes?
+  updated_at     BigInt  @default(dbgenerated("(extract(epoch from now()) * 1000)::bigint"))
+
+  @@unique([dev_id, user_id])
+  @@index([dev_id])
+}
+
+/// Plantilla biométrica POR DISPOSITIVO. `backup_number`: 0-9 dedos, 10 pwd,
+/// 11 tarjeta, 12 rostro. La copia canónica por empleado va en el dominio
+/// (employee_fingerprint, docs/08 §4.5).
+model enroll_data {
+  id            Int    @id @default(autoincrement())
+  dev_id        String
+  user_id       String
+  backup_number Int
+  data          Bytes
+  updated_at    BigInt @default(dbgenerated("(extract(epoch from now()) * 1000)::bigint"))
+
+  @@unique([dev_id, user_id, backup_number])
+}
+
+/// Buffer de reensamblado para respuestas fragmentadas (send_cmd_result con blk_no).
+model block_buffer {
+  dev_id      String
+  trans_id    Int
+  blk_no      Int
+  data        Bytes
+  received_at BigInt @default(dbgenerated("(extract(epoch from now()) * 1000)::bigint"))
+
+  @@id([dev_id, trans_id, blk_no])
+}
+
+/// Log de auditoría de todo el tráfico HTTP con los equipos ("modo espía").
+/// `direction`: 'in' | 'out' (CHECK en la migración).
+model raw_traffic {
+  id           Int     @id @default(autoincrement())
+  direction    String
+  dev_id       String?
+  request_code String?
+  headers_json String?
+  body_preview String?
+  body_size    Int?
+  binary_size  Int?
+  created_at   BigInt  @default(dbgenerated("(extract(epoch from now()) * 1000)::bigint"))
+
+  @@index([created_at(sort: Desc)])
+}
+
+/// Orquestación de acciones de alto nivel del panel (1 operación → N comandos).
+/// `kind` sin CHECK: la unión TS en lib/operations/kinds.ts es la fuente de
+/// verdad. `stage` con CHECK en la migración.
+model operations {
+  id               Int     @id @default(autoincrement())
+  kind             String
+  label            String
+  dev_id           String
+  user_id          String?
+  params_json      String?
+  stage            String  @default("queued")
+  step_index       Int     @default(0)
+  step_total       Int     @default(1)
+  plan_json        String?
+  current_trans_id Int?
+  last_trans_id    Int?
+  result_note      String?
+  error_note       String?
+  created_at       BigInt  @default(dbgenerated("(extract(epoch from now()) * 1000)::bigint"))
+  updated_at       BigInt  @default(dbgenerated("(extract(epoch from now()) * 1000)::bigint"))
+  finished_at      BigInt?
+
+  @@index([dev_id, stage])
+  @@index([created_at(sort: Desc)])
+}

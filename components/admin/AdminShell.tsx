@@ -70,7 +70,7 @@ export function AdminShell({
             </Link>
           ))}
 
-          <div className="mt-3.5 px-2.5 text-[10px] tracking-[0.1em] uppercase text-neutral-600">
+          <div className="mt-3.5 px-2.5 text-[10px] tracking-widest uppercase text-neutral-600">
             Avanzado
           </div>
           <Link

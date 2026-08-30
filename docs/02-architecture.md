@@ -8,24 +8,50 @@ El método de descubrimiento en curso: relevar el sistema legacy **Adempiere** q
 
 Cuando ese relevamiento produzca una especificación concreta (vistas, relaciones entre entidades, tablas), documentarla en un archivo nuevo `docs/07-admin-ux-spec.md` (número reservado) — no fusionarla dentro de este documento, para no mezclar "cómo está construido el protocolo" con "cómo debe ser la experiencia de administración".
 
-## ⚠️ Pendiente: migración de SQLite a Postgres
+## Migración de SQLite a Postgres — HECHA en código (2026-08-30)
 
-**Decisión tomada, ejecución pendiente.** El PoC arrancó con SQLite (ver razones históricas abajo), pero se decidió migrar a **Postgres en un contenedor separado dentro de Coolify** (`postgres-alco`, un servicio propio, no compartiendo proceso con `dashboard-alco`/`sync-worker-alco`). Esto no es Directus ni el patrón completo del WaaS original — es específicamente el motor de base de datos; el admin sigue siendo Next.js custom (`app/admin/**`).
+El código ya corre sobre **PostgreSQL con Prisma**. Falta solo crear el servicio
+`postgres-alco` en Coolify y desplegar (ver `06-infrastructure.md`).
 
-**Por qué se reabrió esta decisión:** el plan original de infraestructura (antes de revisar el código real) ya asumía Postgres. Al confirmar que el PoC usaba SQLite, se documentó como "decisión asentada" — pero el negocio decidió después que vale la pena pagar el costo de migrar ahora, mientras el volumen de datos es bajo, en vez de arrastrar SQLite hacia producción.
+**Qué se hizo:**
 
-**Motivo técnico adicional que refuerza la decisión:** Postgres resuelve de raíz el problema de "volumen compartido" que iba a generar la separación en `dashboard-alco`/`sync-worker-alco` (ver más abajo) — con SQLite, dos contenedores necesitan compartir el mismo archivo físico vía un volumen montado en ambos, más `PRAGMA journal_mode=WAL` para tolerar escritura concurrente. Con Postgres, ambos procesos simplemente son clientes de red hacia el mismo servicio de base de datos — sin archivo compartido, sin locks de filesystem, es el modelo estándar para el que Postgres está diseñado.
+- **Schema:** `prisma/schema.prisma` con las 8 tablas de protocolo (`devices`,
+  `commands`, `attendance_logs`, `users`, `enroll_data`, `block_buffer`,
+  `raw_traffic`, `operations`). `BLOB` → `bytea`. Migraciones versionadas en
+  `prisma/migrations/` (`prisma migrate`), reemplazan al `addColumnIfMissing`
+  ad-hoc de antes. Los modelos de dominio (`08-data-model.md`) llegan en una
+  migración posterior.
+- **`lib/db.ts` reescrito:** un `pg.Pool` compartido + `PrismaPg` sobre ese pool
+  (adapter `@prisma/adapter-pg`, sin binario de query-engine). Se **conservan**
+  los 4 helpers (`runAsync`/`getAsync`/`allAsync`/`execAsync`) como shim delgado
+  sobre `pool.query` — el hot path (`lib/handlers/**`, `lib/operations/**`)
+  mantiene su SQL crudo, no se reescribió a modelos Prisma. `initDb()` ahora solo
+  chequea conectividad; migrar es tarea de `prisma migrate deploy`.
+- **Sin ORM en el hot path**; Prisma (cliente `prisma` exportado desde `lib/db.ts`)
+  queda listo para las tablas de dominio nuevas y el CRUD del admin.
+- **Timestamps** de protocolo siguen en epoch-millis, ahora `bigint`. `lib/db.ts`
+  registra `pg.types.setTypeParser(20, Number)` — **load-bearing**: sin eso los
+  `*_at` y los `COUNT(*)` vuelven como string y la aritmética `Date.now() - x`
+  da `NaN`.
+- **Sin foreign keys** en el baseline (los handlers realtime insertan sin
+  garantizar que exista antes la fila de `devices` — igual que hoy con SQLite,
+  que no las aplicaba). Las FKs protocolo↔dominio se agregan con las tablas de
+  dominio.
+- **`DATABASE_URL`** como variable de conexión. `docker-compose.yml` levanta un
+  Postgres local para desarrollo y tests (puerto host `55432`). Los tests corren
+  contra una base `biometric_test` separada (`scripts/test-db-setup.ts`, `pretest`).
+- **Arranque limpio** — no se migraron datos del servidor de test.
 
-**Trabajo pendiente (no ejecutado todavía):**
+**Detalle completo:** `08-data-model.md`, `prisma/README.md`, y el plan de Fase 2.
 
-1. Definir el schema en Postgres equivalente al de SQLite (`devices`, `commands`, `attendance_logs`, `users`, `enroll_data`, `block_buffer`, `raw_traffic`) — los campos `BLOB` de SQLite mapean a `bytea` en Postgres, sin cambios conceptuales.
-2. Reescribir `lib/db.ts`: reemplazar el driver `sqlite3` (callback-based) por un cliente Postgres (ej. `pg`). Este es un cambio de código real, no solo de infraestructura — toda la capa de acceso a datos cambia de forma/API.
-3. Decidir si se mantiene "sin ORM" (queries directas con `pg`) o se introduce un query builder — no asumir ninguna de las dos, es una decisión a tomar explícitamente al hacer el cambio.
-4. En Coolify: crear el servicio `postgres-alco` (contenedor separado, con su propio Persistent Storage para el datadir de Postgres — esto es el volumen _propio_ de Postgres, no el problema de "compartir un archivo SQLite entre contenedores" que ya no aplica una vez migrado). Las apps se conectan por el hostname interno de Docker que expone Coolify, sin publicar el puerto de Postgres públicamente.
-5. Variable de entorno de conexión (ej. `DATABASE_URL`), siguiendo la misma convención que ya usa el proyecto con `PORT`.
-6. Decidir si vale la pena migrar los datos existentes del servidor de test (probablemente no — sigue siendo fase de desarrollo, es razonable arrancar Postgres limpio) o si hay algo que preservar.
+**Por qué Postgres** (contexto que sigue vigente): resuelve de raíz el problema
+de "volumen compartido" que generaría la separación `dashboard-alco`/
+`sync-worker-alco` — con Postgres ambos procesos son clientes de red al mismo
+servicio, sin archivo compartido ni `PRAGMA journal_mode=WAL`.
 
-**No bloqueante para seguir trabajando en otras partes**, pero si se va a ejecutar la separación en servicios (sección siguiente) tiene sentido hacer la migración a Postgres primero — evita construir el mecanismo de volumen compartido de SQLite para después descartarlo.
+**Pendiente (infra, no código):** crear `postgres-alco` en Coolify con su
+Persistent Storage, setear `DATABASE_URL` al hostname interno de Docker, y que
+`prisma migrate deploy` corra al arrancar el contenedor. Ver `06-infrastructure.md`.
 
 ## Stack — resto de decisiones, sin cambios
 
@@ -41,11 +67,11 @@ Fijadas en `initial_plan_prompt.md` y `README.md`:
 - **`lib/handlers/index.ts`** — dispatcher por `request_code`, logging de tráfico a `raw_traffic`.
 - **`lib/handlers/protocol-handlers.ts`** — `handleReceiveCmd`, `handleSendCmdResult`, `handleRealtimeGlog`, `handleRealtimeEnrollData`. Es la capa acoplada a Next (usa `NextRequest`/`NextResponse`).
 - **`lib/protocol.ts`** — parser/builder puro del protocolo: `parseBody`, `buildResponse`, decodificadores de binarios (`decodeUserIdList`, `decodeLogData`, etc). Sin imports de Next.js — portable tal cual. Ver `04-device-protocol-real.md` para el formato de framing que implementa.
-- **`lib/db.ts`** — conexión SQLite singleton, migración automática al arrancar. Sin imports de Next.js.
+- **`lib/db.ts`** — `pg.Pool` singleton + cliente `prisma` (adapter `@prisma/adapter-pg`) sobre el mismo pool; los 4 helpers crudos (`runAsync`/`getAsync`/`allAsync`/`execAsync`) + `NOW_MS` + `toPg`. `initDb()` chequea conectividad, no migra (eso es `prisma migrate`). Sin imports de Next.js.
 - **`app/admin/**`** — dashboard: `/admin`(estado de dispositivos),`/admin/commands`(cola, encolar comandos),`/admin/logs`(marcaciones),`/admin/traffic` (visor de tráfico crudo — modo "espía").
 - **`scripts/simulator.ts`**, **`scripts/e2e.ts`**, **`scripts/sniffer.ts`**, **`scripts/handshake-probe.ts`** — herramientas de desarrollo/diagnóstico. Ver `04-device-protocol-real.md` para cuándo usar el sniffer y el handshake-probe.
 
-**Dato clave para cualquier refactor:** la lógica de negocio (`lib/protocol.ts`, `lib/operations/*` — `advance.ts`, `index.ts`, `kinds.ts`, `persist.ts`, `queue.ts` —, `lib/db.ts`) es agnóstica de framework. Solo `app/route.ts` y las llamadas a `NextRequest`/`NextResponse` dentro de `protocol-handlers.ts` están acopladas a Next. Esto hace que extraer un proceso standalone (siguiente sección) sea mecánico, no un rediseño.
+**Dato clave para cualquier refactor:** la lógica de negocio (`lib/protocol.ts`, `lib/operations/*` si existen, `lib/db.ts`) es agnóstica de framework. Solo `app/route.ts` y las llamadas a `NextRequest`/`NextResponse` dentro de `protocol-handlers.ts` están acopladas a Next. Esto hace que extraer un proceso standalone (siguiente sección) sea mecánico, no un rediseño.
 
 ## Plan de separación en servicios (pendiente de ejecutar)
 
@@ -72,7 +98,7 @@ Un solo proceso atendiendo tanto el dashboard como las conexiones de dispositivo
 
 Con dos procesos abriendo conexiones separadas al mismo archivo SQLite:
 
-- **`PRAGMA journal_mode=WAL`** debe activarse en `lib/db.ts`. **Verificado (2026-08-29): todavía NO está** — `openAndMigrate()` abre el `sqlite3.Database` y llama a `migrate()` sin ejecutar ningún `PRAGMA journal_mode` (el único `PRAGMA` en el archivo es `table_info` dentro de la migración). Sin WAL, el modo default usa locks exclusivos que generan `SQLITE_BUSY` bajo escritura concurrente. Bloqueante antes de separar procesos — aunque si se ejecuta primero la migración a Postgres (sección arriba), este punto deja de aplicar.
+- **`PRAGMA journal_mode=WAL`** debe activarse en `lib/db.ts` (verificar si ya está — no confirmado en la revisión actual). Sin WAL, el modo default usa locks exclusivos que generan `SQLITE_BUSY` bajo escritura concurrente. Bloqueante antes de separar procesos.
 - **Volumen compartido en Coolify:** por defecto cada app tiene su propio filesystem aislado — si `dashboard-alco` y `sync-worker-alco` corren como contenedores separados escribiendo a una ruta relativa local, cada uno tendría su propia copia del `.db`, no el mismo archivo. Necesario: crear un **Persistent Storage** en Coolify, montarlo en la misma ruta en ambos contenedores, y que `lib/db.ts` lea la ruta desde una variable de entorno (ej. `DB_PATH`) en vez de un path relativo hardcodeado. Verificar después del despliegue que ambos contenedores efectivamente comparten el archivo (no asumirlo solo porque ambos "funcionan" por separado).
 
 ## ⚠️ Pendiente: migración de huellas entre dispositivos
@@ -89,6 +115,25 @@ Con dos procesos abriendo conexiones separadas al mismo archivo SQLite:
 3. Documentar el resultado (funcione o no) en `05-commands-catalog.md`, siguiendo el mismo formato de advertencias verificadas que ya usa ese documento.
 
 Este ítem no está en el catálogo de comandos como "pendiente" todavía — falta agregarlo ahí una vez se investigue, ya que ese documento es la fuente de verdad de comportamiento verificado contra hardware.
+
+## Decisiones de modelo de datos que surgen del relevamiento de Adempiere (en curso)
+
+Estas decisiones se van tomando conforme avanza el kit de relevamiento (`adempiere-kit/`, ver `docs/00-index.md` → `07-admin-ux-spec.md` cuando esté escrito). Se registran aquí porque afectan directamente el esquema, no solo la UX.
+
+- **Identificación de empleado: cédula, no ID numérico de nómina separado.** Adempiere maneja dos identificadores en paralelo para el mismo empleado (`Empleado Nómina`, numérico interno; y cédula, vía el registro de "Socio de Negocio"). El sistema nuevo estandariza en **cédula** como identificador único del empleado — no se replica el ID numérico de nómina como concepto separado. (Fuente: `adempiere-kit/views/importar-registro-asistencia.md`, decisión del 29/ago.)
+- **Importación batch de marcajes: no es parte de la operación normal del sistema nuevo.** Adempiere tiene un mecanismo de importación manual/batch de asistencia (con una tabla de staging de 157,674 registros, la mayoría fallando validación). Hipótesis fuerte, pendiente de confirmación con ALCO: no se usa activamente, porque con el sistema nuevo conectado en vivo a los dispositivos no hace falta — el único caso donde este tipo de mecanismo importaría es una migración de histórico, que está fuera del alcance de Fase 1 (`01-requirements.md`). No diseñar esto como parte del flujo normal.
+- **Categorización de empleado — matizado con datos reales (29/ago).** La rama "Configuración del Empleado" de Adempiere **no está uniformemente vacía**, como se asumió inicialmente:
+    - **Con uso real, modelar como entidades propias:** `Departamento` (45 registros), `Puesto` (288 registros, relacionado a `Departamento`), `Nivel de Estudio` (6 registros), `Grado` (24 registros — probablemente específico de empresas cliente tipo institución educativa, ver `views/organizacion.md`).
+    - **Sin registros reales cargados (footer `+*1/1` = formulario vacío por defecto, sin datos existentes):** `Estructura Salarial`, `Designación`, `Tipo de Habilidad`, `Tipo de Empleado`, `Carrera`. Para estos, incluir como mucho un campo de referencia simple y opcional en el esquema — no construir UI de gestión dedicada a menos que ALCO confirme que sí los usan y que Adempiere simplemente no tenía datos cargados en el momento del relevamiento.
+    - **Sigue aplicando la distinción de alcance:** ninguno de estos implica construir lógica de cálculo de nómina — son campos de clasificación, no motor de nómina.
+
+## Idea de diseño a evaluar (Hito 3/4, no comprometida): privilegios remotos por dispositivo
+
+Grupo ALCO necesita que alguien en cada sede/empresa pueda enrolar huellas nuevas localmente, sin que esa persona tenga acceso a la plataforma web (confirmado explícitamente: solo los 4 usuarios de ALCO tienen acceso — ver `01-requirements.md`). Esta capacidad ya existe a nivel de firmware del dispositivo (privilegios `MANAGER`/`REGISTER`/`OPERATOR`/`USER`, comando `SET_USER_PRIVILEGE` — ver `05-commands-catalog.md`), independiente de la plataforma.
+
+Idea a evaluar: exponer en el dashboard, para los 4 usuarios de ALCO, la capacidad de otorgar/revocar remotamente ese privilegio local a un empleado ya enrolado en un dispositivo específico — sin crear cuentas ni dar acceso a la plataforma a nadie fuera de ALCO. Antes de comprometerse a esto: `05-commands-catalog.md` documenta que solo `MANAGER` está verificado funcionando de forma confiable en el firmware probado; `REGISTER` (el nivel "angosto" ideal para este caso) no aplicó correctamente en las pruebas — validar esto contra hardware real antes de prometerle a ALCO una distinción fina de permisos que puede no sostenerse en la práctica.
+
+Detalle completo del hallazgo en `views/organizacion.md` (kit de relevamiento de Adempiere), sección "Administrador/Super Usuario (Dispositivo de Asistencia)".
 
 ## Preparación para escala futura (no sobre-construir en Fase 1)
 

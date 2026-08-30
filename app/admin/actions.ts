@@ -51,7 +51,8 @@ export async function queueCommandAction(
   await initDb();
   try {
     const { lastID } = await runAsync(
-      `INSERT INTO commands (dev_id, cmd_code, cmd_param, status) VALUES (?, ?, ?, 'WAIT')`,
+      `INSERT INTO commands (dev_id, cmd_code, cmd_param, status) VALUES (?, ?, ?, 'WAIT')
+       RETURNING trans_id`,
       [devId, cmdCode, JSON.stringify(params)]
     );
     revalidatePath("/admin/diagnostico");

@@ -6,26 +6,40 @@ ALCO usa para el flujo de biométricos/asistencia. Ignorá todo lo demás del ER
 
 Para cada ventana relevante, una fila:
 
-| Ruta en el menú | Nombre de la ventana | ¿Para qué la usan? | ¿Hay `views/<archivo>.md`? |
-| --- | --- | --- | --- |
-| _ej: RRHH → Empleados_ | _Empleado_ | _alta/baja/edición de empleados y su vínculo con el biométrico_ | `views/empleado.md` |
-|  |  |  |  |
-|  |  |  |  |
-|  |  |  |  |
-|  |  |  |  |
-|  |  |  |  |
-|  |  |  |  |
-|  |  |  |  |
-|  |  |  |  |
-|  |  |  |  |
-|  |  |  |  |
-|  |  |  |  |
-|  |  |  |  |
+| Ruta en el menú                                               | Nombre de la ventana                           | ¿Para qué la usan?                                                                                                                                                                                                                                                                                           | ¿Hay `views/<archivo>.md`?                                 |
+| ------------------------------------------------------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------- |
+| Gestión del Sistema → Reglas de la Organización               | Organización                                   | **Confirmado.** Es la ficha de empresa cliente. Ojo: la jerarquía no es plana — hay organizaciones "padre" que agrupan varias razones sociales hijas (ver nota abajo).                                                                                                                                       | `views/organizacion.md` (iniciado, ver captura del 29/ago) |
+| Gestión del Sistema → Datos → Importar Datos                  | Importar Registro de Asistencia                | **Relevado (29/ago).** Import batch de marcajes vía tabla de staging. ⚠️ Hallazgo: 157,674 registros, todos los visibles fallan validación — ver pregunta prioritaria en cuestionario.                                                                                                                       | `views/importar-registro-asistencia.md`                    |
+| Gestión del Sistema → Datos → Importar Datos                  | Importar Registro de Asistencia (Por Empleado) | **Relevado (29/ago).** Misma lógica, scoped a un empleado, con modo "solo validar" (dry-run).                                                                                                                                                                                                                | `views/importar-registro-asistencia.md`                    |
+| RRHH y Nómina → Recursos Humanos                              | Departamento                                   | **Relevado (29/ago). 45 registros reales — sí se usa.**                                                                                                                                                                                                                                                      | `views/configuracion-empleado.md`                          |
+| RRHH y Nómina → Recursos Humanos                              | Puesto                                         | **Relevado (29/ago). 288 registros reales — FK a Departamento.**                                                                                                                                                                                                                                             | `views/configuracion-empleado.md`                          |
+| RRHH y Nómina → Recursos Humanos → Configuración del Empleado | Estructura Salarial                            | **Relevado (29/ago). Sin registros reales visibles** (formulario se abrió vacío). Config de cálculo de nómina — fuera de lógica de negocio de Fase 1 de todas formas.                                                                                                                                        | `views/configuracion-empleado.md`                          |
+| RRHH y Nómina → Recursos Humanos → Configuración del Empleado | Designación                                    | **Relevado (29/ago). Sin registros reales visibles.** Depende de Estructura Salarial.                                                                                                                                                                                                                        | `views/configuracion-empleado.md`                          |
+| RRHH y Nómina → Recursos Humanos → Configuración del Empleado | Nivel de Estudio                               | **Relevado (29/ago). 6 registros reales.**                                                                                                                                                                                                                                                                   | `views/configuracion-empleado.md`                          |
+| RRHH y Nómina → Recursos Humanos → Configuración del Empleado | Tipo de Habilidad                              | **Relevado (29/ago). Sin registros reales visibles.**                                                                                                                                                                                                                                                        | `views/configuracion-empleado.md`                          |
+| RRHH y Nómina → Recursos Humanos → Configuración del Empleado | Carrera                                        | **Relevado (29/ago). Sin registros reales visibles** (búsqueda sin resultados).                                                                                                                                                                                                                              | `views/configuracion-empleado.md`                          |
+| RRHH y Nómina → Recursos Humanos → Configuración del Empleado | Grado                                          | **Relevado (29/ago). 24 registros reales — probablemente específico de clientes tipo colegio.**                                                                                                                                                                                                              | `views/configuracion-empleado.md`                          |
+| RRHH y Nómina → Recursos Humanos → Configuración del Empleado | Tipo de Empleado                               | **Relevado (29/ago). Sin registros reales visibles.** Atado a Nómina/Nivel Salarial.                                                                                                                                                                                                                         | `views/configuracion-empleado.md`                          |
+| RRHH y Nómina → Recursos Humanos                              | Empleado                                       | **Completo con datos reales (29/ago).** Registro de Ezequiel Alvarado Isea, todos los sub-tabs con valores reales. ⚠️ Hallazgo: un mismo Socio del Negocio puede tener múltiples "Contrato de Empleado" (uno por organización) — evidencia real de que un empleado puede estar activo en más de una empresa. | `views/empleado.md`                                        |
+| RRHH y Nómina → Registro de Asistencia                        | Dispositivos de Asistencia                     | **Relevado (29/ago). 23 dispositivos.** ⚠️ Sistema legacy usa Kafka (`TAD-Kafka-Command`, puerto 29092) — no replicar, solo contexto histórico.                                                                                                                                                              | `views/registro-asistencia.md`                             |
+| RRHH y Nómina → Registro de Asistencia                        | Reporte de Registro de Asistencia              | **Relevado (29/ago) — solo parámetros, no ejecutado todavía.**                                                                                                                                                                                                                                               | `views/registro-asistencia.md`                             |
+| RRHH y Nómina → Registro de Asistencia                        | Grupo de Trabajo                               | **Relevado (29/ago).** Se relaciona con Turno de Trabajo vía "Planificación de Turno" — relación con Grupo de Turnos sin aclarar.                                                                                                                                                                            | `views/registro-asistencia.md`                             |
+| RRHH y Nómina → Registro de Asistencia                        | Grupo de Turnos                                | **Relevado (29/ago).** Jerarquía: Grupo de Turnos → Turno de Trabajo → Incidencia de Turno (sin explorar).                                                                                                                                                                                                   | `views/registro-asistencia.md`                             |
 
 ## Notas
 
-- Si una sección entera del menú es irrelevante, no hace falta listarla.
-- Si ves una ventana que quizás importa pero no estás seguro, listala igual con
-  un "?" en la columna de uso — yo decido.
-- Reportes: si los reportes de asistencia salen de una pantalla de "Reportes" con
-  parámetros (no de una grilla normal), anotala acá y sacale captura.
+- **Rama "Gestión del Reclutamiento y Selección" — confirmada excluida con evidencia (29/ago).** Se revisaron sus 5 ventanas (`Nivel de Profesión`, `Educación Laboral`, `Tipo de Trabajo`, `Rango de Salario`, `Oferta de Trabajo`): 4 de ellas abren como formulario nuevo en blanco (sin registros reales), y `Oferta de Trabajo` resultó ser un formulario de requisición de personal con workflow de aprobación tipo ATS, con su historial en 0 registros. Sin relación con asistencia/biométricos — se mantiene fuera de alcance, ahora verificado en vez de solo asumido.
+
+- **CONFIRMADO:** "Organización" = empresa cliente. Pero no es una lista
+  plana — tiene jerarquía padre/hijo (ver ejemplo real: `GRUPO FARMALIDO, C.A.`
+  como padre, con `FARMALYDO, C.A.`, `FARMACIA FARMALYDO LA GOAJIRA, C.A.`,
+  etc. como hijos, cada uno con su propio `Código` tipo RIF). Pendiente
+  decidir en el sistema nuevo si se modela esa jerarquía o se aplana. Ver
+  pregunta en `cuestionario-alco.md`.
+- No aparece ninguna ventana de "Incidencias" o "Novedades" explícita — puede
+  que esté dentro de "Reporte de Registro de Asistencia" como un tipo de
+  reporte, o que Adempiere no la modele como entidad separada. Marcar en el
+  cuestionario para ALCO.
+- El menú de sesión arriba a la derecha del screenshot (Contexto, Preferencia,
+  ALCO/Administración, Cambiar Rol, Volver a Ingresar) no se lista — es
+  navegación de sesión de Adempiere, no una ventana de datos del dominio.

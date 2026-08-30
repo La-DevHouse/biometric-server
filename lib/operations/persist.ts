@@ -3,7 +3,7 @@
 // own tables. Nothing here talks to `commands` or `operations` — that stays
 // in queue.ts / advance.ts.
 
-import { runAsync } from "@/lib/db";
+import { runAsync, NOW_MS } from "@/lib/db";
 import { resolveBinaryRef, DecodedLogEntry } from "@/lib/protocol";
 
 export interface UserInfoResult {
@@ -69,7 +69,7 @@ async function upsertEnrollDataFromInfo(
       `INSERT INTO enroll_data (dev_id, user_id, backup_number, data)
        VALUES (?, ?, ?, ?)
        ON CONFLICT(dev_id, user_id, backup_number)
-       DO UPDATE SET data = excluded.data, updated_at = unixepoch('now') * 1000`,
+       DO UPDATE SET data = excluded.data, updated_at = ${NOW_MS}`,
       [devId, userId, entry.backup_number, data]
     );
   }
@@ -156,7 +156,7 @@ export async function upsertDeviceStatus(
   await runAsync(
     `UPDATE devices
         SET stat_user_count = ?, stat_manager_count = ?, stat_fp_count = ?,
-            stat_log_count = ?, stat_updated_at = unixepoch('now') * 1000
+            stat_log_count = ?, stat_updated_at = ${NOW_MS}
       WHERE dev_id = ?`,
     [userCount, managerCount, fpCount, logCount, devId]
   );

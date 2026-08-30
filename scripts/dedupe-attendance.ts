@@ -1,8 +1,11 @@
 // Removes duplicate attendance_logs rows sharing the same natural key
 // (dev_id, user_id, io_time) — see lib/operations/persist.ts for why that's
-// the right key. Deliberately NOT run automatically inside lib/db.ts's
-// migrate(): a UNIQUE index there is best-effort and skips itself if
-// duplicates already exist, so cleanup is a separate, explicit, opt-in step.
+// the right key.
+//
+// Post-migración a Postgres esto es cinturón + tirantes: `ux_attendance_natural`
+// es un UNIQUE real (prisma/migrations), así que la app ya no puede insertar
+// duplicados. Se conserva por si un import masivo o una restauración deja
+// filas viejas duplicadas antes de que exista la constraint.
 //
 // Dry-run by default — prints what would be deleted without touching
 // anything. Pass --apply to actually delete.
@@ -48,8 +51,6 @@ async function main() {
     return;
   }
 
-  // Requires SQLite >= 3.25 for window functions; sqlite3@5.1.7 bundles a
-  // much newer version, so this is safe in this project.
   await runAsync(
     `DELETE FROM attendance_logs WHERE id NOT IN (
        SELECT id FROM (

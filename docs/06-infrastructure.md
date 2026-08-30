@@ -55,7 +55,7 @@ Checkpoint obligatorio: **migrar antes de configurar la IP del servidor en el pr
 3. Instalar Coolify de cero.
 4. Configurar Cloudflare Tunnel para `dashboard-alco`/`api-alco` (dominio propio, no `sslip.io`).
 5. Recrear el/los servicio(s) en Coolify.
-6. Migrar datos (dump/restore del SQLite, o el mecanismo que corresponda si ya se separó `sync-worker` — ver `02-architecture.md`).
+6. **No hay que migrar datos** — el proyecto arranca con Postgres limpio (`02-architecture.md`). Solo hace falta que `prisma migrate deploy` corra al arrancar el contenedor de la app.
 7. Reconfigurar firewall de Hetzner en el servidor nuevo (no se hereda).
 8. Solo entonces, apuntar el primer dispositivo real a la Floating IP de producción.
 
@@ -66,7 +66,7 @@ Checkpoint obligatorio: **migrar antes de configurar la IP del servidor en el pr
 | Servicio                             | Estado                 | Notas                                                                                                                                                                                                                                                                                                                                                            |
 | ------------------------------------ | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `biometric-server` (monolito actual) | Desplegado (test)      | Ver `02-architecture.md` — a separar en `dashboard-alco`/`sync-worker-alco`                                                                                                                                                                                                                                                                                      |
-| `postgres-alco`                      | **Pendiente de crear** | Reemplaza SQLite — ver `02-architecture.md`, sección "Migración de SQLite a Postgres". Contenedor separado, con su propio Persistent Storage para el datadir de Postgres. Conexión desde las apps vía el hostname interno de Docker que expone Coolify — no publicar el puerto de Postgres públicamente, sin necesidad de regla de firewall de Hetzner para esto |
+| `postgres-alco`                      | **Pendiente de crear** (el código ya está listo, ver `02-architecture.md`) | Reemplaza SQLite. Postgres 16, contenedor separado, con su propio Persistent Storage para el datadir. Conexión desde las apps por el hostname interno de Docker que expone Coolify vía `DATABASE_URL` — no publicar el puerto de Postgres públicamente, sin regla de firewall de Hetzner para esto. La app corre `prisma migrate deploy` al arrancar (idempotente); en el primer arranque conviene tener `postgres-alco` sano antes que la app, o un retry en el start command. Local: `docker-compose.yml` levanta un Postgres equivalente en el puerto `55432`. |
 
 ## Networking — el punto más delicado
 
