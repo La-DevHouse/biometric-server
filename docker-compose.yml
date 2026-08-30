@@ -8,7 +8,7 @@
 
 services:
   db:
-    image: postgres:16
+    image: postgres:18
     environment:
       POSTGRES_USER: biometric
       POSTGRES_PASSWORD: biometric
@@ -16,8 +16,11 @@ services:
     # host 55432 (no 5432) para no chocar con otros contenedores Postgres locales
     ports:
       - "55432:5432"
+    # PG 18+ cambió el punto de montaje: es /var/lib/postgresql (no
+    # /var/lib/postgresql/data como en <=17). Con el path viejo, la imagen 18
+    # NO arranca. Si bajás a 16/17, volvé a /var/lib/postgresql/data.
     volumes:
-      - biometric_pgdata:/var/lib/postgresql/data
+      - biometric_pgdata:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U biometric -d biometric"]
       interval: 5s
