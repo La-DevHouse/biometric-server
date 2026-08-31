@@ -1,5 +1,6 @@
 import { ReactNode } from "react";
 import { initDb } from "@/lib/db";
+import { requireUser } from "@/lib/auth";
 import { listActiveOperations } from "@/lib/operations";
 import { AdminShell } from "@/components/admin/AdminShell";
 
@@ -14,8 +15,13 @@ export const metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function AdminLayout({ children }: { children: ReactNode }) {
+  const user = await requireUser();
   await initDb();
   const activeOps = await listActiveOperations();
 
-  return <AdminShell activeOpsCount={activeOps.length}>{children}</AdminShell>;
+  return (
+    <AdminShell activeOpsCount={activeOps.length} userName={user.name}>
+      {children}
+    </AdminShell>
+  );
 }

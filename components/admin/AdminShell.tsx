@@ -6,6 +6,7 @@ import type { ReactNode } from "react";
 import { cx } from "@/lib/cx";
 import { ToastProvider } from "./Toaster";
 import { OpTracker } from "./OpTracker";
+import { logoutAction } from "@/app/login/actions";
 
 const NAV_ITEMS = [
   { href: "/admin", label: "Inicio" },
@@ -35,9 +36,11 @@ function isNavActive(pathname: string, href: string): boolean {
 
 export function AdminShell({
   activeOpsCount,
+  userName,
   children,
 }: {
   activeOpsCount: number;
+  userName?: string;
   children: ReactNode;
 }) {
   const pathname = usePathname();
@@ -85,6 +88,22 @@ export function AdminShell({
             Diagnóstico
           </Link>
         </nav>
+
+        {userName && (
+          <div className="px-4 py-2.5 border-t border-divider flex items-center justify-between gap-2 text-[11px] text-neutral-600">
+            <span className="truncate" title={userName}>
+              {userName}
+            </span>
+            <form action={logoutAction}>
+              <button
+                type="submit"
+                className="text-accent-700 hover:text-accent underline underline-offset-2"
+              >
+                Salir
+              </button>
+            </form>
+          </div>
+        )}
 
         <div className="px-4 py-3 border-t border-divider text-[11px] text-neutral-600 leading-relaxed">
           Servidor HTTP push

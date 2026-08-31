@@ -20,6 +20,7 @@ import {
   type Privilege,
 } from "@/lib/operations";
 import type { OpActionState } from "@/lib/opActionState";
+import { requireUser } from "@/lib/auth";
 
 export type QueueCommandState =
   | { status: "idle" }
@@ -35,6 +36,7 @@ export async function queueCommandAction(
   _prev: QueueCommandState,
   formData: FormData
 ): Promise<QueueCommandState> {
+  await requireUser();
   const devId = String(formData.get("dev_id") || "");
   const cmdCode = String(formData.get("cmd_code") || "");
 
@@ -80,6 +82,7 @@ async function afterStart(): Promise<void> {
 }
 
 export async function syncClockAction(_prev: OpActionState, formData: FormData): Promise<OpActionState> {
+  await requireUser();
   const devId = String(formData.get("dev_id") || "");
   try {
     const { id, warning } = await startSyncClock(devId);
@@ -94,6 +97,7 @@ export async function refreshStatusAction(
   _prev: OpActionState,
   formData: FormData
 ): Promise<OpActionState> {
+  await requireUser();
   const devId = String(formData.get("dev_id") || "");
   try {
     const { id, warning } = await startRefreshStatus(devId);
@@ -108,6 +112,7 @@ export async function renameDeviceAction(
   _prev: OpActionState,
   formData: FormData
 ): Promise<OpActionState> {
+  await requireUser();
   const devId = String(formData.get("dev_id") || "");
   const fkName = String(formData.get("fk_name") || "");
   try {
@@ -120,6 +125,7 @@ export async function renameDeviceAction(
 }
 
 export async function syncUsersAction(_prev: OpActionState, formData: FormData): Promise<OpActionState> {
+  await requireUser();
   const devId = String(formData.get("dev_id") || "");
   try {
     const { id, warning } = await startSyncUsers(devId);
@@ -131,6 +137,7 @@ export async function syncUsersAction(_prev: OpActionState, formData: FormData):
 }
 
 export async function renameUserAction(_prev: OpActionState, formData: FormData): Promise<OpActionState> {
+  await requireUser();
   const devId = String(formData.get("dev_id") || "");
   const userId = String(formData.get("user_id") || "");
   const userName = String(formData.get("user_name") || "");
@@ -147,6 +154,7 @@ export async function changePrivilegeAction(
   _prev: OpActionState,
   formData: FormData
 ): Promise<OpActionState> {
+  await requireUser();
   const devId = String(formData.get("dev_id") || "");
   const userId = String(formData.get("user_id") || "");
   const privilege = String(formData.get("user_privilege") || "") as Privilege;
@@ -160,6 +168,7 @@ export async function changePrivilegeAction(
 }
 
 export async function createUserAction(_prev: OpActionState, formData: FormData): Promise<OpActionState> {
+  await requireUser();
   const devId = String(formData.get("dev_id") || "");
   const userId = String(formData.get("user_id") || "");
   const userName = String(formData.get("user_name") || "");
@@ -174,6 +183,7 @@ export async function createUserAction(_prev: OpActionState, formData: FormData)
 }
 
 export async function deleteUserAction(_prev: OpActionState, formData: FormData): Promise<OpActionState> {
+  await requireUser();
   const devId = String(formData.get("dev_id") || "");
   const userId = String(formData.get("user_id") || "");
   try {
@@ -189,6 +199,7 @@ export async function viewBiometricsAction(
   _prev: OpActionState,
   formData: FormData
 ): Promise<OpActionState> {
+  await requireUser();
   const devId = String(formData.get("dev_id") || "");
   const userId = String(formData.get("user_id") || "");
   try {
@@ -201,6 +212,7 @@ export async function viewBiometricsAction(
 }
 
 export async function syncLogsAction(_prev: OpActionState, formData: FormData): Promise<OpActionState> {
+  await requireUser();
   const devId = String(formData.get("dev_id") || "");
   try {
     const { id, warning } = await startSyncLogs(devId);
@@ -212,6 +224,7 @@ export async function syncLogsAction(_prev: OpActionState, formData: FormData): 
 }
 
 export async function clearLogsAction(_prev: OpActionState, formData: FormData): Promise<OpActionState> {
+  await requireUser();
   const devId = String(formData.get("dev_id") || "");
   try {
     const { id, warning } = await startClearLogs(devId);
@@ -223,6 +236,7 @@ export async function clearLogsAction(_prev: OpActionState, formData: FormData):
 }
 
 export async function clearEnrollAction(_prev: OpActionState, formData: FormData): Promise<OpActionState> {
+  await requireUser();
   const devId = String(formData.get("dev_id") || "");
   try {
     const { id, warning } = await startClearEnrollData(devId);
@@ -234,6 +248,7 @@ export async function clearEnrollAction(_prev: OpActionState, formData: FormData
 }
 
 export async function cancelOperationAction(id: number): Promise<{ ok: boolean; reason?: string }> {
+  await requireUser();
   const result = await cancelOperation(id);
   revalidatePath("/admin", "layout");
   return result;

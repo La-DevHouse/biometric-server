@@ -42,6 +42,19 @@ model devices {
   stat_fp_count         Int?
   stat_log_count        Int?
   stat_updated_at       BigInt?
+
+  // --- dominio (migración 0002) — columnas que gestiona el admin, no el hot path ---
+  company_id        Int?
+  company           client_company? @relation(fields: [company_id], references: [id], onDelete: SetNull)
+  site_id           Int?
+  site              site?           @relation(fields: [site_id], references: [id], onDelete: SetNull)
+  last_sync_at      BigInt? // última sync EXITOSA de marcajes (≠ last_seen_at heartbeat)
+  device_admin_note String? // admin del lado de la empresa cliente (texto libre, NO app_user)
+
+  enrollments          employee_device_enrollment[]
+  sourced_fingerprints employee_fingerprint[]
+
+  @@index([company_id])
 }
 
 /// Cola de comandos hacia el equipo. `status`: WAIT→RUN→RESULT|ERROR (CHECK en
@@ -77,8 +90,13 @@ model attendance_logs {
   log_image   Bytes?
   received_at BigInt  @default(dbgenerated("(extract(epoch from now()) * 1000)::bigint"))
 
+  // --- dominio (migración 0002) — nullable, lo resuelve un resolver vía employee_device_enrollment ---
+  employee_id Int?
+  employee    employee? @relation(fields: [employee_id], references: [id], onDelete: SetNull)
+
   @@unique([dev_id, user_id, io_time], map: "ux_attendance_natural")
   @@index([dev_id])
+  @@index([employee_id])
 }
 
 /// Enrolados del equipo (NO usuarios de la app). Clave natural (dev_id,user_id).
@@ -160,4 +178,372 @@ model operations {
 
   @@index([dev_id, stage])
   @@index([created_at(sort: Desc)])
+}
+
+// ===========================================================================
+// DOMINIO (migración 0002_domain) — ver docs/08-data-model.md §3–§6.
+// Timestamps en timestamptz (≠ epoch-millis del protocolo). Los constraints
+// que Prisma no expresa (trigger de jerarquía 2 niveles, unique parcial del
+// enrolado activo, CHECKs) se anexan como SQL crudo a la migración — §6.
+// ===========================================================================
+
+enum record_status {
+  active
+  inactive
+}
+
+enum employment_status {
+  active
+  inactive
+}
+
+enum enrollment_status {
+  active
+  inactive
+}
+
+enum attendance_status {
+  present
+  late
+  early_leave
+  absent
+}
+
+enum absence_rule {
+  no_check_in
+  no_marks
+  under_hours
+}
+
+enum export_scope {
+  company
+  group
+  combined
+}
+
+enum app_user_role {
+  admin
+  operator
+  viewer
+}
+
+/// Empresa cliente de ALCO. Jerarquía de 2 niveles (padre → hijas), `parent_id`
+/// simple y mutable. Trigger en la migración impide un 3er nivel.
+model client_company {
+  id               Int              @id @default(autoincrement())
+  parent_id        Int?
+  parent           client_company?  @relation("company_hierarchy", fields: [parent_id], references: [id], onDelete: Restrict)
+  children         client_company[] @relation("company_hierarchy")
+  name             String
+  tax_id           String? // RIF J/G+dígitos. Requerido si is_group=false (CHECK en migración)
+  is_group         Boolean          @default(false)
+  shared_employees Boolean          @default(false)
+  status           record_status    @default(active)
+  address          String?
+
+  // fallback de umbrales de asistencia (docs/07 §1.9). null → sin default de empresa
+  late_tolerance_min        Int?
+  early_leave_tolerance_min Int?
+  absence_rule              absence_rule?
+  absence_min_hours         Int?
+
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @updatedAt @db.Timestamptz(6)
+
+  sites           site[]
+  employments     employment[]
+  employee_groups employee_group[]
+  devices         devices[]
+  export_runs     export_run[]
+
+  @@index([parent_id])
+}
+
+/// Sede física de una empresa. Los dispositivos y empleos apuntan acá.
+model site {
+  id         Int            @id @default(autoincrement())
+  company_id Int
+  company    client_company @relation(fields: [company_id], references: [id], onDelete: Cascade)
+  name       String
+  code       String?
+  status     record_status  @default(active)
+  created_at DateTime       @default(now()) @db.Timestamptz(6)
+  updated_at DateTime       @updatedAt @db.Timestamptz(6)
+
+  devices     devices[]
+  employments employment[]
+
+  @@unique([company_id, code])
+  @@index([company_id])
+}
+
+/// La persona. Registro global permanente (pool de reclutamiento) — nunca se
+/// borra, puede no tener ningún employment activo.
+model employee {
+  id          Int       @id @default(autoincrement())
+  national_id String    @unique // V/E/J/G + dígitos, validado en app
+  tax_id      String?
+  first_name  String
+  last_name   String
+  birth_date  DateTime? @db.Date
+  photo       Bytes?
+  created_at  DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at  DateTime  @updatedAt @db.Timestamptz(6)
+
+  employments     employment[]
+  enrollments     employee_device_enrollment[]
+  fingerprints    employee_fingerprint[]
+  attendance_days attendance_day[]
+  attendance_logs attendance_logs[] // lado nullable de la resolución
+
+  @@index([last_name, first_name])
+}
+
+/// Vínculo persona ↔ empresa, con fechas. N por persona (multi-empresa
+/// excepcional pero posible — sin constraint de exclusividad).
+model employment {
+  id                Int               @id @default(autoincrement())
+  employee_id       Int
+  employee          employee          @relation(fields: [employee_id], references: [id], onDelete: Restrict)
+  company_id        Int
+  company           client_company    @relation(fields: [company_id], references: [id], onDelete: Restrict)
+  site_id           Int?
+  site              site?             @relation(fields: [site_id], references: [id], onDelete: SetNull)
+  employee_group_id Int?
+  employee_group    employee_group?   @relation(fields: [employee_group_id], references: [id], onDelete: SetNull)
+  position_id       Int?
+  position          position?         @relation(fields: [position_id], references: [id], onDelete: SetNull)
+  department_id     Int?
+  department        department?       @relation(fields: [department_id], references: [id], onDelete: SetNull)
+  payroll_ref       String? // "Empleado Nómina" de Adempiere
+  start_date        DateTime          @db.Date
+  end_date          DateTime?         @db.Date
+  status            employment_status @default(active)
+  created_at        DateTime          @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime          @updatedAt @db.Timestamptz(6)
+
+  attendance_days attendance_day[]
+
+  @@index([employee_id])
+  @@index([company_id, status])
+  @@index([employee_group_id])
+}
+
+model department {
+  id          Int           @id @default(autoincrement())
+  code        String?
+  name        String
+  description String?
+  status      record_status @default(active)
+  created_at  DateTime      @default(now()) @db.Timestamptz(6)
+  updated_at  DateTime      @updatedAt @db.Timestamptz(6)
+
+  positions   position[]
+  employments employment[]
+}
+
+model position {
+  id            Int           @id @default(autoincrement())
+  code          String?
+  name          String
+  description   String?
+  department_id Int?
+  department    department?    @relation(fields: [department_id], references: [id], onDelete: SetNull)
+  status        record_status @default(active)
+  created_at    DateTime      @default(now()) @db.Timestamptz(6)
+  updated_at    DateTime      @updatedAt @db.Timestamptz(6)
+
+  employments employment[]
+
+  @@index([department_id])
+}
+
+/// Grupo de empleados con horario común. El shift cuelga de acá (ALCO: el
+/// horario se define por grupo).
+model employee_group {
+  id         Int            @id @default(autoincrement())
+  company_id Int
+  company    client_company @relation(fields: [company_id], references: [id], onDelete: Cascade)
+  name       String
+  code       String?
+  status     record_status  @default(active)
+
+  // umbrales de asistencia. null → hereda de client_company
+  late_tolerance_min        Int?
+  early_leave_tolerance_min Int?
+  absence_rule              absence_rule?
+  absence_min_hours         Int?
+
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @updatedAt @db.Timestamptz(6)
+
+  shifts      shift[]
+  employments employment[]
+
+  @@index([company_id])
+}
+
+model shift {
+  id                Int            @id @default(autoincrement())
+  employee_group_id Int
+  employee_group    employee_group @relation(fields: [employee_group_id], references: [id], onDelete: Cascade)
+  code              String?
+  name              String
+  start_time        String // "HH:MM" 24h, hora local de sede
+  end_time          String
+  break_start       String?
+  break_end         String?
+  hours             Decimal?       @db.Decimal(4, 2)
+  variable_in_out   Boolean        @default(false)
+  workdays          Int[] // [1..7] = Lun..Dom
+  crosses_midnight  Boolean        @default(false)
+  effective_from    DateTime       @db.Date
+  effective_to      DateTime?      @db.Date
+  created_at        DateTime       @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime       @updatedAt @db.Timestamptz(6)
+
+  attendance_days attendance_day[]
+
+  @@index([employee_group_id, effective_from])
+}
+
+/// Vínculo empleado ↔ slot de un equipo. Unique parcial (activo) en la migración.
+model employee_device_enrollment {
+  id             Int               @id @default(autoincrement())
+  employee_id    Int
+  employee       employee          @relation(fields: [employee_id], references: [id], onDelete: Cascade)
+  dev_id         String
+  device         devices           @relation(fields: [dev_id], references: [dev_id], onDelete: Cascade)
+  device_user_id String // "1","2"… — coincide con users.user_id del protocolo (ref blanda)
+  status         enrollment_status @default(active)
+  enrolled_at    DateTime          @default(now()) @db.Timestamptz(6)
+  ended_at       DateTime?         @db.Timestamptz(6)
+  updated_at     DateTime          @updatedAt @db.Timestamptz(6)
+
+  @@index([employee_id])
+  @@index([dev_id, device_user_id])
+}
+
+/// Copia canónica de la plantilla biométrica por empleado (≠ enroll_data, que es
+/// por dispositivo). Base para la migración de huellas entre equipos.
+model employee_fingerprint {
+  id            Int      @id @default(autoincrement())
+  employee_id   Int
+  employee      employee @relation(fields: [employee_id], references: [id], onDelete: Cascade)
+  finger_index  Int // backup_number: 0–9 dedos, 10 password, 11 tarjeta, 12 rostro
+  template      Bytes
+  source_dev_id String?
+  source_device devices? @relation(fields: [source_dev_id], references: [dev_id], onDelete: SetNull)
+  captured_at   DateTime @default(now()) @db.Timestamptz(6)
+  updated_at    DateTime @updatedAt @db.Timestamptz(6)
+
+  @@unique([employee_id, finger_index])
+  @@index([employee_id])
+}
+
+/// Día procesado por el motor de asistencia (Hito 4).
+model attendance_day {
+  id               Int                @id @default(autoincrement())
+  employee_id      Int
+  employee         employee           @relation(fields: [employee_id], references: [id], onDelete: Cascade)
+  employment_id    Int?
+  employment       employment?        @relation(fields: [employment_id], references: [id], onDelete: SetNull)
+  date             DateTime           @db.Date
+  shift_id         Int?
+  shift            shift?             @relation(fields: [shift_id], references: [id], onDelete: SetNull)
+  first_in         DateTime?          @db.Timestamptz(6)
+  last_out         DateTime?          @db.Timestamptz(6)
+  worked_minutes   Int?
+  overtime_minutes Int? // referencia, sin recargo legal
+  status           attendance_status?
+  computed_at      DateTime?          @db.Timestamptz(6)
+  created_at       DateTime           @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime           @updatedAt @db.Timestamptz(6)
+
+  corrections attendance_correction[]
+
+  @@unique([employee_id, date])
+  @@index([date])
+}
+
+/// Corrección manual auditada. Apunta a un attendance_day O a un attendance_log
+/// crudo (CHECK en la migración: exactamente uno).
+model attendance_correction {
+  id                Int             @id @default(autoincrement())
+  attendance_day_id Int?
+  attendance_day    attendance_day? @relation(fields: [attendance_day_id], references: [id], onDelete: Cascade)
+  attendance_log_id Int? // ref blanda a attendance_logs.id (sin FK, tabla de protocolo)
+  field             String
+  old_value         String?
+  new_value         String?
+  reason            String?
+  actor_app_user_id Int
+  actor             app_user        @relation(fields: [actor_app_user_id], references: [id], onDelete: Restrict)
+  created_at        DateTime        @default(now()) @db.Timestamptz(6)
+
+  @@index([attendance_day_id])
+}
+
+/// Usuario interno de Grupo ALCO. Fase 1: todos 'admin', sin matriz de permisos.
+model app_user {
+  id            Int           @id @default(autoincrement())
+  email         String        @unique
+  name          String
+  password_hash String
+  role          app_user_role @default(admin)
+  status        record_status @default(active)
+  last_login_at DateTime?     @db.Timestamptz(6)
+  created_at    DateTime      @default(now()) @db.Timestamptz(6)
+  updated_at    DateTime      @updatedAt @db.Timestamptz(6)
+
+  sessions    app_session[]
+  audit_logs  audit_log[]
+  corrections attendance_correction[]
+  export_runs export_run[]
+}
+
+/// Sesión de login. Token opaco en cookie httpOnly; la fila es la fuente de verdad.
+model app_session {
+  id          Int      @id @default(autoincrement())
+  token       String   @unique
+  app_user_id Int
+  user        app_user @relation(fields: [app_user_id], references: [id], onDelete: Cascade)
+  user_agent  String?
+  expires_at  DateTime @db.Timestamptz(6)
+  created_at  DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([app_user_id])
+}
+
+/// Auditoría de acciones sensibles — quién hizo qué, aunque no haya matriz de permisos.
+model audit_log {
+  id                Int       @id @default(autoincrement())
+  actor_app_user_id Int?
+  actor             app_user? @relation(fields: [actor_app_user_id], references: [id], onDelete: SetNull)
+  action            String // "company.delete", "attendance.correct", "employee.transfer", "export.run", …
+  entity_type       String
+  entity_id         String?
+  before_json       Json?
+  after_json        Json?
+  created_at        DateTime  @default(now()) @db.Timestamptz(6)
+
+  @@index([entity_type, entity_id])
+  @@index([created_at(sort: Desc)])
+}
+
+/// Corrida de exportación a nómina — auditabilidad del insumo.
+model export_run {
+  id               Int             @id @default(autoincrement())
+  period_start     DateTime        @db.Date
+  period_end       DateTime        @db.Date
+  scope            export_scope
+  scope_company_id Int?
+  company          client_company? @relation(fields: [scope_company_id], references: [id], onDelete: SetNull)
+  generated_by     Int?
+  generator        app_user?       @relation(fields: [generated_by], references: [id], onDelete: SetNull)
+  generated_at     DateTime        @default(now()) @db.Timestamptz(6)
+  file_ref         String?
+  row_count        Int?
+
+  @@index([period_start, period_end])
 }

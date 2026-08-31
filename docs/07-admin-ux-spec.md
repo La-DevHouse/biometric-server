@@ -391,6 +391,27 @@ igualmente registrada en `audit_log` con el usuario que la ejecutó.
 El campo `app_user.role` existe como gancho para diferenciar en el futuro (Fase 2,
 cuando entre el sistema de nómina completo).
 
+**Implementado (2026-08-31):** auth por email+contraseña. Sesión = token opaco en
+cookie `httpOnly` cuya fila en `app_session` es la fuente de verdad (`bcryptjs`
+para el hash, sin `AUTH_SECRET`). `lib/auth.ts` expone `requireUser()` /
+`getSessionUser()`; se llama en `app/admin/layout.tsx` (cubre todas las páginas),
+en cada server action de `app/admin/actions.ts`, y en `/api/operations/*` (401).
+`app/route.ts` (dispositivos) queda **sin auth**. Alta de usuarios:
+`npm run create-user <email> "<nombre>" <password>` (sin UI de signup en Fase 1;
+la pantalla "Usuarios de la plataforma" viene con el CRUD de Hito 3).
+
+**Recuperación de contraseña — Fase 1:**
+
+- **Nivel 1 (ya):** `npm run create-user` es idempotente → resetea la contraseña
+  de un usuario existente. Vía SSH: `docker exec -it <contenedor-app> npm run create-user …`.
+  Es también el disaster-recovery si los 4 se quedan afuera a la vez.
+- **Nivel 2 (con Hito 3):** en "Usuarios de la plataforma", botón "Resetear
+  contraseña" (setea una temporal, sin email, sin cambio de schema) + un
+  "cambiar mi contraseña" para el usuario logueado.
+- **Nivel 3 (self-service por email con token) — DIFERIDO.** El proyecto no
+  envía email; sumarlo (SMTP + tabla `password_reset_token` + dominio remitente)
+  es desproporcionado para 4 usuarios. Solo si ALCO lo pide explícitamente.
+
 ---
 
 ## 5. Flujos transversales
