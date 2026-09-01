@@ -15,6 +15,14 @@ export { hashPassword, verifyPassword } from "@/lib/password";
 const COOKIE = "session";
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 días
 
+// La cookie de sesión va con `Secure` en producción → el navegador solo la
+// guarda/envía sobre HTTPS. El server de test se sirve por HTTP plano (el
+// dominio sslip.io no puede tener cert de Let's Encrypt), así que ahí hace
+// falta bajar el flag con COOKIE_INSECURE=1. NUNCA usar esto en Ashburn:
+// deja la cookie de sesión interceptable en texto claro.
+const SECURE_COOKIE =
+  process.env.NODE_ENV === "production" && process.env.COOKIE_INSECURE !== "1";
+
 export interface SessionUser {
   id: number;
   email: string;
@@ -38,7 +46,7 @@ export async function createSession(userId: number): Promise<void> {
 
   (await cookies()).set(COOKIE, token, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
+    secure: SECURE_COOKIE,
     sameSite: "lax",
     path: "/",
     expires: expiresAt,
