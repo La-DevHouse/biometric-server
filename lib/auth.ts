@@ -45,6 +45,11 @@ export async function createSession(userId: number): Promise<void> {
   });
 }
 
+/** Token de la sesión actual (para conservarla al invalidar las demás). */
+export async function currentSessionToken(): Promise<string | null> {
+  return (await cookies()).get(COOKIE)?.value ?? null;
+}
+
 export async function destroySession(): Promise<void> {
   const jar = await cookies();
   const token = jar.get(COOKIE)?.value;

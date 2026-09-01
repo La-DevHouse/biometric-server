@@ -11,15 +11,33 @@ import { logoutAction } from "@/app/login/actions";
 const NAV_ITEMS = [
   { href: "/admin", label: "Inicio" },
   { href: "/admin/dispositivos", label: "Dispositivos" },
-  { href: "/admin/usuarios", label: "Usuarios" },
+  { href: "/admin/usuarios", label: "Usuarios de equipo" },
   { href: "/admin/asistencia", label: "Asistencia" },
+] as const;
+
+const ADMIN_ITEMS = [
+  { href: "/admin/empresas", label: "Empresas" },
+  { href: "/admin/empleados", label: "Empleados" },
+  { href: "/admin/enrolamiento", label: "Enrolamiento" },
+  { href: "/admin/categorias", label: "Categorías" },
+  { href: "/admin/grupos", label: "Grupos y turnos" },
+  { href: "/admin/cuentas", label: "Cuentas" },
 ] as const;
 
 const TITLES: Array<{ prefix: string; title: string }> = [
   { prefix: "/admin/dispositivos/", title: "Detalle de dispositivo" },
   { prefix: "/admin/dispositivos", title: "Dispositivos" },
-  { prefix: "/admin/usuarios", title: "Usuarios" },
+  { prefix: "/admin/usuarios", title: "Usuarios de equipo" },
   { prefix: "/admin/asistencia", title: "Asistencia" },
+  { prefix: "/admin/empresas/", title: "Detalle de empresa" },
+  { prefix: "/admin/empresas", title: "Empresas" },
+  { prefix: "/admin/empleados/", title: "Detalle de empleado" },
+  { prefix: "/admin/empleados", title: "Empleados" },
+  { prefix: "/admin/enrolamiento", title: "Enrolamiento" },
+  { prefix: "/admin/categorias", title: "Departamentos y Puestos" },
+  { prefix: "/admin/grupos/", title: "Detalle de grupo" },
+  { prefix: "/admin/grupos", title: "Grupos y turnos" },
+  { prefix: "/admin/cuentas", title: "Cuentas de plataforma" },
   { prefix: "/admin/diagnostico", title: "Diagnóstico / Avanzado" },
   { prefix: "/admin", title: "Inicio" },
 ];
@@ -59,6 +77,24 @@ export function AdminShell({
 
         <nav className="flex flex-col p-2 gap-0.5 flex-1">
           {NAV_ITEMS.map((item) => (
+            <Link
+              key={item.href}
+              href={item.href}
+              className={cx(
+                "block px-2.5 py-2.5 text-sm no-underline",
+                isNavActive(pathname, item.href)
+                  ? "bg-accent text-bg font-medium"
+                  : "text-text hover:text-accent"
+              )}
+            >
+              {item.label}
+            </Link>
+          ))}
+
+          <div className="mt-3.5 px-2.5 text-[10px] tracking-widest uppercase text-neutral-600">
+            Administración
+          </div>
+          {ADMIN_ITEMS.map((item) => (
             <Link
               key={item.href}
               href={item.href}
