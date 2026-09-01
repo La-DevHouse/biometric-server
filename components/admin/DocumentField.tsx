@@ -42,7 +42,7 @@ export function DocumentField({
           name={prefixName}
           required={required}
           defaultValue={defaultPrefix}
-          className={`${INPUT} w-16 flex-none`}
+          className={`${INPUT} w-16! flex-none`}
         >
           <option value="">—</option>
           {prefixes.map((p) => (
