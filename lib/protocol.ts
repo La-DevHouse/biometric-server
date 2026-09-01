@@ -448,41 +448,11 @@ function asPrintableText(buf: Buffer): string | null {
   return text;
 }
 
-/**
- * Convert Date to device time format: "YYYYMMDDhhmmss"
- */
-export function toDeviceTime(date: Date = new Date()): string {
-  const yyyy = date.getFullYear();
-  const MM = String(date.getMonth() + 1).padStart(2, "0");
-  const dd = String(date.getDate()).padStart(2, "0");
-  const hh = String(date.getHours()).padStart(2, "0");
-  const mm = String(date.getMinutes()).padStart(2, "0");
-  const ss = String(date.getSeconds()).padStart(2, "0");
-
-  return `${yyyy}${MM}${dd}${hh}${mm}${ss}`;
-}
-
-/**
- * Parse device time format "YYYYMMDDhhmmss" to Date.
- * Returns null if format is invalid.
- */
-export function parseDeviceTime(timeStr: string): Date | null {
-  if (!/^\d{14}$/.test(timeStr)) {
-    return null;
-  }
-
-  const yyyy = parseInt(timeStr.substring(0, 4), 10);
-  const MM = parseInt(timeStr.substring(4, 6), 10);
-  const dd = parseInt(timeStr.substring(6, 8), 10);
-  const hh = parseInt(timeStr.substring(8, 10), 10);
-  const mm = parseInt(timeStr.substring(10, 12), 10);
-  const ss = parseInt(timeStr.substring(12, 14), 10);
-
-  const date = new Date(yyyy, MM - 1, dd, hh, mm, ss);
-
-  if (isNaN(date.getTime())) {
-    return null;
-  }
-
-  return date;
-}
+// El formato de hora del equipo ("YYYYMMDDhhmmss") es hora de PARED de la zona
+// de la sede — no la del servidor (que corre en UTC). La conversión vive en
+// lib/time.ts; acá solo se re-exporta con nombres estables.
+export {
+  formatDeviceTime as toDeviceTime,
+  parseDeviceTime,
+  DEFAULT_TZ,
+} from "@/lib/time";

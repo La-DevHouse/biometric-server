@@ -1,4 +1,5 @@
 import { allAsync, initDb } from "@/lib/db";
+import { requireUser } from "@/lib/auth";
 import { isDeviceOnline } from "@/lib/deviceStatus";
 import { formatRelativeTime } from "@/lib/formatRelativeTime";
 import { Table, Th, Td, Tr } from "@/components/ui/Table";
@@ -31,6 +32,7 @@ async function getData() {
 }
 
 export default async function DispositivosPage() {
+  await requireUser();
   const devices = await getData();
 
   if (devices.length === 0) {

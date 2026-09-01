@@ -3,6 +3,7 @@ import {
   parseBody,
   buildResponse,
   toDeviceTime,
+  DEFAULT_TZ,
   decodeUserIdList,
   decodeLogData,
   annotateBinaryRefs,
@@ -103,8 +104,14 @@ export async function handleReceiveCmd(
     // A SET_TIME queued without an explicit time syncs to the moment of
     // delivery. Stamping it at queue time leaves the device seconds behind,
     // because it only picks the command up on its next poll (~10s).
+    // La hora se manda en hora de PARED de la zona de la sede del equipo
+    // (el servidor corre en UTC), no en la del proceso.
     if (command.cmd_code === "SET_TIME" && !cmdParams.time) {
-      cmdParams.time = toDeviceTime();
+      const tzRow = await getAsync<{ timezone: string | null }>(
+        `SELECT s.timezone FROM devices d LEFT JOIN site s ON s.id = d.site_id WHERE d.dev_id = ?`,
+        [devId]
+      );
+      cmdParams.time = toDeviceTime(new Date(), tzRow?.timezone || DEFAULT_TZ);
     }
     const resp = buildResponse({
       responseCode: "OK",

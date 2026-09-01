@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
-import { getAsync, initDb } from "@/lib/db";
+import { requireUser } from "@/lib/auth";
+import { getAsync, initDb, prisma } from "@/lib/db";
 import { isDeviceOnline } from "@/lib/deviceStatus";
 import { formatRelativeTime } from "@/lib/formatRelativeTime";
 import { Card, CardMeta } from "@/components/ui/Card";
@@ -8,6 +9,7 @@ import { Tag } from "@/components/ui/Tag";
 import { LinkBtn } from "@/components/ui/Btn";
 import { OpButton } from "@/components/admin/OpButton";
 import { RenameDeviceDialog } from "@/components/admin/RenameDeviceDialog";
+import { DeviceAssignDialog } from "@/components/admin/DeviceAssignDialog";
 import { ClearLogsDialog } from "@/components/admin/ClearLogsDialog";
 import { ClearEnrollDialog } from "@/components/admin/ClearEnrollDialog";
 import { syncClockAction, refreshStatusAction } from "@/app/admin/actions";
@@ -25,12 +27,16 @@ interface DeviceDetail {
   stat_fp_count: number | null;
   stat_log_count: number | null;
   stat_updated_at: number | null;
+  company_id: number | null;
+  site_id: number | null;
+  device_admin_note: string | null;
 }
 
 async function getData(devId: string) {
   await initDb();
   const device = await getAsync<DeviceDetail>(
-    `SELECT dev_id, fk_name, firmware, last_seen_at, stat_fp_count, stat_log_count, stat_updated_at
+    `SELECT dev_id, fk_name, firmware, last_seen_at, stat_fp_count, stat_log_count, stat_updated_at,
+            company_id, site_id, device_admin_note
        FROM devices WHERE dev_id = ?`,
     [devId]
   );
@@ -40,7 +46,20 @@ async function getData(devId: string) {
     devId,
   ]);
 
-  return { device, userCount: userCount?.n ?? 0 };
+  const [companies, sites] = await Promise.all([
+    prisma.client_company.findMany({
+      where: { status: "active" },
+      select: { id: true, name: true },
+      orderBy: { name: "asc" },
+    }),
+    prisma.site.findMany({
+      where: { status: "active" },
+      select: { id: true, name: true, company_id: true },
+      orderBy: { name: "asc" },
+    }),
+  ]);
+
+  return { device, userCount: userCount?.n ?? 0, companies, sites };
 }
 
 export default async function DeviceDetailPage({
@@ -48,12 +67,15 @@ export default async function DeviceDetailPage({
 }: {
   params: Promise<{ devId: string }>;
 }) {
+  await requireUser();
   const { devId } = await params;
   const data = await getData(devId);
   if (!data) notFound();
 
-  const { device, userCount } = data;
+  const { device, userCount, companies, sites } = data;
   const online = isDeviceOnline(device.last_seen_at);
+  const companyName = companies.find((c) => c.id === device.company_id)?.name ?? null;
+  const siteName = sites.find((s) => s.id === device.site_id)?.name ?? null;
 
   return (
     <div className="flex flex-col gap-6 max-w-[1100px]">
@@ -72,6 +94,43 @@ export default async function DeviceDetailPage({
             Sincronizar hora ahora
           </OpButton>
         </div>
+      </div>
+
+      <div className="flex flex-col gap-2 border border-divider p-4">
+        <div className="flex items-center justify-between gap-3">
+          <h4 className="font-heading text-lg m-0">Asignación</h4>
+          <DeviceAssignDialog
+            devId={device.dev_id}
+            companies={companies}
+            sites={sites}
+            current={{
+              company_id: device.company_id,
+              site_id: device.site_id,
+              note: device.device_admin_note,
+            }}
+          />
+        </div>
+        <div className="text-sm text-text/70 flex flex-col gap-1">
+          <div>
+            <span className="text-text/50">Empresa: </span>
+            {companyName ?? <span className="text-text/40">sin asignar</span>}
+          </div>
+          <div>
+            <span className="text-text/50">Sede: </span>
+            {siteName ?? <span className="text-text/40">—</span>}
+          </div>
+          {device.device_admin_note && (
+            <div>
+              <span className="text-text/50">Nota: </span>
+              {device.device_admin_note}
+            </div>
+          )}
+        </div>
+        {!companyName && (
+          <p className="text-xs text-text/50 m-0">
+            Sin empresa, al enrolar en este equipo la lista de empleados no se puede acotar.
+          </p>
+        )}
       </div>
 
       {!online && (

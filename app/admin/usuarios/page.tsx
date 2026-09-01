@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import { requireUser } from "@/lib/auth";
 import { allAsync, initDb } from "@/lib/db";
 import { DeviceSelect } from "@/components/ui/DeviceSelect";
 import { Table, Th, Td, Tr } from "@/components/ui/Table";
@@ -59,6 +60,7 @@ export default async function UsuariosPage({
 }: {
   searchParams: Promise<{ dev?: string }>;
 }) {
+  await requireUser();
   const { dev } = await searchParams;
   const { devices, effectiveDevId, users } = await getData(dev);
 

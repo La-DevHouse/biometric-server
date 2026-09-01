@@ -79,7 +79,7 @@ export default async function EnrolamientoPage({
   for (const e of enrollments) if (e.status === "active") activeBySlot.set(e.device_user_id, e);
 
   // Candidatos: empleados con empleo activo en la empresa del equipo (+ padre e hijas).
-  let companyScopeNote: string | null = null;
+  let companyScopeNote = false;
   let candidates: { id: number; label: string }[];
   if (device?.company_id) {
     const company = await prisma.client_company.findUnique({
@@ -91,8 +91,7 @@ export default async function EnrolamientoPage({
       : [device.company_id];
     candidates = await loadCandidates(companyIds);
   } else {
-    companyScopeNote =
-      "Este equipo no está asignado a ninguna empresa. Asignalo en su ficha para acotar la lista de empleados.";
+    companyScopeNote = true;
     candidates = await loadCandidates(null);
   }
 
@@ -117,7 +116,14 @@ export default async function EnrolamientoPage({
 
       {companyScopeNote && (
         <p className="m-0 border border-divider bg-surface p-2.5 text-xs text-text/70">
-          {companyScopeNote}
+          Este equipo no está asignado a ninguna empresa.{" "}
+          <Link
+            href={`/admin/dispositivos/${effectiveDevId}`}
+            className="text-accent no-underline hover:underline"
+          >
+            Asignalo en su ficha
+          </Link>{" "}
+          para acotar la lista de empleados al enrolar.
         </p>
       )}
 

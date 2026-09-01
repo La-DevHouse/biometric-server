@@ -6,6 +6,7 @@ import { Btn } from "@/components/ui/Btn";
 import { useToast } from "./Toaster";
 import { createSiteAction, updateSiteAction } from "@/app/admin/empresas/actions";
 import { ADMIN_ACTION_INITIAL } from "@/lib/adminActionState";
+import { COMMON_TIMEZONES, DEFAULT_TZ } from "@/lib/time";
 
 const INPUT = "min-h-9 px-2.5 text-sm bg-surface border border-divider rounded-none w-full";
 const LABEL = "flex flex-col gap-1 text-xs text-text/70";
@@ -14,6 +15,7 @@ export interface SiteFormValues {
   id: number;
   name: string;
   code: string | null;
+  timezone: string;
 }
 
 export function SiteFormDialog({
@@ -59,6 +61,19 @@ export function SiteFormDialog({
           <label className={LABEL}>
             Código <span className="text-text/40">(opcional — identificador corto de ALCO, único por empresa)</span>
             <input name="code" defaultValue={site?.code ?? ""} className={INPUT} />
+          </label>
+          <label className={LABEL}>
+            Zona horaria <span className="text-text/40">(hora local de la sede — marcajes y hora del equipo)</span>
+            <select name="timezone" defaultValue={site?.timezone ?? DEFAULT_TZ} className={INPUT}>
+              {site?.timezone && !(COMMON_TIMEZONES as readonly string[]).includes(site.timezone) && (
+                <option value={site.timezone}>{site.timezone}</option>
+              )}
+              {COMMON_TIMEZONES.map((tz) => (
+                <option key={tz} value={tz}>
+                  {tz}
+                </option>
+              ))}
+            </select>
           </label>
           <Btn type="submit" variant="primary" disabled={pending}>
             {pending ? "Guardando…" : editing ? "Guardar" : "Crear sede"}

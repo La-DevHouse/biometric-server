@@ -107,22 +107,22 @@ test("buildResponse - With binary", () => {
   assert(body.includes(binary));
 });
 
-test("toDeviceTime - Current date", () => {
+test("toDeviceTime - formats wall-clock in the given time zone", () => {
   const date = new Date("2026-07-29T14:30:45Z");
-  const result = toDeviceTime(date);
-  assert.match(result, /^\d{14}$/);
-  assert(result.startsWith("20260729"));
+  // Caracas es UTC-4 (sin DST): 14:30:45Z -> 10:30:45 hora local
+  assert.equal(toDeviceTime(date, "America/Caracas"), "20260729103045");
+  assert.equal(toDeviceTime(date, "UTC"), "20260729143045");
 });
 
-test("parseDeviceTime - Valid format", () => {
-  const result = parseDeviceTime("20260729143045");
+test("parseDeviceTime - interprets the string as wall-clock in the zone", () => {
+  const result = parseDeviceTime("20260729143045", "America/Caracas");
   assert(result !== null);
-  assert.equal(result.getFullYear(), 2026);
-  assert.equal(result.getMonth(), 6); // 0-indexed
-  assert.equal(result.getDate(), 29);
-  assert.equal(result.getHours(), 14);
-  assert.equal(result.getMinutes(), 30);
-  assert.equal(result.getSeconds(), 45);
+  // 14:30:45 en Caracas (UTC-4) == 18:30:45 UTC
+  assert.equal(result.toISOString(), "2026-07-29T18:30:45.000Z");
+  assert.equal(
+    parseDeviceTime("20260729143045", "UTC")!.toISOString(),
+    "2026-07-29T14:30:45.000Z"
+  );
 });
 
 test("parseDeviceTime - Invalid format", () => {
@@ -133,9 +133,10 @@ test("parseDeviceTime - Invalid format", () => {
 
 test("toDeviceTime and parseDeviceTime round-trip", () => {
   const originalDate = new Date("2025-12-31T23:59:59Z");
-  const timeStr = toDeviceTime(originalDate);
-  const parsedDate = parseDeviceTime(timeStr);
+  const timeStr = toDeviceTime(originalDate, "America/Caracas");
+  const parsedDate = parseDeviceTime(timeStr, "America/Caracas");
   assert(parsedDate !== null);
+  assert.equal(parsedDate.getTime(), originalDate.getTime());
   assert.equal(parsedDate.getFullYear(), originalDate.getFullYear());
   assert.equal(parsedDate.getMonth(), originalDate.getMonth());
   assert.equal(parsedDate.getDate(), originalDate.getDate());

@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import { requireUser } from "@/lib/auth";
 import { allAsync, initDb } from "@/lib/db";
 import { DeviceSelect } from "@/components/ui/DeviceSelect";
 import { DiagnosticoCommandForm } from "@/components/admin/DiagnosticoCommandForm";
@@ -86,6 +87,7 @@ export default async function DiagnosticoPage({
 }: {
   searchParams: Promise<{ dev?: string }>;
 }) {
+  await requireUser();
   const { dev } = await searchParams;
   const { devices, commands, traffic } = await getData(dev);
   const deviceOptions = devices.map((d) => ({ dev_id: d.dev_id, label: d.fk_name || d.dev_id }));

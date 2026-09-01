@@ -1,4 +1,5 @@
 import { allAsync, getAsync, initDb } from "@/lib/db";
+import { requireUser } from "@/lib/auth";
 import { listActiveOperations } from "@/lib/operations";
 import { isDeviceOnline } from "@/lib/deviceStatus";
 import { formatVerifyMode } from "@/lib/verifyMode";
@@ -76,6 +77,7 @@ async function getData() {
 }
 
 export default async function InicioPage() {
+  await requireUser();
   const { devices, totalToday, totalUsers, activeOpsCount, recentLogs } = await getData();
 
   const onlineDevices = devices.filter((d) => isDeviceOnline(d.last_seen_at));

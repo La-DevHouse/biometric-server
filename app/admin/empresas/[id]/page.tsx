@@ -141,6 +141,7 @@ export default async function EmpresaDetailPage({
               <tr>
                 <Th>Nombre</Th>
                 <Th>Código</Th>
+                <Th>Zona horaria</Th>
                 <Th>Estado</Th>
                 <Th />
               </tr>
@@ -150,6 +151,7 @@ export default async function EmpresaDetailPage({
                 <Tr key={s.id}>
                   <Td>{s.name}</Td>
                   <Td className="font-mono text-xs">{s.code ?? <span className="text-text/40">—</span>}</Td>
+                  <Td className="text-xs">{s.timezone}</Td>
                   <Td>
                     <Tag variant={s.status === "active" ? "accent" : "neutral"}>
                       {s.status === "active" ? "Activa" : "Inactiva"}
@@ -159,7 +161,7 @@ export default async function EmpresaDetailPage({
                     <span className="inline-flex items-center gap-1">
                       <SiteFormDialog
                         companyId={company.id}
-                        site={{ id: s.id, name: s.name, code: s.code }}
+                        site={{ id: s.id, name: s.name, code: s.code, timezone: s.timezone }}
                       />
                       <RecordStatusButton
                         id={s.id}

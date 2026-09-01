@@ -69,9 +69,10 @@ Ruta: **Administración → Empresas**.
 
 | # | Paso | Esperado |
 | --- | --- | --- |
-| 2.3.1 | En el detalle de una empresa → "+ Sede" → nombre `Sede Centro`, código `SC` → Crear | Aparece en la tabla de sedes |
-| 2.3.2 | "Editar" la sede → cambiar el nombre → Guardar | Se actualiza |
+| 2.3.1 | En el detalle de una empresa → "+ Sede" → nombre `Sede Centro`, código `SC`, zona horaria = `America/Caracas` → Crear | Aparece en la tabla de sedes; columna **Zona horaria** = `America/Caracas` |
+| 2.3.2 | "Editar" la sede → cambiar el nombre y la zona horaria (p. ej. `America/Bogota`) → Guardar | Se actualiza; la columna refleja la zona nueva |
 | 2.3.3 | "Desactivar" la sede → luego "Reactivar" | Cambia de estado correctamente |
+| 2.3.4 | Asignar esa sede a un dispositivo (Dispositivos → detalle → Asignación) y encolar "Sincronizar hora" | El equipo queda con la hora local de la zona de la sede (no UTC). Sin sede, usa `America/Caracas` |
 
 - [ ] 2.1 ok
 - [ ] 2.2 ok
@@ -199,7 +200,16 @@ Ruta: **Administración → Empleados**. Necesita al menos una empresa.
 Ruta: **Administración → Enrolamiento**. Vincula cada slot `(equipo, ID de usuario)`
 con una persona, para que el motor de asistencia sepa a quién pertenece cada marcaje.
 Necesita: al menos un equipo, y que ese equipo tenga usuarios sincronizados
-(pantalla **Usuarios** → "Sincronizar lista desde el equipo").
+(pantalla **Usuarios de equipo** → "Sincronizar lista desde el equipo").
+
+### 6.0 Asignar el dispositivo a una empresa
+
+| # | Paso | Esperado |
+| --- | --- | --- |
+| 6.0.1 | **Dispositivos → (equipo) → Detalle** → sección "Asignación" → "Asignar a empresa" → elegir empresa (y sede opcional) → Guardar | El detalle muestra Empresa / Sede; el aviso "sin empresa" desaparece |
+| 6.0.2 | En el diálogo, elegir empresa y luego "Sede" | Solo lista las sedes de esa empresa; sin empresa el select de sede está deshabilitado |
+| 6.0.3 | Volver a "sin asignar" (empresa = "— sin asignar —") → Guardar | Empresa y sede quedan vacías |
+| 6.0.4 | En **Enrolamiento**, con el equipo sin empresa, el aviso "Este equipo no está asignado…" | Tiene un link "Asignalo en su ficha" que lleva al detalle del equipo |
 
 ### 6.1 Vincular
 

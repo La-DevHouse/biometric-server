@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { parseBody, buildResponse, toDeviceTime } from "@/lib/protocol";
+import { parseBody, buildResponse } from "@/lib/protocol";
 import {
   runAsync,
   getAsync,

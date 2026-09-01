@@ -6,6 +6,7 @@ import { requireUser } from "@/lib/auth";
 import { writeAudit } from "@/lib/audit";
 import type { AdminActionState } from "@/lib/adminActionState";
 import { joinDoc } from "@/lib/documento";
+import { DEFAULT_TZ, isValidTimeZone } from "@/lib/time";
 
 const ABSENCE_RULES = ["no_check_in", "no_marks", "under_hours"] as const;
 type AbsenceRule = (typeof ABSENCE_RULES)[number];
@@ -184,11 +185,13 @@ export async function createSiteAction(
   const company_id = Number(str(fd, "company_id"));
   const name = str(fd, "name");
   const code = str(fd, "code") || null;
+  const tzRaw = str(fd, "timezone");
+  const timezone = isValidTimeZone(tzRaw) ? tzRaw : DEFAULT_TZ;
   if (!Number.isFinite(company_id)) return { status: "error", error: "Empresa inválida." };
   if (!name) return { status: "error", error: "El nombre de la sede es obligatorio." };
 
   try {
-    const created = await prisma.site.create({ data: { company_id, name, code } });
+    const created = await prisma.site.create({ data: { company_id, name, code, timezone } });
     await writeAudit({
       actorId: user.id,
       action: "site.create",
@@ -211,6 +214,8 @@ export async function updateSiteAction(
   const id = Number(str(fd, "id"));
   const name = str(fd, "name");
   const code = str(fd, "code") || null;
+  const tzRaw = str(fd, "timezone");
+  const timezone = isValidTimeZone(tzRaw) ? tzRaw : DEFAULT_TZ;
   if (!Number.isFinite(id)) return { status: "error", error: "ID inválido." };
   if (!name) return { status: "error", error: "El nombre de la sede es obligatorio." };
 
@@ -218,7 +223,7 @@ export async function updateSiteAction(
   if (!before) return { status: "error", error: "La sede no existe." };
 
   try {
-    const updated = await prisma.site.update({ where: { id }, data: { name, code } });
+    const updated = await prisma.site.update({ where: { id }, data: { name, code, timezone } });
     await writeAudit({
       actorId: user.id,
       action: "site.update",

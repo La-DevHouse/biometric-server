@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import { requireUser } from "@/lib/auth";
 import { allAsync, initDb } from "@/lib/db";
 import { AttendanceFilters } from "@/components/admin/AttendanceFilters";
 import { Table, Th, Td, Tr } from "@/components/ui/Table";
@@ -100,6 +101,7 @@ export default async function AsistenciaPage({
 }: {
   searchParams: Promise<{ dev?: string; user?: string; from?: string; to?: string }>;
 }) {
+  await requireUser();
   const filters = await searchParams;
   const { devices, users, logs, truncated } = await getData(filters);
 
