@@ -76,7 +76,7 @@ export function ShiftFormDialog({
               <input name="name" required defaultValue={shift?.name ?? ""} className={INPUT} autoFocus />
             </label>
             <label className={LABEL}>
-              Código
+              Código <span className="text-text/40">(opcional — identificador corto de ALCO)</span>
               <input name="code" defaultValue={shift?.code ?? ""} className={INPUT} placeholder="8/12-2/6" />
             </label>
             <label className={LABEL}>

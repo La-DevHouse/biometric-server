@@ -4,6 +4,8 @@ import { useActionState, useEffect, useState } from "react";
 import { Dialog } from "@/components/ui/Dialog";
 import { Btn } from "@/components/ui/Btn";
 import { useToast } from "./Toaster";
+import { DocumentField } from "./DocumentField";
+import { splitDoc } from "@/lib/documento";
 import { createCompanyAction, updateCompanyAction } from "@/app/admin/empresas/actions";
 import { ADMIN_ACTION_INITIAL } from "@/lib/adminActionState";
 
@@ -82,16 +84,16 @@ export function CompanyFormDialog({
             Es un grupo (agrupa empresas hijas)
           </label>
 
-          <label className={LABEL}>
-            RIF {isGroup ? "(opcional para grupos)" : "*"}
-            <input
-              name="tax_id"
-              required={!isGroup}
-              defaultValue={company?.tax_id ?? ""}
-              placeholder="J-123456789"
-              className={INPUT}
-            />
-          </label>
+          <DocumentField
+            kind="rif"
+            label="RIF"
+            hint={isGroup ? "(opcional para grupos)" : undefined}
+            required={!isGroup}
+            prefixName="rif_prefix"
+            numberName="rif_number"
+            defaultPrefix={company ? splitDoc(company.tax_id).prefix : "J"}
+            defaultNumber={splitDoc(company?.tax_id).number}
+          />
 
           <label className={LABEL}>
             Empresa padre

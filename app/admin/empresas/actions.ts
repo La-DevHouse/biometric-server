@@ -5,6 +5,7 @@ import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { writeAudit } from "@/lib/audit";
 import type { AdminActionState } from "@/lib/adminActionState";
+import { joinDoc } from "@/lib/documento";
 
 const ABSENCE_RULES = ["no_check_in", "no_marks", "under_hours"] as const;
 type AbsenceRule = (typeof ABSENCE_RULES)[number];
@@ -32,17 +33,25 @@ function thresholdsFromForm(fd: FormData) {
   };
 }
 
-function normTaxId(raw: string): string {
-  return raw.trim().toUpperCase().replace(/\s+/g, "");
+function fieldsFromForm(fd: FormData):
+  | { fields: ReturnType<typeof buildFields> }
+  | { error: string } {
+  const rifPrefix = str(fd, "rif_prefix");
+  const rifNumber = str(fd, "rif_number");
+  let tax_id: string | null = null;
+  if (rifPrefix || rifNumber) {
+    const rif = joinDoc(rifPrefix, rifNumber, "rif");
+    if ("error" in rif) return { error: rif.error };
+    tax_id = rif.value;
+  }
+  return { fields: buildFields(fd, tax_id) };
 }
 
-function fieldsFromForm(fd: FormData) {
-  const is_group = fd.get("is_group") === "on";
-  const taxIdRaw = str(fd, "tax_id");
+function buildFields(fd: FormData, tax_id: string | null) {
   return {
     name: str(fd, "name"),
-    tax_id: taxIdRaw === "" ? null : normTaxId(taxIdRaw),
-    is_group,
+    tax_id,
+    is_group: fd.get("is_group") === "on",
     shared_employees: fd.get("shared_employees") === "on",
     address: str(fd, "address") || null,
     parent_id: str(fd, "parent_id") === "" ? null : Number(str(fd, "parent_id")),
@@ -74,7 +83,9 @@ export async function createCompanyAction(
   fd: FormData
 ): Promise<AdminActionState> {
   const user = await requireUser();
-  const f = fieldsFromForm(fd);
+  const parsed = fieldsFromForm(fd);
+  if ("error" in parsed) return { status: "error", error: parsed.error };
+  const f = parsed.fields;
 
   if (!f.name) return { status: "error", error: "El nombre es obligatorio." };
   if (!f.is_group && !f.tax_id)
@@ -109,7 +120,9 @@ export async function updateCompanyAction(
   const before = await prisma.client_company.findUnique({ where: { id } });
   if (!before) return { status: "error", error: "La empresa no existe." };
 
-  const f = fieldsFromForm(fd);
+  const parsed = fieldsFromForm(fd);
+  if ("error" in parsed) return { status: "error", error: parsed.error };
+  const f = parsed.fields;
   if (!f.name) return { status: "error", error: "El nombre es obligatorio." };
   if (!f.is_group && !f.tax_id)
     return { status: "error", error: "El RIF es obligatorio para empresas operativas (no-grupo)." };

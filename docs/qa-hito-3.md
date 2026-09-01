@@ -51,8 +51,9 @@ Ruta: **Administración → Empresas**.
 | # | Paso | Esperado |
 | --- | --- | --- |
 | 2.1.1 | "+ Nueva empresa" → marcar "Es un grupo", nombre `GRUPO PRUEBA`, sin RIF → Crear | Se crea; aparece en la lista con tag **Grupo** |
-| 2.1.2 | "+ Nueva empresa" → nombre `HIJA PRUEBA`, RIF `J-12345678`, padre = `GRUPO PRUEBA` → Crear | Se crea como hija (indentada con `↳` bajo el grupo), tag **Operativa** |
-| 2.1.3 | "+ Nueva empresa" → nombre sin RIF y **sin** marcar grupo → Crear | Error: "El RIF es obligatorio para empresas operativas…". No se crea. |
+| 2.1.2 | "+ Nueva empresa" → nombre `HIJA PRUEBA`, RIF: tipo `J` + número `12345678`, padre = `GRUPO PRUEBA` → Crear | Se crea como hija (indentada con `↳` bajo el grupo), tag **Operativa**. En el detalle el RIF se muestra `J-12345678` |
+| 2.1.3 | "+ Nueva empresa" → nombre, **sin** marcar grupo, RIF sin elegir tipo o sin número → Crear | Error del RIF (tipo/número). No se crea. |
+| 2.1.4b | RIF con número no numérico o < 8 dígitos | Error "El RIF: el número debe tener entre 8 y 10 dígitos." |
 | 2.1.4 | "+ Nueva empresa" → poner de padre a `HIJA PRUEBA` (que ya es hija) | Error: "…la jerarquía es de 2 niveles…". No se crea. |
 
 ### 2.2 Editar / estado
@@ -157,8 +158,9 @@ Ruta: **Administración → Empleados**. Necesita al menos una empresa.
 
 | # | Paso | Esperado |
 | --- | --- | --- |
-| 5.1.1 | "+ Registrar persona" → doc `V-12345678`, nombre `Juan`, apellido `Pérez` → Registrar | Aparece en la lista con tag **Pool** (no tiene empleo aún) |
-| 5.1.2 | "+ Registrar persona" con doc `12345` (sin letra) o `X-999` | Error "Documento inválido (V/E/J/G + dígitos…)" |
+| 5.1.1 | "+ Registrar persona" → Cédula: tipo `V` + número `12345678`, nombre `Juan`, apellido `Pérez`, **RIF vacío** → Registrar | Aparece con tag **Pool**. En el detalle: Documento `V-12345678`, RIF `V-12345678` (heredó de la cédula) |
+| 5.1.2 | "+ Registrar persona" sin elegir tipo de cédula, o con número `123` | Error de la cédula (tipo faltante / dígitos). No se crea. |
+| 5.1.2b | Cédula `V`+`12345678` y RIF: tipo `J` + número `123456789` | Se crea con Documento `V-12345678` y RIF `J-123456789` (RIF distinto de la cédula) |
 | 5.1.3 | "+ Registrar persona" con un doc que ya existe | Error "Ya existe una persona con el documento …" |
 | 5.1.4 | En el detalle → "Editar datos" → cambiar nombre → Guardar | Se actualiza |
 

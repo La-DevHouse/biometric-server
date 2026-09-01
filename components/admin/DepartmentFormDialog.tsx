@@ -48,7 +48,7 @@ export function DepartmentFormDialog({ department }: { department?: DepartmentVa
             <input name="name" required defaultValue={department?.name ?? ""} className={INPUT} autoFocus />
           </label>
           <label className={LABEL}>
-            Código
+            Código <span className="text-text/40">(opcional — identificador corto de ALCO para reportes)</span>
             <input name="code" defaultValue={department?.code ?? ""} className={INPUT} />
           </label>
           <label className={LABEL}>

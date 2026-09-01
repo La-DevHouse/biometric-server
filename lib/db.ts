@@ -1,13 +1,25 @@
-import { Pool, types } from "pg";
+import { Pool, types, type CustomTypesConfig } from "pg";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "@prisma/client";
 
-// int8 (bigint, OID 20) -> number. LOAD-BEARING: every `*_at` column is
-// epoch-millis bigint and every COUNT(*) comes back as bigint. Without this
-// the hot path's `Date.now() - row.x` arithmetic silently yields NaN and
-// counts arrive as strings. Epoch-millis stays < 2^53 for ~285 millennia, so
-// Number() is lossless here. See docs/08-data-model.md §1 and the plan de Fase 2.
-types.setTypeParser(20, (v) => (v === null ? null : Number(v)));
+// int8 (bigint, OID 20) -> number PARA LOS HELPERS CRUDOS. LOAD-BEARING: cada
+// columna `*_at` del protocolo es epoch-millis bigint y cada COUNT(*) vuelve
+// como bigint; sin esto la aritmética `Date.now() - row.x` del hot path da NaN
+// en silencio y los counts llegan como string. Epoch-millis < 2^53 por ~285
+// milenios, así que Number() es lossless. Ver docs/08-data-model.md §1.
+//
+// OJO: NO usar `types.setTypeParser` global — muta el registro compartido del
+// módulo `pg` y rompe al adaptador de Prisma, que necesita recibir los int8
+// como STRING para mapearlos a `BigInt` (si no: P2023 "number must be an
+// integer ... got '1788226018722.0'"). Por eso el override va como opción
+// `types` SOLO del pool de los helpers; Prisma corre sobre su propio pool con
+// los parsers por defecto de pg.
+const rawPoolTypes: CustomTypesConfig = {
+  getTypeParser: ((oid: number, format?: unknown) =>
+    oid === 20
+      ? (v: string | null) => (v === null ? null : Number(v))
+      : (types.getTypeParser as (o: number, f?: unknown) => unknown)(oid, format)) as typeof types.getTypeParser,
+};
 
 const DATABASE_URL = process.env.DATABASE_URL;
 if (!DATABASE_URL) {
@@ -29,16 +41,24 @@ const pool: Pool =
   new Pool({
     connectionString: DATABASE_URL,
     max: Number(process.env.PG_POOL_MAX ?? 10),
+    types: rawPoolTypes,
   });
 g.__biometricPool = pool;
 
 /**
- * Cliente Prisma sobre el MISMO pool que los helpers crudos. Todavía sin uso
- * (los modelos de dominio llegan en un PR posterior); el hot path del
- * dispositivo sigue con SQL crudo vía los helpers de abajo.
+ * Cliente Prisma para los modelos de dominio (CRUD del admin). Corre sobre su
+ * PROPIO pool interno con los type-parsers por defecto de `pg` — así los int8
+ * llegan como string y Prisma los mapea a `BigInt` sin romperse. No comparte el
+ * pool de los helpers crudos justamente por el override de `rawPoolTypes`.
  */
 export const prisma: PrismaClient =
-  g.__biometricPrisma ?? new PrismaClient({ adapter: new PrismaPg(pool) });
+  g.__biometricPrisma ??
+  new PrismaClient({
+    adapter: new PrismaPg({
+      connectionString: DATABASE_URL,
+      max: Number(process.env.PRISMA_POOL_MAX ?? process.env.PG_POOL_MAX ?? 10),
+    }),
+  });
 g.__biometricPrisma = prisma;
 
 /**

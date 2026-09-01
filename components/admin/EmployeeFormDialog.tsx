@@ -4,6 +4,8 @@ import { useActionState, useEffect, useState } from "react";
 import { Dialog } from "@/components/ui/Dialog";
 import { Btn } from "@/components/ui/Btn";
 import { useToast } from "./Toaster";
+import { DocumentField } from "./DocumentField";
+import { splitDoc } from "@/lib/documento";
 import { createEmployeeAction, updateEmployeeAction } from "@/app/admin/empleados/actions";
 import { ADMIN_ACTION_INITIAL } from "@/lib/adminActionState";
 
@@ -35,6 +37,9 @@ export function EmployeeFormDialog({ employee }: { employee?: EmployeeValues }) 
     } else if (state.status === "error") push("error", state.error);
   }, [state, push]);
 
+  const ced = splitDoc(employee?.national_id);
+  const rif = splitDoc(employee?.tax_id);
+
   return (
     <>
       <Btn variant={editing ? "ghost" : "primary"} onClick={() => setOpen(true)}>
@@ -43,15 +48,27 @@ export function EmployeeFormDialog({ employee }: { employee?: EmployeeValues }) 
       <Dialog open={open} onClose={() => setOpen(false)} title={editing ? "Editar persona" : "Registrar persona"}>
         <form action={formAction} className="flex flex-col gap-3">
           {editing && <input type="hidden" name="id" value={employee.id} />}
+
+          <DocumentField
+            kind="cedula"
+            label="Cédula"
+            required
+            prefixName="doc_prefix"
+            numberName="doc_number"
+            defaultPrefix={ced.prefix}
+            defaultNumber={ced.number}
+          />
+          <DocumentField
+            kind="rif"
+            label="RIF"
+            hint="(vacío = igual a la cédula)"
+            prefixName="rif_prefix"
+            numberName="rif_number"
+            defaultPrefix={rif.prefix}
+            defaultNumber={rif.number}
+          />
+
           <div className="grid grid-cols-2 gap-2">
-            <label className={LABEL}>
-              Documento * <span className="text-text/40">V/E/J/G</span>
-              <input name="national_id" required defaultValue={employee?.national_id ?? ""} className={INPUT} placeholder="V-12345678" autoFocus />
-            </label>
-            <label className={LABEL}>
-              RIF <span className="text-text/40">(vacío = igual al doc)</span>
-              <input name="tax_id" defaultValue={employee?.tax_id ?? ""} className={INPUT} />
-            </label>
             <label className={LABEL}>
               Nombre *
               <input name="first_name" required defaultValue={employee?.first_name ?? ""} className={INPUT} />

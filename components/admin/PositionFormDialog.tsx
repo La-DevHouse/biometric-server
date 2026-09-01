@@ -55,7 +55,7 @@ export function PositionFormDialog({
             <input name="name" required defaultValue={position?.name ?? ""} className={INPUT} autoFocus />
           </label>
           <label className={LABEL}>
-            Código
+            Código <span className="text-text/40">(opcional — identificador corto de ALCO para reportes)</span>
             <input name="code" defaultValue={position?.code ?? ""} className={INPUT} />
           </label>
           <label className={LABEL}>

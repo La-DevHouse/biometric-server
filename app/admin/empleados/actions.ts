@@ -6,14 +6,10 @@ import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { writeAudit } from "@/lib/audit";
 import type { AdminActionState } from "@/lib/adminActionState";
-
-const DOC_RE = /^[VEJG]-?\d{4,12}$/;
+import { joinDoc } from "@/lib/documento";
 
 function str(fd: FormData, k: string) {
   return String(fd.get(k) ?? "").trim();
-}
-function normDoc(raw: string) {
-  return raw.trim().toUpperCase().replace(/\s+/g, "");
 }
 function optId(fd: FormData, k: string): number | null {
   const v = str(fd, k);
@@ -29,15 +25,35 @@ function optDate(raw: string): Date | null {
 // Persona (employee)
 // --------------------------------------------------------------------------
 
-function personData(fd: FormData) {
-  const national_id = normDoc(str(fd, "national_id"));
-  const taxRaw = str(fd, "tax_id");
+type PersonData = {
+  national_id: string;
+  tax_id: string;
+  first_name: string;
+  last_name: string;
+  birth_date: Date | null;
+};
+
+function personData(fd: FormData): { data: PersonData } | { error: string } {
+  const ced = joinDoc(str(fd, "doc_prefix"), str(fd, "doc_number"), "cedula");
+  if ("error" in ced) return { error: ced.error };
+
+  const rifPrefix = str(fd, "rif_prefix");
+  const rifNumber = str(fd, "rif_number");
+  let tax_id = ced.value; // vacío = igual a la cédula
+  if (rifPrefix || rifNumber) {
+    const rif = joinDoc(rifPrefix, rifNumber, "rif");
+    if ("error" in rif) return { error: rif.error };
+    tax_id = rif.value;
+  }
+
   return {
-    national_id,
-    tax_id: taxRaw === "" ? national_id : normDoc(taxRaw),
-    first_name: str(fd, "first_name"),
-    last_name: str(fd, "last_name"),
-    birth_date: optDate(str(fd, "birth_date")),
+    data: {
+      national_id: ced.value,
+      tax_id,
+      first_name: str(fd, "first_name"),
+      last_name: str(fd, "last_name"),
+      birth_date: optDate(str(fd, "birth_date")),
+    },
   };
 }
 
@@ -46,9 +62,9 @@ export async function createEmployeeAction(
   fd: FormData
 ): Promise<AdminActionState> {
   const user = await requireUser();
-  const d = personData(fd);
-  if (!DOC_RE.test(d.national_id))
-    return { status: "error", error: "Documento inválido (V/E/J/G + dígitos, ej. V-12345678)." };
+  const parsed = personData(fd);
+  if ("error" in parsed) return { status: "error", error: parsed.error };
+  const d = parsed.data;
   if (!d.first_name || !d.last_name)
     return { status: "error", error: "Nombre y apellido son obligatorios." };
 
@@ -74,9 +90,9 @@ export async function updateEmployeeAction(
   const before = await prisma.employee.findUnique({ where: { id } });
   if (!before) return { status: "error", error: "La persona no existe." };
 
-  const d = personData(fd);
-  if (!DOC_RE.test(d.national_id))
-    return { status: "error", error: "Documento inválido (V/E/J/G + dígitos)." };
+  const parsed = personData(fd);
+  if ("error" in parsed) return { status: "error", error: parsed.error };
+  const d = parsed.data;
   if (!d.first_name || !d.last_name)
     return { status: "error", error: "Nombre y apellido son obligatorios." };
 

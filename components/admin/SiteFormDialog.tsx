@@ -57,7 +57,7 @@ export function SiteFormDialog({
             <input name="name" required defaultValue={site?.name ?? ""} className={INPUT} autoFocus />
           </label>
           <label className={LABEL}>
-            Código
+            Código <span className="text-text/40">(opcional — identificador corto de ALCO, único por empresa)</span>
             <input name="code" defaultValue={site?.code ?? ""} className={INPUT} />
           </label>
           <Btn type="submit" variant="primary" disabled={pending}>
