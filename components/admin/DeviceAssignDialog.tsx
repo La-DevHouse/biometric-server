@@ -8,7 +8,7 @@ import { assignDeviceAction } from "@/app/admin/dispositivos/actions";
 import { ADMIN_ACTION_INITIAL } from "@/lib/adminActionState";
 
 const INPUT = "min-h-9 px-2.5 text-sm bg-surface border border-divider rounded-none w-full";
-const LABEL = "flex flex-col gap-1 text-xs text-text/70";
+const LABEL = "flex flex-col gap-1 text-xs text-text/85";
 
 export function DeviceAssignDialog({
   devId,
@@ -43,7 +43,7 @@ export function DeviceAssignDialog({
       <Dialog open={open} onClose={() => setOpen(false)} title="Asignar dispositivo">
         <form action={formAction} className="flex flex-col gap-3">
           <input type="hidden" name="dev_id" value={devId} />
-          <p className="m-0 text-xs text-text/50">
+          <p className="m-0 text-xs text-text/70">
             La empresa del dispositivo acota la lista de empleados al enrolar y agrupa sus marcajes.
           </p>
 
@@ -82,7 +82,7 @@ export function DeviceAssignDialog({
           </label>
 
           <label className={LABEL}>
-            Nota interna <span className="text-text/40">(admin del equipo del lado de la empresa, texto libre)</span>
+            Nota interna <span className="text-text/60">(admin del equipo del lado de la empresa, texto libre)</span>
             <input name="device_admin_note" className={INPUT} defaultValue={current.note ?? ""} />
           </label>
 

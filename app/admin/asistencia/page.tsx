@@ -8,7 +8,6 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { OpButton } from "@/components/admin/OpButton";
 import { ClearLogsDialog } from "@/components/admin/ClearLogsDialog";
 import { syncLogsAction } from "@/app/admin/actions";
-import { formatVerifyMode } from "@/lib/verifyMode";
 
 // force-dynamic: la página pega a Postgres en un Server Component; con `revalidate`
 // Next intenta prerenderizarla en `next build`, lo que exige la BD accesible en
@@ -22,11 +21,11 @@ interface AttendanceRow {
   id: number;
   dev_id: string;
   user_id: string;
-  verify_mode: string | null;
   io_time: string | null;
-  has_image: boolean;
   display_name: string;
   device_name: string;
+  company_name: string | null;
+  site_name: string | null;
 }
 
 function toDayBound(dateInput: string, edge: "start" | "end"): string {
@@ -80,13 +79,16 @@ async function getData(filters: { dev?: string; user?: string; from?: string; to
   const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
 
   const logs = await allAsync<AttendanceRow>(
-    `SELECT al.id, al.dev_id, al.user_id, al.verify_mode, al.io_time,
-            (al.log_image IS NOT NULL) AS has_image,
+    `SELECT al.id, al.dev_id, al.user_id, al.io_time,
             COALESCE(u.user_name, al.user_id) AS display_name,
-            COALESCE(d.fk_name, al.dev_id) AS device_name
+            COALESCE(d.fk_name, al.dev_id) AS device_name,
+            c.name AS company_name,
+            s.name AS site_name
        FROM attendance_logs al
        LEFT JOIN devices d ON d.dev_id = al.dev_id
        LEFT JOIN users u ON u.dev_id = al.dev_id AND u.user_id = al.user_id
+       LEFT JOIN client_company c ON c.id = d.company_id
+       LEFT JOIN site s ON s.id = d.site_id
        ${where}
       ORDER BY al.io_time DESC
       LIMIT ${RESULT_LIMIT + 1}`,
@@ -123,7 +125,7 @@ export default async function AsistenciaPage({
         <div className="flex gap-2">
           {filters.dev ? (
             <>
-              <OpButton action={syncLogsAction} hidden={{ dev_id: filters.dev }}>
+              <OpButton action={syncLogsAction} hidden={{ dev_id: filters.dev }} title="Sincronizar historial completo">
                 Sincronizar historial completo
               </OpButton>
               <ClearLogsDialog devId={filters.dev} />
@@ -154,8 +156,8 @@ export default async function AsistenciaPage({
                 <Th>Fecha y hora</Th>
                 <Th>Dispositivo</Th>
                 <Th>Usuario</Th>
-                <Th>Verificación</Th>
-                <Th>Imagen</Th>
+                <Th>Empresa</Th>
+                <Th>Sede</Th>
               </tr>
             </thead>
             <tbody>
@@ -164,13 +166,13 @@ export default async function AsistenciaPage({
                   <Td className="font-mono">{formatIoTime(log.io_time)}</Td>
                   <Td>{log.device_name}</Td>
                   <Td>{log.display_name}</Td>
-                  <Td>{formatVerifyMode(log.verify_mode)}</Td>
-                  <Td>{log.has_image ? "Sí" : <span className="text-text/50">—</span>}</Td>
+                  <Td>{log.company_name ?? <span className="text-text/70">—</span>}</Td>
+                  <Td>{log.site_name ?? <span className="text-text/70">—</span>}</Td>
                 </Tr>
               ))}
             </tbody>
           </Table>
-          <p className="text-xs text-text/50">
+          <p className="text-xs text-text/70">
             {logs.length} marcación{logs.length === 1 ? "" : "es"}
             {truncated ? ` (mostrando las ${RESULT_LIMIT} más recientes)` : ""} · datos locales, al
             día — llegan solas del equipo, no hace falta sincronizar para verlas.

@@ -11,8 +11,12 @@
   --color-bg: #f2f2f3;
   --color-surface: #e9e9ea;
   --color-text: #1d1f20;
-  --color-accent: #5980a6;
-  --color-accent-2: #728fab;
+  /* Paleta alineada al logo de Grupo Alco (2026-09-08): azul primario (fondo
+     del isotipo) + naranja como acento secundario (las balanzas del logo),
+     que ya encajaba semánticamente con el uso existente de accent-2 para
+     "atención"/advertencia. */
+  --color-accent: #3b6fa8;
+  --color-accent-2: #e2932e;
   /* Precomputed rather than applied as a Tailwind opacity modifier
      (border-text/16): --color-text feeding Tailwind's color-scale
      detection would make "text" a valid color name, colliding in spirit
@@ -38,25 +42,25 @@
   --color-neutral-800: #424244;
   --color-neutral-900: #2b2b2d;
 
-  --color-accent-100: #eef6ff;
-  --color-accent-200: #d6ebff;
-  --color-accent-300: #b5d9fd;
-  --color-accent-400: #94bce3;
-  --color-accent-500: #749dc4;
-  --color-accent-600: #597ea3;
-  --color-accent-700: #416180;
-  --color-accent-800: #2c455d;
-  --color-accent-900: #1d2d3d;
+  --color-accent-100: #eaf2fa;
+  --color-accent-200: #cee2f3;
+  --color-accent-300: #a7cae8;
+  --color-accent-400: #7aacd6;
+  --color-accent-500: #548fbf;
+  --color-accent-600: #3b6fa8;
+  --color-accent-700: #2c5480;
+  --color-accent-800: #1f3c5c;
+  --color-accent-900: #14263c;
 
-  --color-accent2-100: #eef6ff;
-  --color-accent2-200: #d6ebff;
-  --color-accent2-300: #bdd8f2;
-  --color-accent2-400: #9ebbd8;
-  --color-accent2-500: #7e9cb8;
-  --color-accent2-600: #627d98;
-  --color-accent2-700: #486077;
-  --color-accent2-800: #314457;
-  --color-accent2-900: #1f2d3a;
+  --color-accent2-100: #fcf0dd;
+  --color-accent2-200: #f8ddb0;
+  --color-accent2-300: #f2c17a;
+  --color-accent2-400: #eba54a;
+  --color-accent2-500: #e2932e;
+  --color-accent2-600: #c67920;
+  --color-accent2-700: #9c5f1a;
+  --color-accent2-800: #714514;
+  --color-accent2-900: #472c0d;
 
   --font-sans: var(--font-barlow), system-ui, sans-serif;
   --font-heading: var(--font-barlow-condensed), system-ui, sans-serif;

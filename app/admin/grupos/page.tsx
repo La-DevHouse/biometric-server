@@ -28,7 +28,7 @@ export default async function GruposPage() {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between">
-        <p className="m-0 text-sm text-text/60">
+        <p className="m-0 text-sm text-text/75">
           {groups.length} {groups.length === 1 ? "grupo" : "grupos"}
         </p>
         <GroupFormDialog companies={companies} />
@@ -57,7 +57,7 @@ export default async function GruposPage() {
               <Tr key={g.id}>
                 <Td className="font-medium">{g.name}</Td>
                 <Td>{g.company.name}</Td>
-                <Td className="font-mono text-xs">{g.code ?? <span className="text-text/40">—</span>}</Td>
+                <Td className="font-mono text-xs">{g.code ?? <span className="text-text/60">—</span>}</Td>
                 <Td>{g._count.shifts}</Td>
                 <Td>{g._count.employments}</Td>
                 <Td>

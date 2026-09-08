@@ -8,7 +8,7 @@ import { createPositionAction, updatePositionAction } from "@/app/admin/categori
 import { ADMIN_ACTION_INITIAL } from "@/lib/adminActionState";
 
 const INPUT = "min-h-9 px-2.5 text-sm bg-surface border border-divider rounded-none w-full";
-const LABEL = "flex flex-col gap-1 text-xs text-text/70";
+const LABEL = "flex flex-col gap-1 text-xs text-text/85";
 
 export interface PositionValues {
   id: number;
@@ -55,7 +55,7 @@ export function PositionFormDialog({
             <input name="name" required defaultValue={position?.name ?? ""} className={INPUT} autoFocus />
           </label>
           <label className={LABEL}>
-            Código <span className="text-text/40">(opcional — identificador corto de ALCO para reportes)</span>
+            Código <span className="text-text/60">(opcional — identificador corto de ALCO para reportes)</span>
             <input name="code" defaultValue={position?.code ?? ""} className={INPUT} />
           </label>
           <label className={LABEL}>

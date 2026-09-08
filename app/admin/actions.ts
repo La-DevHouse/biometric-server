@@ -16,10 +16,13 @@ import {
   startClearEnrollData,
   startViewBiometrics,
   startRefreshStatus,
+  startCaptureFingerprint,
+  startPushFingerprint,
+  startAddEmployeeToDevice,
   cancelOperation,
   type Privilege,
 } from "@/lib/operations";
-import type { OpActionState } from "@/lib/opActionState";
+import type { OpActionState, MultiOpActionState } from "@/lib/opActionState";
 import { requireUser } from "@/lib/auth";
 
 export type QueueCommandState =
@@ -68,8 +71,9 @@ export async function queueCommandAction(
 // Operaciones de alto nivel — wrappers delgados sobre lib/operations. Cada
 // uno valida el FormData, llama al start* correspondiente y deja que el
 // `warning` (si lo hay) llegue hasta el diálogo/botón que lo invocó. El
-// polling de OpTracker (app/api/operations) es lo que refleja el progreso
-// real de 10-40s; estas actions solo encolan y devuelven de inmediato.
+// progreso real de 10-40s lo refleja el propio diálogo, sondeando
+// app/api/operations/[id] vía components/admin/useOperation — estas actions
+// solo encolan y devuelven de inmediato.
 // ---------------------------------------------------------------------------
 
 function opError(err: unknown): OpActionState {
@@ -245,6 +249,82 @@ export async function clearEnrollAction(_prev: OpActionState, formData: FormData
   } catch (err) {
     return opError(err);
   }
+}
+
+export async function captureFingerprintAction(
+  _prev: OpActionState,
+  formData: FormData
+): Promise<OpActionState> {
+  await requireUser();
+  const employeeId = Number(formData.get("employee_id"));
+  const devId = String(formData.get("dev_id") || "");
+  const deviceUserId = String(formData.get("device_user_id") || "");
+  try {
+    const { id, warning } = await startCaptureFingerprint(employeeId, devId, deviceUserId);
+    await afterStart();
+    revalidatePath("/admin/empleados", "layout");
+    return { status: "ok", id, warning };
+  } catch (err) {
+    return opError(err);
+  }
+}
+
+export async function pushFingerprintAction(
+  _prev: OpActionState,
+  formData: FormData
+): Promise<OpActionState> {
+  await requireUser();
+  const employeeId = Number(formData.get("employee_id"));
+  const fingerIndex = Number(formData.get("finger_index"));
+  const targetDevId = String(formData.get("target_dev_id") || "");
+  try {
+    const { id, warning } = await startPushFingerprint(employeeId, fingerIndex, targetDevId);
+    await afterStart();
+    revalidatePath("/admin/empleados", "layout");
+    return { status: "ok", id, warning };
+  } catch (err) {
+    return opError(err);
+  }
+}
+
+/**
+ * Dispara una operación ADD_EMPLOYEE_TO_DEVICE por cada equipo elegido —
+ * nunca se propaga sola: el usuario elige uno o varios equipos a mano en
+ * cada envío. Un fallo en un equipo (ej. ya vinculado ahí) no cancela los
+ * demás; se acumula como advertencia.
+ */
+export async function addEmployeeToDeviceAction(
+  _prev: MultiOpActionState,
+  formData: FormData
+): Promise<MultiOpActionState> {
+  await requireUser();
+  const employeeId = Number(formData.get("employee_id"));
+  const userName = String(formData.get("user_name") || "");
+  const privilege = String(formData.get("privilege") || "USER") as Privilege;
+  const devIds = formData.getAll("dev_id").map(String).filter(Boolean);
+  if (devIds.length === 0) {
+    return { status: "error", message: "Elegí al menos un equipo." };
+  }
+
+  const ids: number[] = [];
+  const notes: string[] = [];
+  for (const devId of devIds) {
+    try {
+      const { id, warning } = await startAddEmployeeToDevice(devId, { employeeId, userName, privilege });
+      ids.push(id);
+      if (warning) notes.push(`${devId}: ${warning}`);
+    } catch (err) {
+      notes.push(`${devId}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  await afterStart();
+  revalidatePath("/admin/empleados", "layout");
+
+  if (ids.length === 0) {
+    return { status: "error", message: notes.join(" ") || "No se pudo iniciar la operación en ningún equipo." };
+  }
+  return { status: "ok", ids, warning: notes.length ? notes.join(" ") : undefined };
 }
 
 export async function cancelOperationAction(id: number): Promise<{ ok: boolean; reason?: string }> {

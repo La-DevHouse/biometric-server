@@ -66,10 +66,10 @@ export default async function DispositivosPage() {
                   {online ? "En línea" : "Desconectado"}
                 </Tag>
               </Td>
-              <Td>{d.fk_name || <span className="text-text/50">Sin nombre</span>}</Td>
+              <Td>{d.fk_name || <span className="text-text/70">Sin nombre</span>}</Td>
               <Td className="font-mono">{d.dev_id}</Td>
               <Td>{formatRelativeTime(d.last_seen_at)}</Td>
-              <Td>{d.pending > 0 ? d.pending : <span className="text-text/50">—</span>}</Td>
+              <Td>{d.pending > 0 ? d.pending : <span className="text-text/70">—</span>}</Td>
               <Td>
                 <LinkBtn href={`/admin/dispositivos/${d.dev_id}`} variant="ghost">
                   Detalle →

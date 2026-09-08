@@ -73,7 +73,7 @@ export default async function GrupoDetailPage({
             {group.status === "active" ? "Activo" : "Inactivo"}
           </Tag>
         </div>
-        <p className="m-0 mt-1 text-sm text-text/60">
+        <p className="m-0 mt-1 text-sm text-text/75">
           Empresa:{" "}
           <Link href={`/admin/empresas/${group.company.id}`} className="text-accent no-underline hover:underline">
             {group.company.name}
@@ -83,19 +83,19 @@ export default async function GrupoDetailPage({
 
       <section className="flex flex-col gap-2 border border-divider p-4 text-sm">
         <div className="flex gap-3">
-          <span className="w-56 flex-none text-text/50">Empleos en el grupo</span>
+          <span className="w-56 flex-none text-text/70">Empleos en el grupo</span>
           <span>{group._count.employments}</span>
         </div>
         <div className="flex gap-3">
-          <span className="w-56 flex-none text-text/50">Tolerancia tardanza</span>
+          <span className="w-56 flex-none text-text/70">Tolerancia tardanza</span>
           <span>{eff(group.late_tolerance_min, group.company.late_tolerance_min)} min</span>
         </div>
         <div className="flex gap-3">
-          <span className="w-56 flex-none text-text/50">Tolerancia salida anticipada</span>
+          <span className="w-56 flex-none text-text/70">Tolerancia salida anticipada</span>
           <span>{eff(group.early_leave_tolerance_min, group.company.early_leave_tolerance_min)} min</span>
         </div>
         <div className="flex gap-3">
-          <span className="w-56 flex-none text-text/50">Regla de ausencia</span>
+          <span className="w-56 flex-none text-text/70">Regla de ausencia</span>
           <span>{group.absence_rule ?? group.company.absence_rule ?? "—"}</span>
         </div>
         <div className="mt-1 flex gap-2">
@@ -106,7 +106,7 @@ export default async function GrupoDetailPage({
 
       <section>
         <div className="mb-2 flex items-center justify-between">
-          <h3 className="m-0 text-sm font-semibold uppercase tracking-wide text-text/60">Turnos</h3>
+          <h3 className="m-0 text-sm font-semibold uppercase tracking-wide text-text/75">Turnos</h3>
           <ShiftFormDialog groupId={group.id} />
         </div>
         {group.shifts.length === 0 ? (
@@ -144,7 +144,7 @@ export default async function GrupoDetailPage({
                   <Tr key={s.id}>
                     <Td>
                       {s.name}
-                      {s.code && <span className="ml-1 font-mono text-xs text-text/40">{s.code}</span>}
+                      {s.code && <span className="ml-1 font-mono text-xs text-text/60">{s.code}</span>}
                       {s.crosses_midnight && (
                         <Tag variant="neutral" className="ml-2">
                           +1 día
@@ -153,7 +153,7 @@ export default async function GrupoDetailPage({
                     </Td>
                     <Td className="font-mono text-xs">
                       {s.start_time}–{s.end_time}
-                      {s.variable_in_out && <span className="text-text/40"> (var.)</span>}
+                      {s.variable_in_out && <span className="text-text/60"> (var.)</span>}
                     </Td>
                     <Td className="font-mono text-xs">
                       {s.break_start && s.break_end ? `${s.break_start}–${s.break_end}` : "—"}

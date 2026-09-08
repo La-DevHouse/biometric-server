@@ -10,13 +10,14 @@ export async function queueCommandForOperation(
   opId: number,
   devId: string,
   cmdCode: string,
-  params: Record<string, unknown> = {}
+  params: Record<string, unknown> = {},
+  binary: Buffer | null = null
 ): Promise<number> {
   const { lastID } = await runAsync(
-    `INSERT INTO commands (dev_id, cmd_code, cmd_param, status, op_id)
-     VALUES (?, ?, ?, 'WAIT', ?)
+    `INSERT INTO commands (dev_id, cmd_code, cmd_param, cmd_binary, status, op_id)
+     VALUES (?, ?, ?, ?, 'WAIT', ?)
      RETURNING trans_id`,
-    [devId, cmdCode, JSON.stringify(params), opId]
+    [devId, cmdCode, JSON.stringify(params), binary, opId]
   );
   await runAsync(
     `UPDATE operations

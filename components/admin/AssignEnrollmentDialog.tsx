@@ -49,14 +49,14 @@ export function AssignEnrollmentDialog({
         <form action={formAction} className="flex flex-col gap-3">
           <input type="hidden" name="dev_id" value={devId} />
           <input type="hidden" name="device_user_id" value={deviceUserId} />
-          <p className="m-0 text-xs text-text/50">
+          <p className="m-0 text-xs text-text/70">
             Los marcajes que lleguen con el ID <span className="font-mono">{deviceUserId}</span> de
             este equipo se atribuirán a la persona que elijas.
           </p>
-          <label className="flex flex-col gap-1 text-xs text-text/70">
+          <label className="flex flex-col gap-1 text-xs text-text/85">
             Empleado *
             {candidates.length === 0 ? (
-              <span className="text-text/50">
+              <span className="text-text/70">
                 No hay empleados con empleo activo para este equipo.
               </span>
             ) : (

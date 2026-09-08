@@ -32,10 +32,10 @@ export function DocumentField({
 }) {
   const prefixes = docPrefixes(kind);
   return (
-    <div className={`flex flex-col gap-1 text-xs text-text/70 ${className ?? ""}`}>
+    <div className={`flex flex-col gap-1 text-xs text-text/85 ${className ?? ""}`}>
       <span>
         {label} {required && "*"}
-        {hint && <span className="text-text/40"> {hint}</span>}
+        {hint && <span className="text-text/60"> {hint}</span>}
       </span>
       <div className="flex gap-2">
         <select

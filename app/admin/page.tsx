@@ -148,7 +148,7 @@ export default async function InicioPage() {
         )}
       </div>
 
-      <p className="text-xs text-text/50 max-w-md">
+      <p className="text-xs text-text/70 max-w-md">
         Un equipo se considera en línea si reportó actividad en los últimos 30 segundos.
         Los comandos enviados a un equipo desconectado quedan en cola hasta que vuelva.
       </p>

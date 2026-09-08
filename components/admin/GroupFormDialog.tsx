@@ -8,7 +8,7 @@ import { createGroupAction, updateGroupAction } from "@/app/admin/grupos/actions
 import { ADMIN_ACTION_INITIAL } from "@/lib/adminActionState";
 
 const INPUT = "min-h-9 px-2.5 text-sm bg-surface border border-divider rounded-none w-full";
-const LABEL = "flex flex-col gap-1 text-xs text-text/70";
+const LABEL = "flex flex-col gap-1 text-xs text-text/85";
 
 export interface GroupValues {
   id: number;
@@ -75,16 +75,16 @@ export function GroupFormDialog({
           </label>
 
           <label className={LABEL}>
-            Nombre * <span className="text-text/40">(ej. Administrativo, Planta, Docentes)</span>
+            Nombre * <span className="text-text/60">(ej. Administrativo, Planta, Docentes)</span>
             <input name="name" required defaultValue={group?.name ?? ""} className={INPUT} autoFocus />
           </label>
           <label className={LABEL}>
-            Código <span className="text-text/40">(opcional — identificador corto de ALCO para reportes)</span>
+            Código <span className="text-text/60">(opcional — identificador corto de ALCO para reportes)</span>
             <input name="code" defaultValue={group?.code ?? ""} className={INPUT} />
           </label>
 
           <fieldset className="border border-divider p-2.5 flex flex-col gap-2">
-            <legend className="text-[10px] uppercase tracking-widest text-text/50 px-1">
+            <legend className="text-[10px] uppercase tracking-widest text-text/70 px-1">
               Umbrales de asistencia (vacío = hereda de la empresa)
             </legend>
             <div className="grid grid-cols-2 gap-2">

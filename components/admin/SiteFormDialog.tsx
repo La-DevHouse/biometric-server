@@ -9,7 +9,7 @@ import { ADMIN_ACTION_INITIAL } from "@/lib/adminActionState";
 import { COMMON_TIMEZONES, DEFAULT_TZ } from "@/lib/time";
 
 const INPUT = "min-h-9 px-2.5 text-sm bg-surface border border-divider rounded-none w-full";
-const LABEL = "flex flex-col gap-1 text-xs text-text/70";
+const LABEL = "flex flex-col gap-1 text-xs text-text/85";
 
 export interface SiteFormValues {
   id: number;
@@ -59,11 +59,11 @@ export function SiteFormDialog({
             <input name="name" required defaultValue={site?.name ?? ""} className={INPUT} autoFocus />
           </label>
           <label className={LABEL}>
-            Código <span className="text-text/40">(opcional — identificador corto de ALCO, único por empresa)</span>
+            Código <span className="text-text/60">(opcional — identificador corto de ALCO, único por empresa)</span>
             <input name="code" defaultValue={site?.code ?? ""} className={INPUT} />
           </label>
           <label className={LABEL}>
-            Zona horaria <span className="text-text/40">(hora local de la sede — marcajes y hora del equipo)</span>
+            Zona horaria <span className="text-text/60">(hora local de la sede — marcajes y hora del equipo)</span>
             <select name="timezone" defaultValue={site?.timezone ?? DEFAULT_TZ} className={INPUT}>
               {site?.timezone && !(COMMON_TIMEZONES as readonly string[]).includes(site.timezone) && (
                 <option value={site.timezone}>{site.timezone}</option>

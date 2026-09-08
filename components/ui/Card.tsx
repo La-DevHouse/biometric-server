@@ -59,7 +59,7 @@ export function CardMeta({ className, children }: { className?: string; children
   return (
     <span
       className={cx(
-        "flex items-center gap-1.5 text-[11px] text-text/50",
+        "flex items-center gap-1.5 text-[11px] text-text/70",
         className
       )}
     >

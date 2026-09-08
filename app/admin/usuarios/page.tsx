@@ -12,6 +12,7 @@ import { ChangePrivilegeDialog } from "@/components/admin/ChangePrivilegeDialog"
 import { DeleteUserDialog } from "@/components/admin/DeleteUserDialog";
 import { ViewBiometricsDialog } from "@/components/admin/ViewBiometricsDialog";
 import { syncUsersAction } from "@/app/admin/actions";
+import { PRIVILEGE_SCREEN_LABEL } from "@/lib/operations";
 
 // force-dynamic: la página pega a Postgres en un Server Component; con `revalidate`
 // Next intenta prerenderizarla en `next build`, lo que exige la BD accesible en
@@ -50,9 +51,9 @@ async function getData(devId: string | undefined) {
 }
 
 function PrivilegeTag({ privilege }: { privilege: string | null }) {
-  if (privilege === "MANAGER") return <Tag variant="accent">MANAGER</Tag>;
-  if (!privilege) return <span className="text-text/50">—</span>;
-  return <Tag variant="neutral">{privilege}</Tag>;
+  if (!privilege) return <span className="text-text/70">—</span>;
+  const label = PRIVILEGE_SCREEN_LABEL[privilege] ?? privilege;
+  return <Tag variant={privilege === "MANAGER" ? "accent" : "neutral"}>{label}</Tag>;
 }
 
 export default async function UsuariosPage({
@@ -75,7 +76,7 @@ export default async function UsuariosPage({
         </Suspense>
         {effectiveDevId && (
           <>
-            <OpButton action={syncUsersAction} hidden={{ dev_id: effectiveDevId }}>
+            <OpButton action={syncUsersAction} hidden={{ dev_id: effectiveDevId }} title="Sincronizar lista desde el equipo">
               Sincronizar lista desde el equipo
             </OpButton>
             <div className="ml-auto">
@@ -112,7 +113,7 @@ export default async function UsuariosPage({
               {users.map((u) => (
                 <Tr key={u.user_id}>
                   <Td className="font-mono">{u.user_id}</Td>
-                  <Td>{u.user_name || <span className="text-text/50">Sin nombre</span>}</Td>
+                  <Td>{u.user_name || <span className="text-text/70">Sin nombre</span>}</Td>
                   <Td>
                     <PrivilegeTag privilege={u.user_privilege} />
                   </Td>
@@ -120,7 +121,7 @@ export default async function UsuariosPage({
                     {u.bio_count > 0 ? (
                       `${u.bio_count} plantilla${u.bio_count === 1 ? "" : "s"}`
                     ) : (
-                      <span className="text-text/50">Sin sincronizar</span>
+                      <span className="text-text/70">Sin sincronizar</span>
                     )}
                   </Td>
                   <Td>
@@ -147,7 +148,7 @@ export default async function UsuariosPage({
               ))}
             </tbody>
           </Table>
-          <p className="text-xs text-text/50 max-w-lg">
+          <p className="text-xs text-text/70 max-w-lg">
             Nombre y privilegio se editan por separado: cada uno usa su propio comando seguro. No
             existe la edición libre de "toda la ficha" porque reconstruye al usuario en el equipo y
             borra temporalmente sus huellas.

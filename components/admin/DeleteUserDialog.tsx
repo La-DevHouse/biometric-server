@@ -1,12 +1,11 @@
 "use client";
 
-import { useActionState, useEffect, useState } from "react";
+import { useState } from "react";
 import { Dialog } from "@/components/ui/Dialog";
 import { Btn } from "@/components/ui/Btn";
-import { useToast } from "./Toaster";
-import { notifyOperationStarted } from "@/lib/opEvents";
+import { OperationProgress, OperationResult } from "./OperationStatus";
+import { useOperation } from "./useOperation";
 import { deleteUserAction } from "@/app/admin/actions";
-import { OP_ACTION_INITIAL } from "@/lib/opActionState";
 
 export function DeleteUserDialog({
   devId,
@@ -19,41 +18,42 @@ export function DeleteUserDialog({
 }) {
   const [open, setOpen] = useState(false);
   const [ack, setAck] = useState(false);
-  const [state, formAction, isPending] = useActionState(deleteUserAction, OP_ACTION_INITIAL);
-  const { push } = useToast();
+  const { formAction, startError, op, busy, reset } = useOperation(deleteUserAction);
 
-  useEffect(() => {
-    if (state.status === "ok") {
-      notifyOperationStarted();
-      push(state.warning ? "warn" : "ok", state.warning || "Eliminando usuario del equipo.");
-      setOpen(false);
-      setAck(false);
-    } else if (state.status === "error") {
-      push("error", state.message);
-    }
-  }, [state, push]);
+  function close() {
+    setOpen(false);
+    setAck(false);
+    reset();
+  }
 
   return (
     <>
       <Btn variant="ghost" onClick={() => setOpen(true)}>
         Eliminar
       </Btn>
-      <Dialog open={open} onClose={() => setOpen(false)} title={`Eliminar usuario ${userId}`}>
-        <form action={formAction} className="flex flex-col gap-3">
-          <input type="hidden" name="dev_id" value={devId} />
-          <input type="hidden" name="user_id" value={userId} />
-          <p className="text-sm m-0">
-            Se eliminará a <strong>{userName || userId}</strong> del equipo, junto con sus huellas.
-            Las marcaciones de asistencia ya registradas se conservan.
-          </p>
-          <label className="flex items-center gap-2 text-sm cursor-pointer">
-            <input type="checkbox" checked={ack} onChange={(e) => setAck(e.target.checked)} />
-            Entiendo que esta acción no se puede deshacer
-          </label>
-          <Btn type="submit" variant="primary" disabled={isPending || !ack}>
-            {isPending ? "Encolando…" : "Eliminar usuario"}
-          </Btn>
-        </form>
+      <Dialog open={open} onClose={close} closable={!busy} title={`Eliminar usuario ${userId}`}>
+        <div className="flex flex-col gap-3">
+          {!op && (
+            <form action={formAction} className="flex flex-col gap-3">
+              <input type="hidden" name="dev_id" value={devId} />
+              <input type="hidden" name="user_id" value={userId} />
+              <p className="text-sm m-0">
+                Se eliminará a <strong>{userName || userId}</strong> del equipo, junto con sus huellas.
+                Las marcaciones de asistencia ya registradas se conservan.
+              </p>
+              <label className="flex items-center gap-2 text-sm cursor-pointer">
+                <input type="checkbox" checked={ack} onChange={(e) => setAck(e.target.checked)} />
+                Entiendo que esta acción no se puede deshacer
+              </label>
+              {startError && <p className="text-sm m-0 text-text">{startError}</p>}
+              <Btn type="submit" variant="primary" disabled={busy || !ack}>
+                {busy ? "Enviando…" : "Eliminar usuario"}
+              </Btn>
+            </form>
+          )}
+          {op && !op.isTerminal && <OperationProgress op={op} />}
+          {op?.isTerminal && <OperationResult op={op} onClose={close} />}
+        </div>
       </Dialog>
     </>
   );

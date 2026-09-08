@@ -15,14 +15,14 @@ export default function LoginPage() {
         className="w-full max-w-[340px] flex flex-col gap-3 rounded-lg border border-divider bg-white p-6"
       >
         <div className="mb-1">
-          <p className="text-xs font-semibold uppercase tracking-wide text-text/50">
+          <p className="text-xs font-semibold uppercase tracking-wide text-text/70">
             Marcaje
           </p>
           <h1 className="text-lg font-semibold text-text">Ingreso</h1>
         </div>
 
         <label className="flex flex-col gap-1 text-sm">
-          <span className="text-text/70">Email</span>
+          <span className="text-text/85">Email</span>
           <input
             name="email"
             type="email"
@@ -34,7 +34,7 @@ export default function LoginPage() {
         </label>
 
         <label className="flex flex-col gap-1 text-sm">
-          <span className="text-text/70">Contraseña</span>
+          <span className="text-text/85">Contraseña</span>
           <input
             name="password"
             type="password"

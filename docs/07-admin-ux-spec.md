@@ -12,6 +12,16 @@ simplifica deliberadamente (y se dice por qué).
 Este documento alimenta `docs/08-data-model.md` (schema Postgres/Prisma). Aquí se
 describe el "qué"; el "cómo se guarda" va en el 08.
 
+> **Jerarquía de empresas (padre/hijas, `is_group`, `shared_employees`) —
+> REVERTIDA (2026-09-08).** Todo lo que este documento describe abajo sobre
+> empresas padre/hijas, `is_group` y `shared_employees` (§ tabla de campos de
+> `client_company`, flujo 5.4, vista de Empresas) ya no aplica — se descartó
+> junto con las columnas del schema (`08-data-model.md` → "Enmienda
+> 2026-09-08"). En la práctica ningún cliente real de ALCO necesitaba varias
+> razones sociales compartiendo empleados entre sí; `site` ya resuelve el caso
+> real de una empresa con varias ubicaciones. Se deja el texto original abajo
+> como registro de la exploración, no como comportamiento vigente.
+
 > **Alcance del cálculo de asistencia — DECIDIDO (2026-08-30).** Fase 1 **incluye
 > el motor de cálculo de asistencia**: determinación automática de
 > presente/tardanza/salida anticipada/ausencia y totalización de horas contra el

@@ -55,7 +55,7 @@ export function AttendanceFilters({
 
   return (
     <div className="flex items-end gap-3 flex-wrap">
-      <label className="flex flex-col gap-1 text-xs text-text/70">
+      <label className="flex flex-col gap-1 text-xs text-text/85">
         Dispositivo
         <select
           className={INPUT_CLASS}
@@ -72,7 +72,7 @@ export function AttendanceFilters({
         </select>
       </label>
 
-      <label className="flex flex-col gap-1 text-xs text-text/70">
+      <label className="flex flex-col gap-1 text-xs text-text/85">
         Usuario
         <select
           className={INPUT_CLASS}
@@ -90,7 +90,7 @@ export function AttendanceFilters({
         </select>
       </label>
 
-      <label className="flex flex-col gap-1 text-xs text-text/70">
+      <label className="flex flex-col gap-1 text-xs text-text/85">
         Desde
         <input
           type="date"
@@ -101,7 +101,7 @@ export function AttendanceFilters({
         />
       </label>
 
-      <label className="flex flex-col gap-1 text-xs text-text/70">
+      <label className="flex flex-col gap-1 text-xs text-text/85">
         Hasta
         <input
           type="date"

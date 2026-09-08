@@ -1,45 +1,59 @@
 "use client";
 
-import { useActionState, useEffect, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
+import { Dialog } from "@/components/ui/Dialog";
 import { Btn } from "@/components/ui/Btn";
-import { useToast } from "./Toaster";
-import { notifyOperationStarted } from "@/lib/opEvents";
-import { OP_ACTION_INITIAL, type OpActionState } from "@/lib/opActionState";
+import { OperationProgress, OperationResult } from "./OperationStatus";
+import { useOperation } from "./useOperation";
+import type { OpActionState } from "@/lib/opActionState";
 
 type OpAction = (prev: OpActionState, formData: FormData) => Promise<OpActionState>;
 
-/** A single-click operation that needs no extra input beyond hidden fields. */
+/** Un click, sin más input que campos ocultos — bloquea en un diálogo propio hasta que resuelve. */
 export function OpButton({
   action,
   hidden,
+  title,
   children,
   variant = "secondary",
 }: {
   action: OpAction;
   hidden: Record<string, string>;
+  /** Título del diálogo que se abre al hacer click — separado de `children` porque el <dialog> lo exige como string. */
+  title: string;
   children: ReactNode;
   variant?: "primary" | "secondary" | "ghost";
 }) {
-  const [state, formAction, isPending] = useActionState(action, OP_ACTION_INITIAL);
-  const { push } = useToast();
+  const [open, setOpen] = useState(false);
+  const { formAction, startError, op, busy, reset } = useOperation(action);
 
-  useEffect(() => {
-    if (state.status === "ok") {
-      notifyOperationStarted();
-      push(state.warning ? "warn" : "ok", state.warning || "Operación encolada.");
-    } else if (state.status === "error") {
-      push("error", state.message);
-    }
-  }, [state, push]);
+  function close() {
+    setOpen(false);
+    reset();
+  }
 
   return (
-    <form action={formAction} className="inline">
-      {Object.entries(hidden).map(([k, v]) => (
-        <input key={k} type="hidden" name={k} value={v} />
-      ))}
-      <Btn type="submit" variant={variant} disabled={isPending}>
-        {isPending ? "Encolando…" : children}
+    <>
+      <Btn variant={variant} onClick={() => setOpen(true)}>
+        {children}
       </Btn>
-    </form>
+      <Dialog open={open} onClose={close} closable={!busy} title={title}>
+        <div className="flex flex-col gap-3">
+          {!op && (
+            <form action={formAction}>
+              {Object.entries(hidden).map(([k, v]) => (
+                <input key={k} type="hidden" name={k} value={v} />
+              ))}
+              {startError && <p className="text-sm m-0 text-text mb-2">{startError}</p>}
+              <Btn type="submit" variant="primary" disabled={busy}>
+                {busy ? "Enviando…" : "Confirmar"}
+              </Btn>
+            </form>
+          )}
+          {op && !op.isTerminal && <OperationProgress op={op} />}
+          {op?.isTerminal && <OperationResult op={op} onClose={close} />}
+        </div>
+      </Dialog>
+    </>
   );
 }

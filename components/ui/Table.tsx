@@ -17,7 +17,7 @@ export function Th({ className, children }: { className?: string; children?: Rea
   return (
     <th
       className={cx(
-        "text-left text-[11px] tracking-[0.08em] uppercase text-text/60",
+        "text-left text-[11px] tracking-[0.08em] uppercase text-text/75",
         "p-2 border-b border-divider",
         className
       )}

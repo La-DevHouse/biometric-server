@@ -101,20 +101,102 @@ Con dos procesos abriendo conexiones separadas al mismo archivo SQLite:
 - **`PRAGMA journal_mode=WAL`** debe activarse en `lib/db.ts` (verificar si ya está — no confirmado en la revisión actual). Sin WAL, el modo default usa locks exclusivos que generan `SQLITE_BUSY` bajo escritura concurrente. Bloqueante antes de separar procesos.
 - **Volumen compartido en Coolify:** por defecto cada app tiene su propio filesystem aislado — si `dashboard-alco` y `sync-worker-alco` corren como contenedores separados escribiendo a una ruta relativa local, cada uno tendría su propia copia del `.db`, no el mismo archivo. Necesario: crear un **Persistent Storage** en Coolify, montarlo en la misma ruta en ambos contenedores, y que `lib/db.ts` lea la ruta desde una variable de entorno (ej. `DB_PATH`) en vez de un path relativo hardcodeado. Verificar después del despliegue que ambos contenedores efectivamente comparten el archivo (no asumirlo solo porque ambos "funcionan" por separado).
 
-## ⚠️ Pendiente: migración de huellas entre dispositivos
+## ✅ Migración de huellas entre dispositivos — RESUELTO (2026-09-07)
 
-**Confirmado por Grupo ALCO como posible, no logrado todavía por el equipo de desarrollo.** El cliente indicó que la migración de datos biométricos (huellas) de un dispositivo a otro es una operación que debe soportarse — por ejemplo, cuando un empleado cambia de sede o se reemplaza un equipo físico — pero **hasta ahora no se ha conseguido hacer funcionar**, pese a que el catálogo de comandos (`05-commands-catalog.md`) ya expone en teoría lo necesario:
+**Funciona, verificado físicamente contra dos equipos reales.** El dedo de un
+empleado fue reconocido por el equipo destino contra un template que nunca se
+enroló ahí, generando marcaciones reales.
 
-- `GET_ENROLL_DATA` (`user_id`, `backup_number`) — trae el template biométrico crudo de un dispositivo origen.
-- `SET_ENROLL_DATA` (`user_id`, `backup_number`, `enroll_data`) — debería cargar ese mismo template binario en un dispositivo destino.
+**La receta:** `GET_USER_INFO` (origen, blob de **612 bytes**) → patchar el
+`user_id` embebido en el offset 608 → escribir en el destino. **Lo decisivo es
+la lectura, no la escritura**: con la forma limpia de 612 bytes funcionan los
+dos comandos de escritura, ambos verificados físicamente:
 
-**No asumir que esto es tan simple como "leer de uno y escribir en el otro".** El catálogo de comandos (`05-commands-catalog.md`) ya documenta varias inconsistencias del firmware en comandos relacionados a usuarios (`SET_USER_INFO` dispara un reindexado destructivo no documentado; `cmd_return_code` no es confiable en varios comandos de escritura) — es razonable sospechar que `SET_ENROLL_DATA` tenga un comportamiento igual de sorprendente que todavía no se ha caracterizado, dado que nunca se llegó a validar de punta a punta. Antes de intentar de nuevo:
+| Comando | Caso de uso | Riesgo |
+| --- | --- | --- |
+| `SET_ENROLL_DATA` | **Agregar** una huella a un empleado que ya existe en el destino | Ninguno — quirúrgico, no toca el resto de la ficha |
+| `SET_USER_INFO` | **Crear** el empleado en el destino junto con su huella | Sobre un usuario existente dispara el reindexado destructivo — usar solo para altas |
 
-1. Confirmar con Grupo ALCO qué entienden ellos exactamente por "migración de huellas" — ¿mismo `user_id` en ambos equipos, o hay que resolver también el mapeo de identidad entre dispositivos distintos?
-2. Probar el flujo `GET_ENROLL_DATA` → `SET_ENROLL_DATA` contra dos dispositivos reales, con el mismo rigor de verificación que ya se aplicó a otros comandos en `05-commands-catalog.md` (no confiar en `cmd_return_code: OK` sin verificar después con un `GET_ENROLL_DATA` de confirmación en el equipo destino).
-3. Documentar el resultado (funcione o no) en `05-commands-catalog.md`, siguiendo el mismo formato de advertencias verificadas que ya usa ese documento.
+**Lo que fallaba antes:** usar `GET_ENROLL_DATA` → `SET_ENROLL_DATA` con el blob
+de **524 bytes**. Esa forma está contaminada — a partir del byte 60 trae memoria
+sin inicializar del equipo origen (punteros de heap), y el registro resultante en
+el destino queda incompleto (rango 283..486 en ceros). Se probó tres veces contra
+hardware y el dedo nunca fue reconocido.
 
-Este ítem no está en el catálogo de comandos como "pendiente" todavía — falta agregarlo ahí una vez se investigue, ya que ese documento es la fuente de verdad de comportamiento verificado contra hardware.
+**Detalle completo, con el mapa de la estructura de 612 bytes decodificada
+(nombre en ASCII, user_id, índice de slot, campos que el firmware regenera solo):
+`05-commands-catalog.md` → "Migración de huellas entre dispositivos".**
+
+**Implementado en el panel (2026-09-07)**, resolviendo el mapeo de identidad vía
+el modelo de dominio ya firmado (`08-data-model.md`) en vez de pedir el
+`user_id` destino a mano:
+
+- `employee_fingerprint` — copia canónica de la huella por **empleado** (no por
+  dispositivo). Operación `CAPTURE_FINGERPRINT`: lee con `GET_USER_INFO` desde
+  un equipo donde la persona ya tiene un `employee_device_enrollment` activo, y
+  guarda **todos** los slots de huella que el equipo reporte, tal cual — nunca
+  pide elegir un número de dedo. El slot (`backup_number`) es orden de
+  registro del equipo, no identidad de dedo (verificado 2026-09-08: un índice
+  derecho quedó en el mismo slot 0 que antes se documentaba como "pulgar
+  derecho" — ver `05-commands-catalog.md` → `GET_USER_INFO`).
+- Operación `PUSH_FINGERPRINT`: dado un empleado + dedo + equipo destino, busca
+  su `employee_device_enrollment` **activo** en ese destino (falla con un
+  mensaje claro si no existe uno — no intenta crear el usuario ahí), toma su
+  `device_user_id`, patcha el offset 608 del blob guardado, y escribe con
+  `SET_ENROLL_DATA`. Verifica el resultado con un `GET_USER_INFO` posterior
+  (igual que `DELETE_USER`: el `cmd_return_code` de esta escritura tampoco es
+  confiable).
+- UI: sección "Huellas" en la ficha de empleado (`/admin/empleados/[id]`) —
+  "Capturar huella" por enrolamiento activo, "Copiar a otro equipo" por huella
+  capturada, con la lista de equipos destino acotada a los enrolamientos
+  activos de esa persona.
+- Tests: `__tests__/operations.test.ts` (captura, huella no encontrada,
+  destino sin enrolamiento, parche del `user_id` embebido, verify-mismatch).
+
+**`ADD_EMPLOYEE_TO_DEVICE` (2026-09-07)** cierra ese hueco: alta de un empleado
+en un equipo donde todavía no existe, en un solo paso desde su ficha, con la
+regla de negocio explícita del cliente — **nunca automático**: vincular a una
+empresa no agrega sola a ningún equipo, cada equipo se elige a mano (o varios a
+la vez, selección múltiple).
+
+- `lib/lookups.ts` → `loadDeviceCandidatesForEmployee(employeeId)`: equipos de
+  la empresa del empleo activo de la persona. Excluye equipos donde ya hay un
+  enrolamiento activo. (Hasta el 2026-09-08 esto ampliaba a padre+hermanas si
+  la empresa tenía `shared_employees` — se revirtió junto con toda la
+  jerarquía de empresas, ver `08-data-model.md` → "Enmienda 2026-09-08"; en la
+  práctica ningún cliente real necesitaba varias razones sociales compartiendo
+  empleados, y `site` ya cubre el caso real de varias ubicaciones.)
+- Asignación de `device_user_id`: `MAX(user_id::int)+1` entre los usuarios
+  numéricos ya sincronizados localmente de ese equipo como candidato inicial
+  (barato, evita ID fijo repetido entre equipos), con la sonda real
+  (`GET_USER_INFO`, igual que `CREATE_USER`) como única confirmación de que
+  está libre — reintenta con el siguiente entero hasta
+  `MAX_ID_ASSIGNMENT_ATTEMPTS` (5) veces ante colisión.
+- Esa sonda explota el mismo hallazgo de hardware real que `DELETE_USER`
+  (`05-commands-catalog.md` → `GET_USER_INFO`): un ID que existe responde en
+  segundos, uno libre nunca responde. El panel espera `PROBE_TIMEOUT_MS` (30s,
+  `lib/operations/advance.ts`) una vez entregado el comando antes de dar el
+  candidato por libre y seguir — corregido el 2026-09-08 tras una prueba en
+  vivo que reveló que el sondeo se quedaba esperando el timeout genérico de 3
+  minutos y terminaba en error incluso cuando el ID sí estaba libre.
+- Una vez creado y vinculado (`employee_device_enrollment`), si la persona ya
+  tiene huellas en `employee_fingerprint`, se copian todas de una sola vez con
+  la misma receta de `PUSH_FINGERPRINT` (parche del offset 608 + verify
+  posterior) — sin pasos manuales extra. Un fallo en una huella individual no
+  aborta las demás (mismo criterio que `SYNC_USERS`).
+- El privilegio pedido se aplica **al final**, después de copiar huellas, no
+  al crear. Hallazgo de hardware real (2026-09-08,
+  `05-commands-catalog.md` → `SET_USER_PRIVILEGE`): un privilegio elevado
+  (`MANAGER`) no se aplica — ni al crear con `SET_USER_INFO` ni con un
+  `SET_USER_PRIVILEGE` posterior — mientras el usuario no tenga ninguna
+  huella registrada; el equipo responde `OK` pero lo deja en `USER`. Si no
+  hay huella para copiar en esa operación, termina en `mismatch` con el
+  motivo explícito en vez de reportar éxito falso.
+- UI: botón "+ Agregar a equipo" en la ficha de empleado, selección múltiple de
+  equipos candidatos, una operación por equipo elegido.
+- Tests: `__tests__/operations.test.ts` — id ya vinculado, reintento por
+  colisión, agotamiento de intentos, copia multi-huella con tolerancia a fallo
+  parcial.
 
 ## Decisiones de modelo de datos que surgen del relevamiento de Adempiere (en curso)
 

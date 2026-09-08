@@ -60,7 +60,7 @@ export function EmploymentFormDialog({
             <input type="hidden" name="employee_id" value={employeeId} />
           )}
           {isTransfer && (
-            <p className="m-0 text-xs text-text/50">
+            <p className="m-0 text-xs text-text/70">
               Cierra el empleo actual con esta fecha y abre uno nuevo en la empresa destino,
               conservando el historial de la persona.
             </p>

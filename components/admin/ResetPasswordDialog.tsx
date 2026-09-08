@@ -29,12 +29,12 @@ export function ResetPasswordDialog({ id, name }: { id: number; name: string }) 
       <Dialog open={open} onClose={() => setOpen(false)} title={`Resetear contraseña — ${name}`}>
         <form action={formAction} className="flex flex-col gap-3">
           <input type="hidden" name="id" value={id} />
-          <p className="m-0 text-xs text-text/50">
+          <p className="m-0 text-xs text-text/70">
             Se cierran todas las sesiones abiertas de esta cuenta. La persona deberá entrar con la
             contraseña nueva.
           </p>
-          <label className="flex flex-col gap-1 text-xs text-text/70">
-            Contraseña nueva * <span className="text-text/40">(mín. 8)</span>
+          <label className="flex flex-col gap-1 text-xs text-text/85">
+            Contraseña nueva * <span className="text-text/60">(mín. 8)</span>
             <input name="password" type="password" required minLength={8} className={INPUT} autoFocus />
           </label>
           <Btn type="submit" variant="primary" disabled={pending}>

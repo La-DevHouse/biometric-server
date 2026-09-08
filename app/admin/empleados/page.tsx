@@ -58,7 +58,7 @@ export default async function EmpleadosPage({ searchParams }: { searchParams: Se
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <form className="flex flex-wrap items-end gap-2 text-xs" method="get">
-          <label className="flex flex-col gap-1 text-text/70">
+          <label className="flex flex-col gap-1 text-text/85">
             Buscar
             <input
               name="q"
@@ -67,7 +67,7 @@ export default async function EmpleadosPage({ searchParams }: { searchParams: Se
               className="min-h-9 w-52 border border-divider bg-surface px-2.5 text-sm"
             />
           </label>
-          <label className="flex flex-col gap-1 text-text/70">
+          <label className="flex flex-col gap-1 text-text/85">
             Empresa
             <select name="empresa" defaultValue={empresaId ?? ""} className="min-h-9 border border-divider bg-surface px-2.5 text-sm">
               <option value="">todas</option>
@@ -78,7 +78,7 @@ export default async function EmpleadosPage({ searchParams }: { searchParams: Se
               ))}
             </select>
           </label>
-          <label className="flex flex-col gap-1 text-text/70">
+          <label className="flex flex-col gap-1 text-text/85">
             Estado
             <select name="estado" defaultValue={estado ?? ""} className="min-h-9 border border-divider bg-surface px-2.5 text-sm">
               <option value="">todos</option>
@@ -98,7 +98,7 @@ export default async function EmpleadosPage({ searchParams }: { searchParams: Se
         <EmployeeFormDialog />
       </div>
 
-      <p className="m-0 text-sm text-text/60">
+      <p className="m-0 text-sm text-text/75">
         {employees.length} {employees.length === 1 ? "persona" : "personas"}
         {employees.length === 300 && " (mostrando las primeras 300)"}
       </p>
@@ -126,7 +126,7 @@ export default async function EmpleadosPage({ searchParams }: { searchParams: Se
                 <Td>
                   {e.employments.length
                     ? e.employments.map((em) => em.company.name).join(", ")
-                    : <span className="text-text/40">—</span>}
+                    : <span className="text-text/60">—</span>}
                 </Td>
                 <Td>
                   {e.employments.length ? (

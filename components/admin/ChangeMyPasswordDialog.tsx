@@ -8,7 +8,7 @@ import { changeMyPasswordAction } from "@/app/admin/cuentas/actions";
 import { ADMIN_ACTION_INITIAL } from "@/lib/adminActionState";
 
 const INPUT = "min-h-9 px-2.5 text-sm bg-surface border border-divider rounded-none w-full";
-const LABEL = "flex flex-col gap-1 text-xs text-text/70";
+const LABEL = "flex flex-col gap-1 text-xs text-text/85";
 
 export function ChangeMyPasswordDialog() {
   const [open, setOpen] = useState(false);
@@ -29,7 +29,7 @@ export function ChangeMyPasswordDialog() {
       </Btn>
       <Dialog open={open} onClose={() => setOpen(false)} title="Cambiar mi contraseña">
         <form action={formAction} className="flex flex-col gap-3">
-          <p className="m-0 text-xs text-text/50">
+          <p className="m-0 text-xs text-text/70">
             Se cierran tus otras sesiones abiertas; esta se mantiene.
           </p>
           <label className={LABEL}>
@@ -37,7 +37,7 @@ export function ChangeMyPasswordDialog() {
             <input name="current_password" type="password" required className={INPUT} autoFocus />
           </label>
           <label className={LABEL}>
-            Contraseña nueva * <span className="text-text/40">(mín. 8)</span>
+            Contraseña nueva * <span className="text-text/60">(mín. 8)</span>
             <input name="new_password" type="password" required minLength={8} className={INPUT} />
           </label>
           <Btn type="submit" variant="primary" disabled={pending}>

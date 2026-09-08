@@ -2,13 +2,16 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
-import { loadEmploymentLookups } from "@/lib/lookups";
+import { loadEmploymentLookups, loadDeviceCandidatesForEmployee } from "@/lib/lookups";
 import { Table, Th, Td, Tr } from "@/components/ui/Table";
 import { Tag } from "@/components/ui/Tag";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { EmployeeFormDialog, type EmployeeValues } from "@/components/admin/EmployeeFormDialog";
 import { EmploymentFormDialog } from "@/components/admin/EmploymentFormDialog";
 import { EndEmploymentDialog } from "@/components/admin/EndEmploymentDialog";
+import { CaptureFingerprintDialog } from "@/components/admin/CaptureFingerprintDialog";
+import { PushFingerprintDialog } from "@/components/admin/PushFingerprintDialog";
+import { AddEmployeeToDeviceDialog } from "@/components/admin/AddEmployeeToDeviceDialog";
 
 export const dynamic = "force-dynamic";
 
@@ -25,7 +28,7 @@ export default async function EmpleadoDetailPage({
   const id = Number((await params).id);
   if (!Number.isFinite(id)) notFound();
 
-  const [employee, lookups] = await Promise.all([
+  const [employee, lookups, deviceCandidates] = await Promise.all([
     prisma.employee.findUnique({
       where: { id },
       include: {
@@ -43,10 +46,15 @@ export default async function EmpleadoDetailPage({
           orderBy: [{ status: "asc" }, { enrolled_at: "desc" }],
           include: { device: { select: { dev_id: true, fk_name: true } } },
         },
+        fingerprints: {
+          orderBy: [{ finger_index: "asc" }],
+          include: { source_device: { select: { dev_id: true, fk_name: true } } },
+        },
         _count: { select: { enrollments: true, fingerprints: true } },
       },
     }),
     loadEmploymentLookups(),
+    loadDeviceCandidatesForEmployee(id),
   ]);
   if (!employee) notFound();
 
@@ -59,6 +67,7 @@ export default async function EmpleadoDetailPage({
     birth_date: employee.birth_date ? fmtDate(employee.birth_date) : null,
   };
   const activeEmployment = employee.employments.find((e) => e.status === "active");
+  const activeEnrollments = employee.enrollments.filter((e) => e.status === "active");
 
   return (
     <div className="flex max-w-4xl flex-col gap-6">
@@ -86,7 +95,7 @@ export default async function EmpleadoDetailPage({
 
       <section>
         <div className="mb-2 flex items-center justify-between">
-          <h3 className="m-0 text-sm font-semibold uppercase tracking-wide text-text/60">
+          <h3 className="m-0 text-sm font-semibold uppercase tracking-wide text-text/75">
             Empleos ({employee.employments.length})
           </h3>
           <EmploymentFormDialog employeeId={employee.id} lookups={lookups} mode="create" />
@@ -114,12 +123,12 @@ export default async function EmpleadoDetailPage({
               {employee.employments.map((em) => (
                 <Tr key={em.id}>
                   <Td className="font-medium">{em.company.name}</Td>
-                  <Td>{em.site?.name ?? <span className="text-text/40">—</span>}</Td>
-                  <Td>{em.employee_group?.name ?? <span className="text-text/40">—</span>}</Td>
+                  <Td>{em.site?.name ?? <span className="text-text/60">—</span>}</Td>
+                  <Td>{em.employee_group?.name ?? <span className="text-text/60">—</span>}</Td>
                   <Td>
                     {em.position?.name ?? "—"}
                     {em.department?.name && (
-                      <span className="text-text/40"> / {em.department.name}</span>
+                      <span className="text-text/60"> / {em.department.name}</span>
                     )}
                   </Td>
                   <Td className="text-xs">
@@ -152,10 +161,10 @@ export default async function EmpleadoDetailPage({
 
       <section>
         <div className="mb-2 flex items-center justify-between">
-          <h3 className="m-0 text-sm font-semibold uppercase tracking-wide text-text/60">
-            Enrolamientos ({employee.enrollments.filter((e) => e.status === "active").length} activo
-            {employee.enrollments.filter((e) => e.status === "active").length === 1 ? "" : "s"})
+          <h3 className="m-0 text-sm font-semibold uppercase tracking-wide text-text/75">
+            Enrolamientos ({activeEnrollments.length} activo{activeEnrollments.length === 1 ? "" : "s"})
           </h3>
+          <AddEmployeeToDeviceDialog employeeId={employee.id} candidates={deviceCandidates} />
         </div>
         {employee.enrollments.length === 0 ? (
           <EmptyState
@@ -185,12 +194,72 @@ export default async function EmpleadoDetailPage({
                   </Td>
                   <Td className="text-xs">{fmtDate(en.enrolled_at)}</Td>
                   <Td>
-                    <Link
-                      href={`/admin/enrolamiento?dev=${en.device.dev_id}`}
-                      className="text-xs text-accent no-underline hover:underline"
-                    >
-                      Gestionar →
-                    </Link>
+                    <div className="flex items-center gap-2">
+                      {en.status === "active" && (
+                        <CaptureFingerprintDialog
+                          employeeId={employee.id}
+                          devId={en.device.dev_id}
+                          deviceUserId={en.device_user_id}
+                          deviceLabel={en.device.fk_name || en.device.dev_id}
+                        />
+                      )}
+                      <Link
+                        href={`/admin/enrolamiento?dev=${en.device.dev_id}`}
+                        className="text-xs text-accent no-underline hover:underline"
+                      >
+                        Gestionar →
+                      </Link>
+                    </div>
+                  </Td>
+                </Tr>
+              ))}
+            </tbody>
+          </Table>
+        )}
+      </section>
+
+      <section>
+        <div className="mb-2 flex items-center justify-between">
+          <h3 className="m-0 text-sm font-semibold uppercase tracking-wide text-text/75">
+            Huellas ({employee.fingerprints.length})
+          </h3>
+        </div>
+        <p className="m-0 mb-2 text-xs text-text/70">
+          Copia de referencia de la persona (no la del equipo) — se usa para copiar la huella a otro
+          equipo sin tener que volver a enrolarla físicamente ahí.
+        </p>
+        {employee.fingerprints.length === 0 ? (
+          <EmptyState
+            title="Sin huellas capturadas"
+            description='Capturá una desde un equipo donde la persona ya esté enrolada, arriba en "Enrolamientos".'
+          />
+        ) : (
+          <Table>
+            <thead>
+              <tr>
+                <Th>Dedo</Th>
+                <Th>Origen</Th>
+                <Th>Capturada</Th>
+                <Th />
+              </tr>
+            </thead>
+            <tbody>
+              {employee.fingerprints.map((fp) => (
+                <Tr key={fp.id}>
+                  <Td className="font-mono">{fp.finger_index}</Td>
+                  <Td>{fp.source_device?.fk_name || fp.source_dev_id || "—"}</Td>
+                  <Td className="text-xs">{fmtDate(fp.captured_at)}</Td>
+                  <Td>
+                    <PushFingerprintDialog
+                      employeeId={employee.id}
+                      fingerIndex={fp.finger_index}
+                      targets={activeEnrollments
+                        .filter((en) => en.device.dev_id !== fp.source_dev_id)
+                        .map((en) => ({
+                          devId: en.device.dev_id,
+                          label: `${en.device.fk_name || en.device.dev_id} (usuario ${en.device_user_id})`,
+                        }))}
+                    />
                   </Td>
                 </Tr>
               ))}
@@ -213,7 +282,7 @@ function Field({
 }) {
   return (
     <div className="flex gap-3">
-      <span className="w-48 flex-none text-text/50">{label}</span>
+      <span className="w-48 flex-none text-text/70">{label}</span>
       <span className={mono ? "font-mono" : undefined}>{value}</span>
     </div>
   );

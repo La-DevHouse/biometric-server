@@ -36,7 +36,7 @@ export default async function CuentasPage() {
   return (
     <div className="flex max-w-4xl flex-col gap-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="m-0 text-sm text-text/60">
+        <p className="m-0 text-sm text-text/75">
           Cuentas internas de Grupo ALCO para entrar al panel. En Fase 1 todas tienen el mismo
           acceso.
         </p>
@@ -62,7 +62,7 @@ export default async function CuentasPage() {
             <Tr key={a.id}>
               <Td className="font-medium">
                 {a.name}
-                {a.id === me.id && <span className="text-text/40"> · vos</span>}
+                {a.id === me.id && <span className="text-text/60"> · vos</span>}
               </Td>
               <Td className="font-mono text-xs">{a.email}</Td>
               <Td>
@@ -89,7 +89,7 @@ export default async function CuentasPage() {
         </tbody>
       </Table>
 
-      <p className="m-0 max-w-lg text-xs text-text/50">
+      <p className="m-0 max-w-lg text-xs text-text/70">
         Al resetear una contraseña o desactivar una cuenta se cierran sus sesiones abiertas. No podés
         desactivar tu propia cuenta ni la última que quede activa.
       </p>

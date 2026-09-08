@@ -10,7 +10,7 @@ import { createEmployeeAction, updateEmployeeAction } from "@/app/admin/empleado
 import { ADMIN_ACTION_INITIAL } from "@/lib/adminActionState";
 
 const INPUT = "min-h-9 px-2.5 text-sm bg-surface border border-divider rounded-none w-full";
-const LABEL = "flex flex-col gap-1 text-xs text-text/70";
+const LABEL = "flex flex-col gap-1 text-xs text-text/85";
 
 export interface EmployeeValues {
   id: number;

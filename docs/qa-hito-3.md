@@ -7,6 +7,11 @@ Se completa a medida que se construye cada pieza del CRUD. Lo verificado en loca
 antes de pushear va marcado como _(local ✓)_ — igual conviene repasarlo en vivo
 porque prod tiene otro Postgres, otra red y datos reales.
 
+> **Nota (2026-09-08):** los casos 2.1.2, 2.1.4, 2.2.4 y 6.1.3 prueban la
+> jerarquía de empresas padre/hijas — esa función se revirtió (ver
+> `08-data-model.md` → "Enmienda 2026-09-08"), así que ya no aplican. Se dejan
+> tal cual como registro histórico, no como checklist vigente.
+
 ---
 
 ## 0. Prerrequisitos (una sola vez)

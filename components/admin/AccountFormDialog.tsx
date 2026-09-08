@@ -8,7 +8,7 @@ import { createAccountAction, updateAccountAction } from "@/app/admin/cuentas/ac
 import { ADMIN_ACTION_INITIAL } from "@/lib/adminActionState";
 
 const INPUT = "min-h-9 px-2.5 text-sm bg-surface border border-divider rounded-none w-full";
-const LABEL = "flex flex-col gap-1 text-xs text-text/70";
+const LABEL = "flex flex-col gap-1 text-xs text-text/85";
 
 export interface AccountValues {
   id: number;
@@ -50,7 +50,7 @@ export function AccountFormDialog({ account }: { account?: AccountValues }) {
           </label>
           {!editing && (
             <label className={LABEL}>
-              Contraseña inicial * <span className="text-text/40">(mín. 8)</span>
+              Contraseña inicial * <span className="text-text/60">(mín. 8)</span>
               <input name="password" type="password" required minLength={8} className={INPUT} />
             </label>
           )}

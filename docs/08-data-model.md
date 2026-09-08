@@ -8,6 +8,16 @@ Decisiones del §9 confirmadas; alcance del §8 decidido (Fase 1 **sí** incluye
 motor de cálculo de asistencia). Cambios de schema a partir de acá son
 migraciones nuevas, no ediciones.
 
+> **Enmienda (2026-09-08):** se revirtió la jerarquía padre/hijas de
+> `client_company` (`parent_id`/`is_group`/`shared_employees`, §4.1 y §6 más
+> abajo) — migración `20260908155808_remove_company_hierarchy`. En la
+> práctica ningún cliente real de ALCO necesitaba varias razones sociales
+> compartiendo empleados; todos los casos (incl. el único cliente real
+> cargado, Farmacia Farmalido) son una sola empresa con varias `site`, que ya
+> cubrían la necesidad real de "varias ubicaciones". El bloque de `prisma`
+> abajo queda tal cual como registro histórico de lo firmado originalmente —
+> ver el schema actual en `prisma/schema.prisma` para la versión vigente.
+
 ---
 
 ## 1. Convenciones

@@ -227,19 +227,17 @@ enum app_user_role {
   viewer
 }
 
-/// Empresa cliente de ALCO. Jerarquía de 2 niveles (padre → hijas), `parent_id`
-/// simple y mutable. Trigger en la migración impide un 3er nivel.
+/// Empresa cliente de ALCO. Una empresa = una razón social (un RIF); varias
+/// ubicaciones se modelan con `site`, no con jerarquía entre empresas —
+/// se probó y se descartó un esquema padre/hijas (2026-09-08): en la
+/// práctica todos los casos reales de ALCO son una sola empresa con varias
+/// sedes, no varias razones sociales distintas compartiendo empleados.
 model client_company {
-  id               Int              @id @default(autoincrement())
-  parent_id        Int?
-  parent           client_company?  @relation("company_hierarchy", fields: [parent_id], references: [id], onDelete: Restrict)
-  children         client_company[] @relation("company_hierarchy")
-  name             String
-  tax_id           String? // RIF J/G+dígitos. Requerido si is_group=false (CHECK en migración)
-  is_group         Boolean          @default(false)
-  shared_employees Boolean          @default(false)
-  status           record_status    @default(active)
-  address          String?
+  id      Int           @id @default(autoincrement())
+  name    String
+  tax_id  String? // RIF J/G+dígitos, requerido en la app para altas nuevas — nullable a nivel de columna solo para no romper filas ya existentes sin RIF cargado
+  status  record_status @default(active)
+  address String?
 
   // fallback de umbrales de asistencia (docs/07 §1.9). null → sin default de empresa
   late_tolerance_min        Int?
@@ -255,8 +253,6 @@ model client_company {
   employee_groups employee_group[]
   devices         devices[]
   export_runs     export_run[]
-
-  @@index([parent_id])
 }
 
 /// Sede física de una empresa. Los dispositivos y empleos apuntan acá.

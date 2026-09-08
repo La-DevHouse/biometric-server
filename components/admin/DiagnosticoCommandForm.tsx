@@ -20,7 +20,7 @@ export function DiagnosticoCommandForm({
 
   return (
     <form action={formAction} className="flex flex-col gap-3 max-w-md">
-      <label className="flex flex-col gap-1 text-xs text-text/70">
+      <label className="flex flex-col gap-1 text-xs text-text/85">
         Dispositivo
         <select name="dev_id" required className={INPUT_CLASS} defaultValue="">
           <option value="" disabled>
@@ -34,7 +34,7 @@ export function DiagnosticoCommandForm({
         </select>
       </label>
 
-      <label className="flex flex-col gap-1 text-xs text-text/70">
+      <label className="flex flex-col gap-1 text-xs text-text/85">
         Comando
         <select
           name="cmd_code"
@@ -56,7 +56,7 @@ export function DiagnosticoCommandForm({
 
       {template?.params &&
         Object.entries(template.params).map(([key, placeholder]) => (
-          <label key={key} className="flex flex-col gap-1 text-xs text-text/70">
+          <label key={key} className="flex flex-col gap-1 text-xs text-text/85">
             {key}
             <input
               type="text"

@@ -3,13 +3,14 @@
 // (no Next imports) so it stays unit-testable; the 'use server' boundary
 // lives in app/admin/**/actions.ts, which just calls through to these.
 
-import { initDb, allAsync, getAsync, runAsync, NOW_MS } from "@/lib/db";
+import { initDb, allAsync, getAsync, runAsync, prisma, NOW_MS } from "@/lib/db";
 import {
   OperationKind,
   OperationStage,
   Privilege,
+  PRIVILEGE_SCREEN_LABEL,
   TERMINAL_STAGES,
-  RELIABLE_PRIVILEGES,
+  MAX_FINGERPRINT_INDEX,
   truncateUserName,
   OPERATION_LABELS,
   STAGE_LABELS,
@@ -25,6 +26,7 @@ import { sweepStaleOperations } from "./advance";
 import { isDeviceOnline } from "@/lib/deviceStatus";
 
 export type { OperationKind, OperationStage, Privilege };
+export { PRIVILEGE_SCREEN_LABEL };
 
 export interface StartResult {
   id: number;
@@ -216,15 +218,7 @@ export async function startChangePrivilege(
   const existing = await findActiveOperation("CHANGE_PRIVILEGE", devId, userId);
   if (existing) return { id: existing };
 
-  // Verified against real hardware: SET_USER_PRIVILEGE("OPERATOR") returned
-  // cmd_return_code:OK but the device silently kept USER. Only MANAGER is
-  // known to reliably apply.
-  const warning = combineWarnings(
-    !RELIABLE_PRIVILEGES.has(privilege)
-      ? "Este firmware solo aplica MANAGER de forma fiable. El cambio se verificará y puede reportarse como no aplicado."
-      : undefined,
-    offlineWarning(dev)
-  );
+  const warning = offlineWarning(dev);
 
   const label = `${OPERATION_LABELS.CHANGE_PRIVILEGE} de usuario ${userId} a ${privilege}`;
   const id = await createOperation({
@@ -278,6 +272,9 @@ export async function startCreateUser(devId: string, input: CreateUserInput): Pr
   const warning = combineWarnings(
     truncatedName !== userName
       ? `El dispositivo trunca los nombres a 8 caracteres: se guardará "${truncatedName}".`
+      : undefined,
+    privilege !== "USER"
+      ? `El privilegio "${privilege}" no quedará aplicado hasta que la persona tenga una huella registrada en este equipo — verificado que este firmware lo ignora en silencio sin eso. Se intenta aparte después de crear, pero puede terminar reportando que no se pudo aplicar todavía.`
       : undefined,
     offlineWarning(dev)
   );
@@ -363,6 +360,213 @@ export async function startRefreshStatus(devId: string): Promise<StartResult> {
 }
 
 // ---------------------------------------------------------------------------
+// Migración de huellas entre dispositivos — ver docs/05-commands-catalog.md
+// ("Migración de huellas entre dispositivos") para la receta verificada
+// contra hardware real. CAPTURE_FINGERPRINT lee la forma limpia de 612 bytes
+// (GET_USER_INFO, nunca GET_ENROLL_DATA) hacia la copia canónica por
+// empleado (`employee_fingerprint`); PUSH_FINGERPRINT la escribe en otro
+// equipo donde la persona ya tiene un enrolamiento activo, parchando el
+// user_id embebido (offset 608).
+// ---------------------------------------------------------------------------
+
+// El número de slot (backup_number) es un índice de orden de registro del
+// equipo, no una identidad de dedo — verificado contra hardware real
+// (2026-09-08): un dedo índice registrado físicamente quedó en el slot 0, el
+// mismo slot que la documentación asociaba a "pulgar derecho". Por eso esto
+// nunca pide elegir un número: lee todo lo que el equipo tiene registrado
+// para el usuario y lo captura tal cual, uno por slot.
+export async function startCaptureFingerprint(
+  employeeId: number,
+  devId: string,
+  deviceUserId: string
+): Promise<StartResult> {
+  const dev = await ensureDevice(devId);
+
+  const existing = await findActiveOperation("CAPTURE_FINGERPRINT", devId, deviceUserId);
+  if (existing) return { id: existing };
+
+  const label = `${OPERATION_LABELS.CAPTURE_FINGERPRINT} de usuario ${deviceUserId}`;
+  const id = await createOperation({
+    kind: "CAPTURE_FINGERPRINT",
+    label,
+    devId,
+    userId: deviceUserId,
+    params: { employeeId },
+  });
+  await queueCommandForOperation(id, devId, "GET_USER_INFO", { user_id: deviceUserId });
+  return { id, warning: offlineWarning(dev) };
+}
+
+export async function startPushFingerprint(
+  employeeId: number,
+  fingerIndex: number,
+  targetDevId: string
+): Promise<StartResult> {
+  const dev = await ensureDevice(targetDevId);
+
+  const fingerprint = await prisma.employee_fingerprint.findUnique({
+    where: { employee_id_finger_index: { employee_id: employeeId, finger_index: fingerIndex } },
+  });
+  if (!fingerprint) {
+    throw new Error(
+      "No hay una huella capturada para ese dedo. Capturala primero desde el equipo de origen."
+    );
+  }
+  if (fingerprint.template.length < 612) {
+    throw new Error(
+      `La huella capturada mide ${fingerprint.template.length} bytes — se esperaban al menos 612. Puede estar corrupta; volvé a capturarla.`
+    );
+  }
+
+  const enrollment = await prisma.employee_device_enrollment.findFirst({
+    where: { employee_id: employeeId, dev_id: targetDevId, status: "active" },
+  });
+  if (!enrollment) {
+    throw new Error(
+      "La persona no tiene un usuario vinculado en el equipo destino. Vinculala primero desde Enrolamiento."
+    );
+  }
+
+  const targetUserId = Number(enrollment.device_user_id);
+  if (!Number.isInteger(targetUserId)) {
+    throw new Error(
+      `El ID de usuario del equipo destino ("${enrollment.device_user_id}") no es numérico — este ` +
+        `firmware codifica el ID como entero de 4 bytes dentro de la huella, así que no se puede migrar.`
+    );
+  }
+
+  const existing = await findActiveOperation("PUSH_FINGERPRINT", targetDevId, enrollment.device_user_id);
+  if (existing) return { id: existing };
+
+  // Único campo que hace falta tocar: el user_id embebido. El resto (índice
+  // de slot, campos internos del firmware) el equipo destino los regenera
+  // solo — verificado contra hardware real.
+  const patched = Buffer.from(fingerprint.template);
+  patched.writeUInt32LE(targetUserId, 608);
+
+  const label = `${OPERATION_LABELS.PUSH_FINGERPRINT} (dedo ${fingerIndex}) a usuario ${enrollment.device_user_id}`;
+  const id = await createOperation({
+    kind: "PUSH_FINGERPRINT",
+    label,
+    devId: targetDevId,
+    userId: enrollment.device_user_id,
+    params: { employeeId, fingerIndex },
+    plan: { phase: "apply" },
+  });
+  await queueCommandForOperation(
+    id,
+    targetDevId,
+    "SET_ENROLL_DATA",
+    { user_id: enrollment.device_user_id, backup_number: fingerIndex, enroll_data: "BIN_1" },
+    patched
+  );
+  return {
+    id,
+    warning: combineWarnings(
+      offlineWarning(dev),
+      "La confirmación real es física: que la persona marque asistencia con ese dedo en el equipo destino."
+    ),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Alta de empleado en un equipo nuevo — ver docs/02-architecture.md
+// ("Agregar empleado al equipo"). Nunca automático: cada equipo se elige a
+// mano (o en lote, varios a la vez), nunca se propaga solo al vincular a una
+// empresa. El ID de usuario se asigna solo, con reintento ante colisión (ver
+// advanceAddEmployeeToDevice); si la persona ya tiene huellas capturadas
+// (employee_fingerprint) se copian de una vez, sin pasos manuales extra.
+// ---------------------------------------------------------------------------
+
+export interface AddEmployeeToDeviceInput {
+  employeeId: number;
+  userName: string;
+  privilege?: Privilege;
+}
+
+export async function startAddEmployeeToDevice(
+  devId: string,
+  input: AddEmployeeToDeviceInput
+): Promise<StartResult> {
+  const dev = await ensureDevice(devId);
+  const userName = input.userName.trim();
+  if (!userName) throw new Error("El nombre no puede estar vacío.");
+
+  const employee = await prisma.employee.findUnique({ where: { id: input.employeeId } });
+  if (!employee) throw new Error("Empleado no encontrado.");
+
+  const alreadyLinked = await prisma.employee_device_enrollment.findFirst({
+    where: { employee_id: input.employeeId, dev_id: devId, status: "active" },
+  });
+  if (alreadyLinked) {
+    throw new Error(`Esta persona ya está vinculada a este equipo (usuario ${alreadyLinked.device_user_id}).`);
+  }
+
+  // Clave de idempotencia propia: a esta altura todavía no hay un
+  // device_user_id real (se decide recién en el primer paso), así que no se
+  // puede usar como `userId` de findActiveOperation igual que el resto de
+  // las operaciones.
+  const opUserKey = `emp:${input.employeeId}`;
+  const existing = await findActiveOperation("ADD_EMPLOYEE_TO_DEVICE", devId, opUserKey);
+  if (existing) return { id: existing };
+
+  // Candidato inicial: MAX(user_id)+1 entre los usuarios numéricos ya
+  // sincronizados localmente de este equipo. Es solo un punto de partida
+  // barato — el paso "probe" (GET_USER_INFO contra el equipo real, con
+  // reintento) es lo único que de verdad protege contra colisión, igual que
+  // ya hace CREATE_USER.
+  const maxRow = await getAsync<{ max_id: number | null }>(
+    `SELECT MAX(user_id::int) AS max_id FROM users WHERE dev_id = ? AND user_id ~ '^[0-9]+$'`,
+    [devId]
+  );
+  const candidateId = (maxRow?.max_id ?? 0) + 1;
+
+  const truncatedName = truncateUserName(userName);
+  const privilege: Privilege = input.privilege ?? "USER";
+
+  const fingerprints = await prisma.employee_fingerprint.findMany({
+    where: { employee_id: input.employeeId, finger_index: { lte: MAX_FINGERPRINT_INDEX } },
+    select: { finger_index: true },
+    orderBy: { finger_index: "asc" },
+  });
+  const pendingFingers = fingerprints.map((f) => f.finger_index);
+
+  const warning = combineWarnings(
+    truncatedName !== userName
+      ? `El dispositivo trunca los nombres a 8 caracteres: se guardará "${truncatedName}".`
+      : undefined,
+    pendingFingers.length > 0
+      ? `Esta persona ya tiene ${pendingFingers.length} huella(s) capturada(s) — se copiarán a este equipo automáticamente tras crear el usuario.`
+      : "Esta persona no tiene huellas capturadas todavía — se creará el usuario, pero hay que registrarle la huella físicamente en algún equipo (o copiarla desde uno donde ya la tenga) para que pueda marcar aquí.",
+    privilege !== "USER" && pendingFingers.length === 0
+      ? `El privilegio "${privilege}" no quedará aplicado hasta que la persona tenga una huella registrada en este equipo — verificado que este firmware lo ignora en silencio sin eso. Se reintenta solo al final, pero puede terminar reportando que no se pudo aplicar todavía.`
+      : undefined,
+    offlineWarning(dev)
+  );
+
+  const label = `${OPERATION_LABELS.ADD_EMPLOYEE_TO_DEVICE} "${truncatedName}" (candidato ${candidateId})`;
+  const id = await createOperation({
+    kind: "ADD_EMPLOYEE_TO_DEVICE",
+    label,
+    devId,
+    userId: opUserKey,
+    params: { employeeId: input.employeeId },
+    plan: {
+      phase: "probe",
+      candidateId,
+      attempt: 1,
+      userName: truncatedName,
+      privilege,
+      pendingFingers,
+      pushedFingers: [],
+      failedFingers: [],
+    },
+  });
+  await queueCommandForOperation(id, devId, "GET_USER_INFO", { user_id: String(candidateId) });
+  return { id, warning };
+}
+
+// ---------------------------------------------------------------------------
 // Queries
 // ---------------------------------------------------------------------------
 
@@ -409,25 +613,6 @@ export async function listActiveOperations(devId?: string): Promise<OperationVie
         ${devId ? "AND o.dev_id = ?" : ""}
       ORDER BY o.created_at DESC`,
     devId ? [devId] : []
-  );
-  return rows.map(toView);
-}
-
-/**
- * Feeds the live tracker: active operations plus anything that JUST went
- * terminal (last 15s), so the client can render the done/mismatch/error
- * state at least once before the operation drops off the active list.
- */
-export async function listTrackedOperations(devId?: string): Promise<OperationView[]> {
-  await initDb();
-  await sweepStaleOperations();
-  const recentCutoff = Date.now() - 15_000;
-  const rows = await allAsync<OperationRowWithDevice>(
-    `${OPERATION_SELECT}
-      WHERE (o.stage NOT IN ('done','mismatch','error','canceled') OR o.finished_at > ?)
-        ${devId ? "AND o.dev_id = ?" : ""}
-      ORDER BY o.created_at DESC`,
-    devId ? [recentCutoff, devId] : [recentCutoff]
   );
   return rows.map(toView);
 }

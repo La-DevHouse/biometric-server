@@ -86,11 +86,11 @@ export default async function DeviceDetailPage({
       <div className="flex items-center gap-4 flex-wrap">
         <h3 className="font-heading text-2xl m-0">{device.fk_name || device.dev_id}</h3>
         <Tag variant={online ? "accent" : "neutral"}>{online ? "En línea" : "Desconectado"}</Tag>
-        <span className="text-sm text-text/50 font-mono">{device.dev_id}</span>
-        <span className="text-sm text-text/50">· {formatRelativeTime(device.last_seen_at)}</span>
+        <span className="text-sm text-text/70 font-mono">{device.dev_id}</span>
+        <span className="text-sm text-text/70">· {formatRelativeTime(device.last_seen_at)}</span>
         <div className="ml-auto flex gap-2">
           <RenameDeviceDialog devId={device.dev_id} currentName={device.fk_name || device.dev_id} />
-          <OpButton action={syncClockAction} hidden={{ dev_id: device.dev_id }}>
+          <OpButton action={syncClockAction} hidden={{ dev_id: device.dev_id }} title="Sincronizar hora ahora">
             Sincronizar hora ahora
           </OpButton>
         </div>
@@ -110,24 +110,24 @@ export default async function DeviceDetailPage({
             }}
           />
         </div>
-        <div className="text-sm text-text/70 flex flex-col gap-1">
+        <div className="text-sm text-text/85 flex flex-col gap-1">
           <div>
-            <span className="text-text/50">Empresa: </span>
-            {companyName ?? <span className="text-text/40">sin asignar</span>}
+            <span className="text-text/70">Empresa: </span>
+            {companyName ?? <span className="text-text/60">sin asignar</span>}
           </div>
           <div>
-            <span className="text-text/50">Sede: </span>
-            {siteName ?? <span className="text-text/40">—</span>}
+            <span className="text-text/70">Sede: </span>
+            {siteName ?? <span className="text-text/60">—</span>}
           </div>
           {device.device_admin_note && (
             <div>
-              <span className="text-text/50">Nota: </span>
+              <span className="text-text/70">Nota: </span>
               {device.device_admin_note}
             </div>
           )}
         </div>
         {!companyName && (
-          <p className="text-xs text-text/50 m-0">
+          <p className="text-xs text-text/70 m-0">
             Sin empresa, al enrolar en este equipo la lista de empleados no se puede acotar.
           </p>
         )}
@@ -167,24 +167,24 @@ export default async function DeviceDetailPage({
 
       <div className="flex items-center gap-3 flex-wrap">
         {device.stat_updated_at ? (
-          <p className="text-xs text-text/50 m-0">
+          <p className="text-xs text-text/70 m-0">
             Estado del equipo actualizado {formatRelativeTime(device.stat_updated_at)}.
           </p>
         ) : (
-          <p className="text-xs text-text/50 m-0">
+          <p className="text-xs text-text/70 m-0">
             El estado del equipo (huellas y marcaciones en memoria) aún no se ha consultado —
             &quot;Huellas enroladas&quot; y &quot;Marcaciones en memoria&quot; no son 0, simplemente no
             se han pedido todavía.
           </p>
         )}
-        <OpButton action={refreshStatusAction} hidden={{ dev_id: device.dev_id }} variant="ghost">
+        <OpButton action={refreshStatusAction} hidden={{ dev_id: device.dev_id }} variant="ghost" title="Actualizar estado">
           Actualizar estado
         </OpButton>
       </div>
 
       <div className="flex flex-col gap-2">
         <h4 className="font-heading text-lg m-0">Zona de riesgo</h4>
-        <p className="text-sm text-text/50 max-w-lg">
+        <p className="text-sm text-text/70 max-w-lg">
           Estas acciones borran datos del equipo físico y no se pueden deshacer. El servidor conserva
           lo ya sincronizado.
         </p>

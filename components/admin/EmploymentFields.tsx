@@ -4,7 +4,7 @@ import { useState } from "react";
 import type { EmploymentLookups } from "@/lib/lookups";
 
 const INPUT = "min-h-9 px-2.5 text-sm bg-surface border border-divider rounded-none w-full";
-const LABEL = "flex flex-col gap-1 text-xs text-text/70";
+const LABEL = "flex flex-col gap-1 text-xs text-text/85";
 
 export interface EmploymentDefaults {
   company_id?: number | null;

@@ -40,7 +40,10 @@ function personData(fd: FormData): { data: PersonData } | { error: string } {
   const rifPrefix = str(fd, "rif_prefix");
   const rifNumber = str(fd, "rif_number");
   let tax_id = ced.value; // vacío = igual a la cédula
-  if (rifPrefix || rifNumber) {
+  // Solo el número indica intención real de cargar un RIF distinto — el
+  // prefijo puede venir preseleccionado en el <select> sin que se haya
+  // tocado nada (mismo caso que en empresas/actions.ts).
+  if (rifNumber) {
     const rif = joinDoc(rifPrefix, rifNumber, "rif");
     if ("error" in rif) return { error: rif.error };
     tax_id = rif.value;

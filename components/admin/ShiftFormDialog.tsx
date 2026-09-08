@@ -8,7 +8,7 @@ import { createShiftAction, updateShiftAction } from "@/app/admin/grupos/actions
 import { ADMIN_ACTION_INITIAL } from "@/lib/adminActionState";
 
 const INPUT = "min-h-9 px-2.5 text-sm bg-surface border border-divider rounded-none w-full";
-const LABEL = "flex flex-col gap-1 text-xs text-text/70";
+const LABEL = "flex flex-col gap-1 text-xs text-text/85";
 const DAYS = [
   [1, "Lun"],
   [2, "Mar"],
@@ -76,11 +76,11 @@ export function ShiftFormDialog({
               <input name="name" required defaultValue={shift?.name ?? ""} className={INPUT} autoFocus />
             </label>
             <label className={LABEL}>
-              Código <span className="text-text/40">(opcional — identificador corto de ALCO)</span>
+              Código <span className="text-text/60">(opcional — identificador corto de ALCO)</span>
               <input name="code" defaultValue={shift?.code ?? ""} className={INPUT} placeholder="8/12-2/6" />
             </label>
             <label className={LABEL}>
-              Hora inicio * <span className="text-text/40">HH:MM</span>
+              Hora inicio * <span className="text-text/60">HH:MM</span>
               <input name="start_time" required defaultValue={shift?.start_time ?? ""} className={INPUT} placeholder="06:30" />
             </label>
             <label className={LABEL}>
@@ -109,7 +109,7 @@ export function ShiftFormDialog({
             </label>
           </div>
 
-          <div className="flex flex-col gap-1 text-xs text-text/70">
+          <div className="flex flex-col gap-1 text-xs text-text/85">
             Días de trabajo
             <div className="flex flex-wrap gap-2">
               {DAYS.map(([n, lbl]) => (
@@ -126,11 +126,11 @@ export function ShiftFormDialog({
             </div>
           </div>
 
-          <label className="flex items-center gap-2 text-xs text-text/70">
+          <label className="flex items-center gap-2 text-xs text-text/85">
             <input type="checkbox" name="variable_in_out" defaultChecked={shift?.variable_in_out ?? false} />
             Entrada y salida variable
           </label>
-          <label className="flex items-center gap-2 text-xs text-text/70">
+          <label className="flex items-center gap-2 text-xs text-text/85">
             <input type="checkbox" name="crosses_midnight" defaultChecked={shift?.crosses_midnight ?? false} />
             El turno cruza la medianoche (termina al día siguiente)
           </label>

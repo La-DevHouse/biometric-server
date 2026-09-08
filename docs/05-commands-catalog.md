@@ -10,8 +10,9 @@
 1. [Gestión de dispositivos](#gestión-de-dispositivos)
 2. [Gestión de usuarios](#gestión-de-usuarios)
 3. [Gestión de datos biométricos](#gestión-de-datos-biométricos)
-4. [Gestión de logs](#gestión-de-logs)
-5. [Gestión de información del servidor](#gestión-de-información-del-servidor)
+4. [Migración de huellas entre dispositivos — RESUELTO](#migración-de-huellas-entre-dispositivos--resuelto-2026-09-07)
+5. [Gestión de logs](#gestión-de-logs)
+6. [Gestión de información del servidor](#gestión-de-información-del-servidor)
 
 ---
 
@@ -242,13 +243,46 @@ Parameters: {"user_id":"U010","user_privilege":"MANAGER"}
 - Es el comando correcto para cambiar solo el privilegio de un usuario
   existente
 
-**⚠️ Solo `MANAGER` fue verificado funcionando en este firmware.** Al probar
-`{"user_id":"1","user_privilege":"OPERATOR"}`, el dispositivo respondió
-`OK` pero el privilegio quedó en `USER` — el valor se ignoró en silencio, sin
-error. No se probaron `REGISTER` ni `USER` explícitamente. Es posible que este
-firmware use códigos numéricos en vez de estos strings para niveles distintos
-de `MANAGER`, pero eso no está confirmado — no lo asumas sin probarlo primero
-contra tu dispositivo real y verificar con un `GET_USER_INFO` posterior.
+**⚠️ Solo `USER` y `MANAGER` se pueden asignar de forma remota con este
+comando en este firmware — verificado 2026-09-08 (device `2023081133`):**
+tanto `OPERATOR` como `REGISTER` devuelven `cmd_return_code:OK` pero el
+usuario queda en `USER`, sin excepción y sin error visible.
+
+**La pantalla física del equipo usa otros nombres para los mismos 4 niveles
+del protocolo — mapeo parcialmente confirmado:**
+
+| Pantalla del equipo | String del protocolo | ¿Se puede asignar por `SET_USER_PRIVILEGE`? |
+|---|---|---|
+| User | `USER` | Sí (confirmado) |
+| Admin | `MANAGER` (asumido — nunca confirmado leyendo la pantalla física, solo que el string "MANAGER" aplica y persiste) | Sí (confirmado) |
+| Super User | `OPERATOR` — **confirmado 2026-09-08**: se asignó "Super User" físicamente desde el teclado del equipo (`2023081133`, usuario `3`) y `GET_USER_INFO` lo reportó como `"user_privilege":"OPERATOR"` | **No** — `SET_USER_PRIVILEGE("OPERATOR")` no lo aplica (ver arriba). Es un nivel real que el equipo sí entiende y sí reporta correctamente cuando se asigna físicamente — la limitación es solo de escritura remota, no de que el valor no exista. |
+| (sin nombre en pantalla confirmado) | `REGISTER` | No probado si se puede asignar físicamente; por este comando tampoco se puede |
+
+**Consecuencia práctica:** si alguien necesita que un usuario quede como
+"Super User", hay que asignarlo físicamente en el equipo — no hay forma
+conocida de hacerlo de forma remota con este comando. El panel sí puede
+**leer y mostrar** correctamente ese privilegio (vía `GET_USER_INFO`) una vez
+asignado así, solo no puede escribirlo.
+
+**⚠️ Ni siquiera `MANAGER` se aplica si el usuario todavía no tiene ninguna
+huella registrada.** Verificado contra hardware real (dispositivos
+`2023081158` y `2023081133`, 2026-09-08): un usuario recién creado (sin
+huella) al que se le mandó `SET_USER_PRIVILEGE("MANAGER")` respondió `OK` sin
+error, pero un `GET_USER_INFO` posterior lo siguió mostrando como `USER`. Tras
+registrarle una huella físicamente (o copiarle una con `SET_ENROLL_DATA`), el
+**mismo** comando, sin cambiar nada más, sí lo dejó en `MANAGER` — confirmado
+en ambos equipos. Esto también invalida usar `SET_USER_INFO` con
+`user_privilege` distinto de `USER` al **crear**: el privilegio pedido en la
+creación se ignoró igual, por la misma razón (todavía no hay huella en ese
+momento). **Consecuencia práctica:** para dar de alta a alguien con privilegio
+elevado, hay que crear primero (o copiarle la huella si ya la tiene en otro
+equipo) y recién después mandar `SET_USER_PRIVILEGE` — nunca en el mismo paso
+que la creación. Tanto `ADD_EMPLOYEE_TO_DEVICE` como `CREATE_USER` en el panel
+ya hacen esto en ese orden (crea → verifica → si `ADD_EMPLOYEE_TO_DEVICE`
+tiene huellas ya capturadas, las copia → recién ahí aplica el privilegio
+pedido con un `SET_USER_PRIVILEGE` separado y lo vuelve a verificar), y si no
+hay huella en el equipo en ese momento, la operación termina en `mismatch`
+explicando por qué en vez de reportar éxito falso.
 
 ---
 
@@ -369,7 +403,7 @@ Así se ve directamente en `/admin/commands` al expandir el comando.
 **Backup numbers (enroll_data_array):**
 | Número | Tipo | Descripción |
 |--------|------|------------|
-| 0-9 | Fingerprint | 10 dedos (0=pulgar derecho, etc) |
+| 0-9 | Fingerprint | 10 slots — **no es identidad de dedo, es orden de registro** (verificado 2026-09-08: un índice derecho quedó en el slot 0, el mismo que antes se documentaba como "pulgar derecho") |
 | 10 | Password | Contraseña |
 | 11 | ID Card | Tarjeta de identificación |
 | 12 | Face | Reconocimiento facial |
@@ -382,19 +416,28 @@ Así se ve directamente en `/admin/commands` al expandir el comando.
 
 **⚠️ Se cuelga de forma consistente al consultar un `user_id` que no existe.**
 Verificado repetidamente contra hardware real (dispositivo `2023081133`,
-2026-08-18): en **todos** los intentos de sondear un ID genuinamente nuevo
-(nunca usado antes), el comando quedó entregado (`RUN`) sin que el
-dispositivo mandara jamás un `send_cmd_result` — mientras tanto, el equipo
-seguía haciendo su polling normal como si nada, y solo se resolvió al
-vencer la barrida de operaciones (3 min). En cambio, consultar un ID que
-**sí** existe siempre respondió en segundos, sin excepción, en todas las
-pruebas. Esto no es ocasional: si vas a usar este comando para "¿existe
-este usuario?" (como hace `CREATE_USER` en el panel), asume que vas a
-esperar el timeout completo cada vez que el ID resulte estar libre — no
-hay forma conocida de acortar esa espera seguramente, porque no hay señal
-para distinguir "no existe" de "existe pero está respondiendo lento" antes
-de que se cumpla el timeout, y confundir esos dos casos aquí dispararía el
-reindexado destructivo de `SET_USER_INFO` sobre un usuario real.
+2026-08-18, re-confirmado en vivo 2026-09-08): en **todos** los intentos de
+sondear un ID genuinamente nuevo (nunca usado antes), el comando quedó
+entregado (`RUN`) sin que el dispositivo mandara jamás un `send_cmd_result` —
+mientras tanto, el equipo seguía haciendo su polling normal como si nada. En
+cambio, consultar un ID que **sí** existe siempre respondió en segundos, sin
+excepción, en todas las pruebas. Esto no es ocasional: si vas a usar este
+comando para "¿existe este usuario?" (como hacen `CREATE_USER` y
+`ADD_EMPLOYEE_TO_DEVICE` en el panel), el silencio en sí ES la respuesta ("no
+existe") — no hay forma de distinguir "no existe" de "existe pero está
+respondiendo lento" salvo por cuánto se tarda en responder, y confundir esos
+dos casos aquí dispararía el reindexado destructivo de `SET_USER_INFO` sobre
+un usuario real.
+
+**El panel espera `PROBE_TIMEOUT_MS` (30s) una vez que el comando fue
+entregado antes de dar el ID por libre** (`lib/operations/advance.ts`,
+`sweepStaleOperations`) — no los 3 minutos del timeout genérico de
+operaciones "enviadas sin respuesta". 30s es un margen amplio frente a los
+"segundos" que tarda un ID que sí existe, y evita que crear un usuario con un
+ID recién liberado (el caso más común) se sienta como si estuviera colgado.
+Antes de que el comando llegue a entregarse (equipo desconectado, todavía en
+cola) sí aplica el margen largo normal — el silencio de un equipo que ni
+siquiera ha hecho polling todavía no significa nada.
 
 **`GET_USER_ID_LIST` no es una alternativa válida para este chequeo** — ver
 su propia advertencia: no enumera usuarios sin huella registrada, así que
@@ -545,7 +588,7 @@ Parameters: {
 **Backup numbers:**
 | Número | Tipo | Descripción | Ejemplo |
 |--------|------|------------|---------|
-| 0-9 | Fingerprint | 10 dedos | 0=pulgar derecho |
+| 0-9 | Fingerprint | 10 slots, orden de registro (no identidad de dedo — ver arriba) | slot 0 = primera huella registrada |
 | 10 | Password | Contraseña | "password123" |
 | 11 | ID Card | Tarjeta ID | Número de tarjeta |
 | 12 | Face | Rostro | Datos faciales |
@@ -641,6 +684,104 @@ Parameters: {
 - No es posible capturar desde el panel admin (requeriría hardware)
 - Generalmente usado por scripts de migración o sincronización
 - Los datos se almacenan en enroll_data tabla
+
+---
+
+## Migración de huellas entre dispositivos — RESUELTO (2026-09-07)
+
+**Verificado contra dos equipos reales** (`2023081133` "Entrada Lateral" y
+`2023081158` "Farmacia Farmalido", ambos firmware `WS535BW1_BSCS_v1.5.31`),
+con confirmación física: el dedo del empleado fue reconocido por el equipo
+destino contra un template que **nunca se enroló físicamente ahí**, generando
+marcaciones reales (`realtime_glog`, `user_id=4`, `verify_mode=1`).
+
+### La receta que funciona
+
+**Lo decisivo es de dónde se LEE el template, no con qué comando se escribe.**
+La lectura tiene que ser `GET_USER_INFO` (blob de **612 bytes**, limpio). Con esa
+forma, **ambos** comandos de escritura funcionan — los dos verificados
+físicamente:
+
+```
+GET_USER_INFO (equipo origen)  →  blob de 612 bytes
+   patchar user_id embebido (offset 608, uint32 LE) al ID del destino
+   │
+   ├─ SET_ENROLL_DATA (destino)  → AGREGA una huella a un usuario existente.
+   │    Params: {user_id, backup_number, enroll_data:"BIN_1"} + el binario.
+   │    No toca nombre, privilegio ni las demás huellas del usuario.
+   │    ✅ Verificado 2026-09-07: pulgar escrito en el slot 1 de un usuario que
+   │       ya existía → reconocido físicamente (marcación real, verify_mode=1).
+   │
+   └─ SET_USER_INFO (destino)    → CREA/REEMPLAZA el usuario completo.
+        Params: {user_id, user_name, user_privilege, enroll_data_array:[...]}
+        + el binario. Sobre un usuario que YA existe dispara el reindexado
+        destructivo (ver advertencia de SET_USER_INFO) — usar solo para altas.
+        ✅ Verificado 2026-09-07: usuario nuevo creado con la huella de otro
+           equipo → reconocido físicamente.
+```
+
+**Implicación práctica:** para el caso real de ALCO (empleado que cambia de
+sede y ya está dado de alta en el equipo destino), usar `SET_ENROLL_DATA`. Es
+quirúrgico y evita por completo el reindexado.
+
+### La receta que NO funciona (y por qué)
+
+Leer con `GET_ENROLL_DATA` (blob de **524 bytes**) y copiarlo tal cual. Se probó
+tres veces contra hardware y **el dedo nunca fue reconocido**, pese a que la
+relectura mostraba solo 1 byte de diferencia.
+
+**Causa:** el blob de 524 bytes está contaminado. Coincide con la forma limpia
+solo en los primeros **60 bytes**; a partir de ahí trae **memoria sin
+inicializar del equipo origen** — valores tipo puntero (`6c270700`, `c8070f00`,
+`f0210700`) donde la forma de 612 bytes tiene ceros. Copiar eso es meterle a un
+equipo las direcciones de memoria del otro.
+
+> ⚠️ **Métricas que NO sirven para diagnosticar esto.** Al leer un template con
+> `GET_ENROLL_DATA`, la respuesta *siempre* muestra el rango 283..486 en ceros y
+> el JSON del propio comando embebido (`{"enroll_data":"BIN_1"}`) — **incluso
+> para un template sano que matchea físicamente**. Son artefactos del camino de
+> lectura, no señales de un registro roto. Verificado comparando un template
+> confirmado funcionando contra uno sin validar: ambos daban idéntico resultado
+> en esas métricas.
+
+> ⚠️ **Tampoco sirve comparar byte a byte contra el origen.** El template que
+> quedó funcionando coincidía con su origen en solo **28/60** bytes de cabecera,
+> mientras que uno recién escrito y sin usar coincidía **60/60**. La hipótesis
+> (no confirmada) es que el equipo **refina el template con cada match exitoso**
+> (actualización adaptativa, común en lectores biométricos), así que divergir del
+> origen es señal de uso, no de corrupción. **La única verificación válida es la
+> física: que el dedo sea reconocido.**
+
+### Estructura del blob de 612 bytes (parcialmente decodificada)
+
+| Offset | Contenido | Notas |
+|---|---|---|
+| 0..59 | cabecera + inicio del template | idéntico en ambas formas (524 y 612) |
+| 60..~490 | datos biométricos | donde la forma de 524 mete basura de memoria |
+| ~492..521 | campos internos del firmware | **el equipo destino los reescribe solo** — vienen como `aaaaaaaa`/`bbbbbbbb` (centinelas) del origen y el destino los reemplaza por los suyos (`f07a3b00`, `68120700`, `40090f00`, `50ae0300`, iguales entre equipos por ser mismo firmware) |
+| 548 | índice de slot interno | device-specific, lo asigna el destino (se observó 0, 2, 7) |
+| 556..591 | 36 bytes `0xff` | relleno constante |
+| 592..596 | flags | uno de ellos varía (`01`/`00`), significado no confirmado |
+| 597..607 | **nombre del usuario en ASCII**, null-padded | verificado: `"JesusPar"`, `"Eibar"`, `"j"` |
+| 608..611 | **user_id, uint32 LE** | verificado: 1, 3, 4 |
+
+**Insight central:** no hay que "sustituir a mano" los campos del equipo. El
+comando correcto hace que el **destino los regenere él mismo**. El único campo
+que sí conviene patchar antes de enviar es el `user_id` embebido (offset 608),
+para que coincida con el ID destino.
+
+### Lo que queda sin confirmar
+
+- El significado de los flags en 592..596.
+- Si el `user_id` embebido *debe* patcharse o el destino lo corrige solo
+  (se patchó en ambas pruebas exitosas; no se probó sin patchar).
+- Si un `backup_number` de destino distinto al de origen es válido (en las
+  pruebas se escribió el pulgar del slot 0 del origen en el slot 1 del destino
+  y **funcionó**, lo que sugiere que el número de slot es solo una etiqueta y el
+  matching es 1:N contra todos los templates — pero no se probó de forma
+  sistemática).
+- Si la actualización adaptativa del template (hipótesis de la advertencia de
+  arriba) es real; solo se observó la divergencia, no se aisló la causa.
 
 ---
 

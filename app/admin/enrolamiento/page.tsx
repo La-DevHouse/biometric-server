@@ -78,18 +78,11 @@ export default async function EnrolamientoPage({
   const activeBySlot = new Map<string, (typeof enrollments)[number]>();
   for (const e of enrollments) if (e.status === "active") activeBySlot.set(e.device_user_id, e);
 
-  // Candidatos: empleados con empleo activo en la empresa del equipo (+ padre e hijas).
+  // Candidatos: empleados con empleo activo en la empresa del equipo.
   let companyScopeNote = false;
   let candidates: { id: number; label: string }[];
   if (device?.company_id) {
-    const company = await prisma.client_company.findUnique({
-      where: { id: device.company_id },
-      include: { parent: { select: { id: true } }, children: { select: { id: true } } },
-    });
-    const companyIds = company
-      ? [company.id, ...(company.parent ? [company.parent.id] : []), ...company.children.map((c) => c.id)]
-      : [device.company_id];
-    candidates = await loadCandidates(companyIds);
+    candidates = await loadCandidates([device.company_id]);
   } else {
     companyScopeNote = true;
     candidates = await loadCandidates(null);
@@ -108,14 +101,14 @@ export default async function EnrolamientoPage({
             allowAll={false}
           />
         </Suspense>
-        <span className="text-xs text-text/50">
+        <span className="text-xs text-text/70">
           {slots.length} slot{slots.length === 1 ? "" : "s"} en el equipo · {activeBySlot.size}{" "}
           vinculado{activeBySlot.size === 1 ? "" : "s"}
         </span>
       </div>
 
       {companyScopeNote && (
-        <p className="m-0 border border-divider bg-surface p-2.5 text-xs text-text/70">
+        <p className="m-0 border border-divider bg-surface p-2.5 text-xs text-text/85">
           Este equipo no está asignado a ninguna empresa.{" "}
           <Link
             href={`/admin/dispositivos/${effectiveDevId}`}
@@ -148,7 +141,7 @@ export default async function EnrolamientoPage({
               return (
                 <Tr key={s.user_id}>
                   <Td className="font-mono">{s.user_id}</Td>
-                  <Td>{s.user_name || <span className="text-text/40">—</span>}</Td>
+                  <Td>{s.user_name || <span className="text-text/60">—</span>}</Td>
                   <Td>
                     {en ? (
                       <Link
@@ -156,10 +149,10 @@ export default async function EnrolamientoPage({
                         className="text-accent no-underline hover:underline"
                       >
                         {en.employee.last_name}, {en.employee.first_name}
-                        <span className="text-text/40"> · {en.employee.national_id}</span>
+                        <span className="text-text/60"> · {en.employee.national_id}</span>
                       </Link>
                     ) : (
-                      <span className="text-text/40">Sin vincular</span>
+                      <span className="text-text/60">Sin vincular</span>
                     )}
                   </Td>
                   <Td>
@@ -183,10 +176,10 @@ export default async function EnrolamientoPage({
 
       {orphanEnrollments.length > 0 && (
         <section className="flex flex-col gap-2">
-          <h3 className="m-0 text-sm font-semibold uppercase tracking-wide text-text/60">
+          <h3 className="m-0 text-sm font-semibold uppercase tracking-wide text-text/75">
             Vínculos sin slot en el equipo ({orphanEnrollments.length})
           </h3>
-          <p className="m-0 text-xs text-text/50">
+          <p className="m-0 text-xs text-text/70">
             La persona sigue vinculada a un ID que el equipo ya no reporta (se borró del equipo o aún
             no se sincronizó). Revisá y desvinculá si corresponde.
           </p>
@@ -221,7 +214,7 @@ export default async function EnrolamientoPage({
       )}
 
       {enrollments.some((e) => e.status === "inactive") && (
-        <details className="text-xs text-text/50">
+        <details className="text-xs text-text/70">
           <summary className="cursor-pointer">Histórico de vínculos cerrados</summary>
           <Table>
             <thead>

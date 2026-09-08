@@ -35,11 +35,11 @@ export function EndEmploymentDialog({
       <Dialog open={open} onClose={() => setOpen(false)} title={`Dar de baja en ${companyName}`}>
         <form action={formAction} className="flex flex-col gap-3">
           <input type="hidden" name="id" value={employmentId} />
-          <p className="m-0 text-xs text-text/50">
+          <p className="m-0 text-xs text-text/70">
             El empleo queda cerrado con esta fecha. La persona sigue en el sistema (pool de
             reclutamiento) y su historial se conserva.
           </p>
-          <label className="flex flex-col gap-1 text-xs text-text/70">
+          <label className="flex flex-col gap-1 text-xs text-text/85">
             Fecha de baja *
             <input name="end_date" type="date" required className={INPUT} autoFocus />
           </label>

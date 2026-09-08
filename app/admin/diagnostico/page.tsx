@@ -94,7 +94,7 @@ export default async function DiagnosticoPage({
 
   return (
     <div className="flex flex-col gap-6 max-w-[1200px]">
-      <p className="text-xs text-text/50 max-w-lg">
+      <p className="text-xs text-text/70 max-w-lg">
         Herramienta de bajo nivel: encola comandos crudos del protocolo y observa la cola y el
         tráfico entrante/saliente. Es lo que permitió descubrir los quirks del firmware — nada
         aquí pasa por la capa de operaciones de negocio.
@@ -110,7 +110,7 @@ export default async function DiagnosticoPage({
         <Suspense fallback={<div className="min-h-9 w-40 bg-surface border border-divider" />}>
           <DeviceSelect devices={deviceOptions} allowAll />
         </Suspense>
-        <span className="text-xs text-text/50">filtra la cola y el tráfico de abajo</span>
+        <span className="text-xs text-text/70">filtra la cola y el tráfico de abajo</span>
       </div>
 
       <div className="flex flex-col gap-2">
@@ -125,19 +125,19 @@ export default async function DiagnosticoPage({
               return (
                 <details key={cmd.trans_id} className="group">
                   <summary className="p-2.5 cursor-pointer hover:bg-text/4 flex items-center gap-3 flex-wrap list-none">
-                    <span className="font-mono text-xs text-text/50 w-12">#{cmd.trans_id}</span>
+                    <span className="font-mono text-xs text-text/70 w-12">#{cmd.trans_id}</span>
                     <span className="font-mono text-xs">{cmd.dev_id}</span>
                     <span className="font-heading text-sm">{cmd.cmd_code}</span>
                     {statusTag(cmd.status)}
                     {cmd.op_id && <Tag variant="outline">op #{cmd.op_id}</Tag>}
-                    <span className="ml-auto text-xs text-text/50">
+                    <span className="ml-auto text-xs text-text/70">
                       {new Date(cmd.updated_at).toLocaleString()}
                     </span>
                   </summary>
                   <div className="p-3 pt-0 flex flex-col gap-2 text-xs">
                     {params && (
                       <div>
-                        <p className="text-text/50 m-0 mb-1">Parámetros enviados</p>
+                        <p className="text-text/70 m-0 mb-1">Parámetros enviados</p>
                         <pre className="bg-surface border border-divider p-2 overflow-x-auto whitespace-pre-wrap m-0">
                           {JSON.stringify(params, null, 2)}
                         </pre>
@@ -145,7 +145,7 @@ export default async function DiagnosticoPage({
                     )}
                     {result && (
                       <div>
-                        <p className="text-text/50 m-0 mb-1">Respuesta del equipo</p>
+                        <p className="text-text/70 m-0 mb-1">Respuesta del equipo</p>
                         <pre className="bg-surface border border-divider p-2 overflow-x-auto whitespace-pre-wrap m-0">
                           {JSON.stringify(result, null, 2)}
                         </pre>
@@ -179,8 +179,8 @@ export default async function DiagnosticoPage({
                       {item.direction === "in" ? "← IN" : "→ OUT"}
                     </Tag>
                     <span className="font-mono">{item.request_code || "—"}</span>
-                    {item.dev_id && <span className="text-text/50">{item.dev_id}</span>}
-                    <span className="ml-auto text-text/50">
+                    {item.dev_id && <span className="text-text/70">{item.dev_id}</span>}
+                    <span className="ml-auto text-text/70">
                       {new Date(item.created_at).toLocaleTimeString()}
                     </span>
                   </div>
@@ -188,12 +188,12 @@ export default async function DiagnosticoPage({
                     <div className="bg-surface border border-divider p-2 font-mono">
                       {Object.entries(headers).map(([key, value]) => (
                         <div key={key}>
-                          <span className="text-text/50">{key}:</span> {String(value)}
+                          <span className="text-text/70">{key}:</span> {String(value)}
                         </div>
                       ))}
                     </div>
                   )}
-                  <p className="m-0 text-text/50">
+                  <p className="m-0 text-text/70">
                     {item.body_size ?? 0} bytes
                     {item.binary_size ? ` (${item.binary_size} binarios)` : ""}
                   </p>

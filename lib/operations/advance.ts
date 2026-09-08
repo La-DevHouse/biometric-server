@@ -5,9 +5,9 @@
 // cost the device its HTTP 200 (the firmware does not retry send_cmd_result;
 // losing that response loses the result forever).
 
-import { decodeUserIdList, decodeLogData } from "@/lib/protocol";
-import { runAsync, allAsync, getAsync, NOW_MS } from "@/lib/db";
-import { TERMINAL_STAGES, OperationKind } from "./kinds";
+import { decodeUserIdList, decodeLogData, resolveBinaryRef } from "@/lib/protocol";
+import { runAsync, allAsync, getAsync, prisma, NOW_MS } from "@/lib/db";
+import { TERMINAL_STAGES, OperationKind, MAX_ID_ASSIGNMENT_ATTEMPTS, MAX_FINGERPRINT_INDEX } from "./kinds";
 import { getOperationRow, setStage, finishOperation, queueCommandForOperation, OperationRow } from "./queue";
 import { insertAttendanceLogs, upsertUserFromInfo, UserInfoResult } from "./persist";
 
@@ -35,13 +35,46 @@ interface VerifyPlan {
 }
 
 interface CreateUserPlan {
-  phase: "probe" | "create";
+  phase: "probe" | "create" | "verify" | "apply_privilege" | "verify_privilege";
   userName: string;
   privilege: string;
 }
 
 interface DeleteUserPlan {
   phase: "apply" | "verify";
+}
+
+interface CaptureFingerprintParams {
+  employeeId: number;
+}
+
+interface PushFingerprintPlan {
+  phase: "apply" | "verify";
+}
+
+interface PushFingerprintParams {
+  employeeId: number;
+  fingerIndex: number;
+}
+
+interface AddEmployeeToDevicePlan {
+  phase: "probe" | "create" | "verify_create" | "push" | "verify_push" | "apply_privilege" | "verify_privilege";
+  candidateId: number;
+  attempt: number;
+  userName: string;
+  privilege: string;
+  pendingFingers: number[];
+  pushedFingers: number[];
+  failedFingers: Array<{ fingerIndex: number; reason: string }>;
+  currentFinger?: number;
+  /** Frozen once the fingerprint chain ends, so the privilege phase can
+   * append to the same summary instead of recomputing it blind. */
+  fingerprintNote?: string;
+  fingerprintMismatch?: boolean;
+}
+
+interface AddEmployeeToDeviceParams {
+  employeeId: number;
 }
 
 export async function advanceOperationForCommand(input: AdvanceInput): Promise<void> {
@@ -80,6 +113,12 @@ export async function advanceOperationForCommand(input: AdvanceInput): Promise<v
   //     against real hardware: it reported "Error" on deletions that had
   //     actually succeeded), so it always verifies by re-querying the user
   //     regardless of what the apply step claimed.
+  //   - PUSH_FINGERPRINT (SET_ENROLL_DATA) hasn't been caught lying the way
+  //     DELETE_USER has, but nothing about this firmware's write commands has
+  //     earned trust in their return code — verify regardless, same reasoning.
+  //   - ADD_EMPLOYEE_TO_DEVICE combines CREATE_USER's probe (a failed
+  //     GET_USER_INFO means the candidate id is free) with PUSH_FINGERPRINT's
+  //     apply/verify shape for each queued finger — same reasoning as both.
   // Every other kind, and the apply phase of these, treats a failed command
   // as fatal.
   const SELF_HANDLED: OperationKind[] = [
@@ -88,6 +127,8 @@ export async function advanceOperationForCommand(input: AdvanceInput): Promise<v
     "RENAME_USER",
     "CHANGE_PRIVILEGE",
     "DELETE_USER",
+    "PUSH_FINGERPRINT",
+    "ADD_EMPLOYEE_TO_DEVICE",
   ];
   if (!input.ok && !SELF_HANDLED.includes(op.kind)) {
     await finishOperation(
@@ -130,6 +171,18 @@ export async function advanceOperationForCommand(input: AdvanceInput): Promise<v
 
     case "DELETE_USER":
       await advanceDeleteUser(op, input);
+      break;
+
+    case "CAPTURE_FINGERPRINT":
+      await advanceCaptureFingerprint(op, input);
+      break;
+
+    case "PUSH_FINGERPRINT":
+      await advancePushFingerprint(op, input);
+      break;
+
+    case "ADD_EMPLOYEE_TO_DEVICE":
+      await advanceAddEmployeeToDevice(op, input);
       break;
 
     default:
@@ -332,7 +385,8 @@ async function advanceVerified(
       "mismatch",
       `El dispositivo respondió OK pero el ${noun} sigue siendo "${actual}" (se solicitó "${expected}"). ` +
         (field === "user_privilege"
-          ? "Este firmware solo aplica MANAGER de forma fiable."
+          ? "Verificado contra hardware real: un privilegio elevado no se aplica mientras el usuario no " +
+            "tenga ninguna huella registrada — registrale la huella físicamente y reintentá."
           : "")
     );
   }
@@ -371,6 +425,376 @@ async function advanceDeleteUser(op: OperationRow, input: AdvanceInput): Promise
   await runAsync(`DELETE FROM users WHERE dev_id = ? AND user_id = ?`, [op.dev_id, op.user_id]);
   await runAsync(`DELETE FROM enroll_data WHERE dev_id = ? AND user_id = ?`, [op.dev_id, op.user_id]);
   await finishOperation(op.id, "done", `Usuario ${op.user_id} eliminado del equipo (verificado).`);
+}
+
+/**
+ * Lee la forma limpia de 612 bytes (GET_USER_INFO) y guarda como copia
+ * canónica por empleado TODO lo que el equipo tiene registrado para este
+ * usuario — nunca pide elegir un número de slot: verificado contra hardware
+ * real (2026-09-08) que ese número (backup_number) es solo orden de
+ * registro, no identidad de dedo (un índice derecho registrado quedó en el
+ * mismo slot 0 que antes se documentaba como "pulgar derecho"). Nunca usar
+ * GET_ENROLL_DATA para esto — verificado contra hardware real que esa forma
+ * (524 bytes) trae memoria sin inicializar del equipo a partir del byte 60
+ * (ver docs/05-commands-catalog.md, "Migración de huellas entre
+ * dispositivos").
+ */
+async function advanceCaptureFingerprint(op: OperationRow, input: AdvanceInput): Promise<void> {
+  const params: CaptureFingerprintParams = op.params_json
+    ? JSON.parse(op.params_json)
+    : { employeeId: 0 };
+
+  const entries = (input.resultJson?.enroll_data_array as
+    | Array<{ backup_number: number; enroll_data?: unknown }>
+    | undefined
+  )?.filter((e) => e.backup_number >= 0 && e.backup_number <= MAX_FINGERPRINT_INDEX);
+
+  if (!entries || entries.length === 0) {
+    await finishOperation(
+      op.id,
+      "error",
+      `El usuario ${op.user_id} no tiene huellas registradas en este equipo.`
+    );
+    return;
+  }
+
+  const captured: number[] = [];
+  const failed: Array<{ slot: number; reason: string }> = [];
+  for (const entry of entries) {
+    const template = resolveBinaryRef(entry.enroll_data, input.binaries);
+    if (!template || template.length < 100) {
+      failed.push({ slot: entry.backup_number, reason: "sin datos binarios (o llegaron vacíos)" });
+      continue;
+    }
+    // Prisma's generated Bytes type wants Uint8Array<ArrayBuffer>
+    // specifically; Buffer's backing store is typed as the wider
+    // ArrayBufferLike, so a plain Buffer doesn't satisfy it structurally
+    // even though it works at runtime.
+    const templateBytes = new Uint8Array(template);
+    await prisma.employee_fingerprint.upsert({
+      where: { employee_id_finger_index: { employee_id: params.employeeId, finger_index: entry.backup_number } },
+      create: {
+        employee_id: params.employeeId,
+        finger_index: entry.backup_number,
+        template: templateBytes,
+        source_dev_id: op.dev_id,
+      },
+      update: { template: templateBytes, source_dev_id: op.dev_id },
+    });
+    captured.push(entry.backup_number);
+  }
+
+  if (captured.length === 0) {
+    await finishOperation(op.id, "error", "Ninguna huella se pudo leer correctamente — reintentá.");
+    return;
+  }
+
+  // Al menos una se leyó bien — igual que ADD_EMPLOYEE_TO_DEVICE, un fallo
+  // parcial no convierte el éxito parcial en error.
+  const note =
+    captured.length === 1
+      ? `1 huella capturada (slot ${captured[0]}) desde este equipo.`
+      : `${captured.length} huellas capturadas (slots ${captured.join(", ")}) desde este equipo.`;
+  await finishOperation(op.id, "done", failed.length > 0 ? `${note} ${failed.length} fallaron.` : note);
+}
+
+/**
+ * Escribe la copia canónica de una huella en otro equipo, vía SET_ENROLL_DATA
+ * — verificado contra hardware real que este comando agrega una huella a un
+ * usuario que ya existe sin tocar el resto de su ficha (nombre, privilegio,
+ * otras huellas). El usuario destino tiene que existir de antemano en el
+ * equipo (lo garantiza requerir un employee_device_enrollment activo antes de
+ * encolar — ver startPushFingerprint).
+ *
+ * Igual que DELETE_USER, no se confía en el cmd_return_code de la escritura
+ * en ninguna dirección: siempre se verifica con un GET_USER_INFO posterior.
+ * Esa verificación solo confirma que el equipo AHORA reporta una huella en
+ * ese dedo — no que el dedo físico vaya a matchear (eso solo se confirma
+ * cuando la persona marca asistencia con ese dedo en el equipo destino).
+ */
+async function advancePushFingerprint(op: OperationRow, input: AdvanceInput): Promise<void> {
+  const plan: PushFingerprintPlan = op.plan_json ? JSON.parse(op.plan_json) : { phase: "apply" };
+  const params: PushFingerprintParams = op.params_json
+    ? JSON.parse(op.params_json)
+    : { employeeId: 0, fingerIndex: -1 };
+
+  if (plan.phase === "apply") {
+    await setStage(op.id, "verifying", { plan: { phase: "verify" } });
+    await queueCommandForOperation(op.id, op.dev_id, "GET_USER_INFO", { user_id: op.user_id });
+    return;
+  }
+
+  // phase === "verify"
+  const entries = input.resultJson?.enroll_data_array as
+    | Array<{ backup_number: number; enroll_data?: unknown }>
+    | undefined;
+  const entry = input.ok ? entries?.find((e) => e.backup_number === params.fingerIndex) : undefined;
+  const template = entry ? resolveBinaryRef(entry.enroll_data, input.binaries) : null;
+
+  if (!template) {
+    await finishOperation(
+      op.id,
+      "mismatch",
+      `El equipo destino no reporta una huella en el dedo ${params.fingerIndex} para el usuario ${op.user_id}. ` +
+        "El firmware puede reportar OK sin haber aplicado el cambio — reintentá."
+    );
+    return;
+  }
+
+  await finishOperation(
+    op.id,
+    "done",
+    `Huella del dedo ${params.fingerIndex} escrita y verificada en este equipo (usuario ${op.user_id}, ` +
+      `${template.length} bytes). Confirmalo pidiéndole a la persona que marque asistencia con ese dedo.`
+  );
+}
+
+/**
+ * Crea un empleado en un equipo nuevo, de punta a punta: sonda-con-reintento
+ * para un ID libre (misma lógica de CREATE_USER, misma razón — GET_USER_INFO
+ * es el único comando que realmente confirma "este id no existe"), crea el
+ * usuario, vincula el enrolamiento, y si la persona ya tiene huellas
+ * capturadas (employee_fingerprint) las copia una por una — mismo patrón
+ * apply/verify de PUSH_FINGERPRINT, incluida la desconfianza en el
+ * cmd_return_code de SET_ENROLL_DATA. Un fallo en una huella individual no
+ * aborta las demás (igual que SYNC_USERS con GET_USER_INFO por usuario).
+ */
+async function advanceAddEmployeeToDevice(op: OperationRow, input: AdvanceInput): Promise<void> {
+  const plan: AddEmployeeToDevicePlan = op.plan_json
+    ? JSON.parse(op.plan_json)
+    : {
+        phase: "probe",
+        candidateId: 1,
+        attempt: 1,
+        userName: "",
+        privilege: "USER",
+        pendingFingers: [],
+        pushedFingers: [],
+        failedFingers: [],
+      };
+  const params: AddEmployeeToDeviceParams = op.params_json
+    ? JSON.parse(op.params_json)
+    : { employeeId: 0 };
+
+  if (plan.phase === "probe") {
+    const existingName = input.ok ? input.resultJson?.user_name : null;
+    if (existingName) {
+      if (plan.attempt >= MAX_ID_ASSIGNMENT_ATTEMPTS) {
+        await finishOperation(
+          op.id,
+          "error",
+          `No se pudo asignar un ID automáticamente tras ${plan.attempt} intentos (el último, ${plan.candidateId}, ` +
+            `ya está en uso por "${existingName}"). Reintentá la operación — el próximo intento partirá de un ID más alto.`
+        );
+        return;
+      }
+      const nextCandidate = plan.candidateId + 1;
+      const nextPlan: AddEmployeeToDevicePlan = {
+        ...plan,
+        candidateId: nextCandidate,
+        attempt: plan.attempt + 1,
+      };
+      await setStage(op.id, "waiting", { plan: nextPlan });
+      await queueCommandForOperation(op.id, op.dev_id, "GET_USER_INFO", { user_id: String(nextCandidate) });
+      return;
+    }
+    const nextPlan: AddEmployeeToDevicePlan = { ...plan, phase: "create" };
+    await setStage(op.id, "waiting", { plan: nextPlan });
+    await queueCommandForOperation(op.id, op.dev_id, "SET_USER_INFO", {
+      user_id: String(plan.candidateId),
+      user_name: plan.userName,
+      user_privilege: plan.privilege,
+    });
+    return;
+  }
+
+  if (plan.phase === "create") {
+    // SET_USER_INFO puede devolver OK con cuerpo vacío (mismo comportamiento
+    // verificado en CREATE_USER) — la única confirmación real es releer.
+    const nextPlan: AddEmployeeToDevicePlan = { ...plan, phase: "verify_create" };
+    await setStage(op.id, "verifying", { plan: nextPlan });
+    await queueCommandForOperation(op.id, op.dev_id, "GET_USER_INFO", { user_id: String(plan.candidateId) });
+    return;
+  }
+
+  if (plan.phase === "verify_create") {
+    if (!input.ok || !input.resultJson?.user_name) {
+      await finishOperation(
+        op.id,
+        "mismatch",
+        "No se pudo verificar la creación del usuario; el estado real del dispositivo es desconocido."
+      );
+      return;
+    }
+    await upsertUserFromInfo(op.dev_id, input.resultJson as UserInfoResult, input.binaries);
+    await prisma.employee_device_enrollment.create({
+      data: {
+        employee_id: params.employeeId,
+        dev_id: op.dev_id,
+        device_user_id: String(plan.candidateId),
+      },
+    });
+    await advanceAddEmployeeToDevicePushNext(op, { ...plan, phase: "push" }, params);
+    return;
+  }
+
+  if (plan.phase === "push") {
+    // Igual que PUSH_FINGERPRINT: el cmd_return_code de SET_ENROLL_DATA no
+    // es confiable en ninguna dirección — siempre se verifica con una
+    // relectura antes de dar por copiada la huella.
+    const nextPlan: AddEmployeeToDevicePlan = { ...plan, phase: "verify_push" };
+    await setStage(op.id, "verifying", { plan: nextPlan });
+    await queueCommandForOperation(op.id, op.dev_id, "GET_USER_INFO", { user_id: String(plan.candidateId) });
+    return;
+  }
+
+  if (plan.phase === "verify_push") {
+    const finger = plan.currentFinger ?? -1;
+    const entries = input.resultJson?.enroll_data_array as Array<{ backup_number: number }> | undefined;
+    const wasWritten = input.ok && !!entries?.some((e) => e.backup_number === finger);
+
+    const pushedFingers = wasWritten ? [...plan.pushedFingers, finger] : plan.pushedFingers;
+    const failedFingers = wasWritten
+      ? plan.failedFingers
+      : [
+          ...plan.failedFingers,
+          { fingerIndex: finger, reason: input.ok ? "no reportada tras la escritura" : input.returnCode },
+        ];
+
+    await advanceAddEmployeeToDevicePushNext(
+      op,
+      { ...plan, phase: "push", pushedFingers, failedFingers },
+      params
+    );
+    return;
+  }
+
+  if (plan.phase === "apply_privilege") {
+    // Igual que CHANGE_PRIVILEGE: SET_USER_PRIVILEGE puede devolver OK sin
+    // haber aplicado nada — la única confirmación real es releer.
+    const nextPlan: AddEmployeeToDevicePlan = { ...plan, phase: "verify_privilege" };
+    await setStage(op.id, "verifying", { plan: nextPlan });
+    await queueCommandForOperation(op.id, op.dev_id, "GET_USER_INFO", { user_id: String(plan.candidateId) });
+    return;
+  }
+
+  // phase === "verify_privilege"
+  const fingerprintNote = plan.fingerprintNote ?? summarizeAddEmployeeToDevice(plan);
+  const actualPrivilege = input.ok ? input.resultJson?.user_privilege : undefined;
+
+  if (actualPrivilege === plan.privilege) {
+    await finishOperation(
+      op.id,
+      plan.fingerprintMismatch ? "mismatch" : "done",
+      `${fingerprintNote} Privilegio "${plan.privilege}" verificado en el dispositivo.`
+    );
+    return;
+  }
+
+  // Verificado contra hardware real (2026-09-08): un privilegio elevado no
+  // se aplica mientras el usuario no tenga ninguna huella registrada — el
+  // equipo responde OK pero lo deja en USER. Si esta operación no logró
+  // copiar ninguna huella, esa es casi con certeza la causa.
+  const reason =
+    plan.pushedFingers.length === 0
+      ? "no se pudo aplicar todavía — este firmware solo acepta privilegios elevados una vez que el " +
+        'usuario tiene al menos una huella registrada. Volvé a intentar "Cambiar privilegio" después de ' +
+        "registrarle la huella."
+      : `el dispositivo respondió OK pero el privilegio sigue siendo "${actualPrivilege ?? "desconocido"}".`;
+  await finishOperation(op.id, "mismatch", `${fingerprintNote} Privilegio "${plan.privilege}" ${reason}`);
+}
+
+/**
+ * Verificado contra hardware real (2026-09-08): `SET_USER_INFO` no aplica su
+ * campo `user_privilege` de forma confiable al crear (un usuario recién
+ * creado con `"MANAGER"` quedó reportado como `USER`), y `SET_USER_PRIVILEGE`
+ * — normalmente confiable para `MANAGER` — tampoco lo aplica mientras el
+ * usuario no tenga ninguna huella registrada: el equipo respondió `OK` sin
+ * error pero el privilegio se quedó en `USER`, y volvió a funcionar apenas
+ * hubo una huella. Por eso esto corre SIEMPRE al final, después de copiar
+ * cualquier huella ya capturada — nunca antes.
+ */
+async function advanceAddEmployeeToDeviceFinishOrElevate(
+  op: OperationRow,
+  plan: AddEmployeeToDevicePlan
+): Promise<void> {
+  if (plan.privilege === "USER") {
+    await finishOperation(
+      op.id,
+      plan.fingerprintMismatch ? "mismatch" : "done",
+      plan.fingerprintNote ?? summarizeAddEmployeeToDevice(plan)
+    );
+    return;
+  }
+  const nextPlan: AddEmployeeToDevicePlan = { ...plan, phase: "apply_privilege" };
+  await setStage(op.id, "waiting", { plan: nextPlan });
+  await queueCommandForOperation(op.id, op.dev_id, "SET_USER_PRIVILEGE", {
+    user_id: String(plan.candidateId),
+    user_privilege: plan.privilege,
+  });
+}
+
+/** Toma el siguiente dedo pendiente y lo escribe, o pasa a aplicar el
+ * privilegio (o cierra la operación) si ya no quedan. */
+async function advanceAddEmployeeToDevicePushNext(
+  op: OperationRow,
+  plan: AddEmployeeToDevicePlan,
+  params: AddEmployeeToDeviceParams
+): Promise<void> {
+  if (plan.pendingFingers.length === 0) {
+    const fingerprintMismatch = plan.pushedFingers.length === 0 && plan.failedFingers.length > 0;
+    await advanceAddEmployeeToDeviceFinishOrElevate(op, {
+      ...plan,
+      fingerprintNote: summarizeAddEmployeeToDevice(plan),
+      fingerprintMismatch,
+    });
+    return;
+  }
+
+  const [finger, ...rest] = plan.pendingFingers;
+  const fingerprint = await prisma.employee_fingerprint.findUnique({
+    where: { employee_id_finger_index: { employee_id: params.employeeId, finger_index: finger } },
+  });
+  if (!fingerprint || fingerprint.template.length < 612) {
+    await advanceAddEmployeeToDevicePushNext(
+      op,
+      {
+        ...plan,
+        pendingFingers: rest,
+        failedFingers: [...plan.failedFingers, { fingerIndex: finger, reason: "plantilla local inválida o ausente" }],
+      },
+      params
+    );
+    return;
+  }
+
+  // Único campo que hace falta tocar: el user_id embebido (offset 608) — ver
+  // startPushFingerprint / docs/05-commands-catalog.md para la receta completa.
+  const patched = Buffer.from(fingerprint.template);
+  patched.writeUInt32LE(plan.candidateId, 608);
+
+  const nextPlan: AddEmployeeToDevicePlan = { ...plan, phase: "push", pendingFingers: rest, currentFinger: finger };
+  await setStage(op.id, "waiting", { plan: nextPlan });
+  await queueCommandForOperation(
+    op.id,
+    op.dev_id,
+    "SET_ENROLL_DATA",
+    { user_id: String(plan.candidateId), backup_number: finger, enroll_data: "BIN_1" },
+    patched
+  );
+}
+
+function summarizeAddEmployeeToDevice(plan: AddEmployeeToDevicePlan): string {
+  const total = plan.pushedFingers.length + plan.failedFingers.length;
+  if (total === 0) {
+    return `Usuario ${plan.candidateId} creado y vinculado (verificado). Sin huellas capturadas todavía para copiar.`;
+  }
+  const base =
+    `Usuario ${plan.candidateId} creado y vinculado (verificado). ` +
+    `${plan.pushedFingers.length} de ${total} huella(s) copiada(s) y verificada(s).`;
+  return plan.failedFingers.length > 0
+    ? `${base} Fallaron: dedo(s) ${plan.failedFingers.map((f) => f.fingerIndex).join(", ")}.`
+    : base;
 }
 
 /** `user_id_count: 0` means an empty roster — decodeUserIdList itself would
@@ -432,23 +856,71 @@ async function advanceCreateUser(op: OperationRow, input: AdvanceInput): Promise
     return;
   }
 
-  // phase === "verify"
-  if (!input.ok || !input.resultJson?.user_name) {
+  if (plan.phase === "verify") {
+    if (!input.ok || !input.resultJson?.user_name) {
+      await finishOperation(
+        op.id,
+        "mismatch",
+        "No se pudo verificar la creación; el estado real del dispositivo es desconocido."
+      );
+      return;
+    }
+    // Persist exactly what the device confirmed, not just what was requested
+    // — handleCommandResult already does this for ad-hoc GET_USER_INFO calls,
+    // but that path doesn't run for commands that belong to an operation.
+    await upsertUserFromInfo(op.dev_id, input.resultJson as UserInfoResult, input.binaries);
+
+    if (plan.privilege === "USER") {
+      await finishOperation(
+        op.id,
+        "done",
+        `Usuario ${op.user_id} creado y verificado. Registra su huella físicamente en el equipo.`
+      );
+      return;
+    }
+    // Verificado contra hardware real (2026-09-08, ver ADD_EMPLOYEE_TO_DEVICE
+    // más abajo y docs/05-commands-catalog.md → SET_USER_PRIVILEGE): un
+    // privilegio elevado pedido en el propio SET_USER_INFO de creación se
+    // ignora — el usuario queda en USER pase lo que pase. Solo un
+    // SET_USER_PRIVILEGE aparte, DESPUÉS de que el usuario ya exista, tiene
+    // chance de aplicarlo (y ni así, si todavía no tiene huella registrada).
+    await setStage(op.id, "waiting", { plan: { ...plan, phase: "apply_privilege" } });
+    await queueCommandForOperation(op.id, op.dev_id, "SET_USER_PRIVILEGE", {
+      user_id: op.user_id,
+      user_privilege: plan.privilege,
+    });
+    return;
+  }
+
+  if (plan.phase === "apply_privilege") {
+    // Misma desconfianza que CHANGE_PRIVILEGE: puede devolver OK sin haber
+    // aplicado nada — solo una relectura confirma de verdad.
+    await setStage(op.id, "verifying", { plan: { ...plan, phase: "verify_privilege" } });
+    await queueCommandForOperation(op.id, op.dev_id, "GET_USER_INFO", { user_id: op.user_id });
+    return;
+  }
+
+  // phase === "verify_privilege"
+  const actualPrivilege = input.ok ? input.resultJson?.user_privilege : undefined;
+  if (actualPrivilege === plan.privilege) {
     await finishOperation(
       op.id,
-      "mismatch",
-      "No se pudo verificar la creación; el estado real del dispositivo es desconocido."
+      "done",
+      `Usuario ${op.user_id} creado con privilegio "${plan.privilege}" (verificado en el dispositivo).`
     );
     return;
   }
-  // Persist exactly what the device confirmed, not just what was requested
-  // — handleCommandResult already does this for ad-hoc GET_USER_INFO calls,
-  // but that path doesn't run for commands that belong to an operation.
-  await upsertUserFromInfo(op.dev_id, input.resultJson as UserInfoResult, input.binaries);
+  // Verificado contra hardware real (2026-09-08): un privilegio elevado no
+  // se aplica mientras el usuario no tenga ninguna huella registrada — el
+  // equipo responde OK pero lo deja en USER. Como CREATE_USER no copia
+  // huellas por sí mismo (a diferencia de ADD_EMPLOYEE_TO_DEVICE), esta es
+  // la explicación casi segura cada vez que este paso no verifica.
   await finishOperation(
     op.id,
-    "done",
-    `Usuario ${op.user_id} creado y verificado. Registra su huella físicamente en el equipo.`
+    "mismatch",
+    `Usuario ${op.user_id} creado, pero el privilegio "${plan.privilege}" no se pudo aplicar todavía — ` +
+      "este firmware solo acepta privilegios elevados una vez que el usuario tiene al menos una huella " +
+      'registrada. Registrale la huella físicamente y volvé a intentar "Cambiar privilegio".'
   );
 }
 
@@ -470,6 +942,35 @@ const THREE_MINUTES_MS = 3 * 60 * 1000;
  */
 const VERIFY_TIMEOUT_MS = 25 * 1000;
 
+// CREATE_USER and ADD_EMPLOYEE_TO_DEVICE both open with a "probe": a
+// GET_USER_INFO against a candidate id that has never existed before, sent
+// BEFORE anything is known about whether the device is even reachable. A
+// silent device that hasn't even polled yet (still 'queued'/'waiting') must
+// still get the full grace period below — that silence means nothing yet.
+// But verified repeatedly against real hardware (device 2023081133,
+// 2026-08-18, re-confirmed live 2026-09-08): once the probe is actually
+// delivered (stage 'sent') and the device genuinely has no such user, it
+// NEVER sends a result at all — not slowly, not eventually — while querying
+// an id that DOES exist always answers within seconds. So a 'sent'-stage
+// probe's silence carries the same hang-means-free signal as DELETE_USER's
+// verify hang-means-gone, and a real collision (id taken) resolves almost
+// immediately regardless — there's no reason to make every genuinely free
+// id sit out the generic THREE_MINUTES_MS 'sent' timeout, so this gets its
+// own short window instead (see PROBE_TIMEOUT_MS).
+const PROBE_PHASE_KINDS: ReadonlySet<OperationKind> = new Set(["CREATE_USER", "ADD_EMPLOYEE_TO_DEVICE"]);
+
+const PROBE_TIMEOUT_MS = 30 * 1000;
+
+function isPendingProbe(op: OperationRow): boolean {
+  if (!PROBE_PHASE_KINDS.has(op.kind) || op.stage !== "sent") return false;
+  try {
+    const plan = op.plan_json ? JSON.parse(op.plan_json) : null;
+    return plan?.phase === "probe";
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Lazy expiry: no cron in this stack, so this runs on the device's own poll
  * heartbeat (handleReceiveCmd, ~every 10s) and from the operations list
@@ -487,7 +988,14 @@ export async function sweepStaleOperations(): Promise<number> {
   for (const op of candidates) {
     const age = now - op.updated_at;
     const isVerifying = op.stage === "verifying";
-    const threshold = isVerifying ? VERIFY_TIMEOUT_MS : op.stage === "sent" ? THREE_MINUTES_MS : TEN_MINUTES_MS;
+    const pendingProbe = isPendingProbe(op);
+    const threshold = isVerifying
+      ? VERIFY_TIMEOUT_MS
+      : pendingProbe
+        ? PROBE_TIMEOUT_MS
+        : op.stage === "sent"
+          ? THREE_MINUTES_MS
+          : TEN_MINUTES_MS;
     if (age < threshold) continue;
 
     const transId = op.current_trans_id;
@@ -500,13 +1008,16 @@ export async function sweepStaleOperations(): Promise<number> {
       );
     }
 
-    if (isVerifying && transId) {
+    if ((isVerifying || pendingProbe) && transId) {
       // Route through the normal per-kind handler as if the device had
       // reported failure, instead of a generic timeout error.
-      // RENAME_USER/CHANGE_PRIVILEGE/CREATE_USER turn that into "mismatch"
+      // RENAME_USER/CHANGE_PRIVILEGE's verify turns that into "mismatch"
       // (already the right call — cannot confirm, don't claim success).
-      // DELETE_USER turns it into "done" — a non-answer here means the id
-      // is gone, exactly what a successful deletion looks like.
+      // DELETE_USER's verify turns it into "done" — a non-answer here means
+      // the id is gone, exactly what a successful deletion looks like.
+      // CREATE_USER/ADD_EMPLOYEE_TO_DEVICE's probe turns it into "the
+      // candidate id is free" — exactly the same hang, at the opposite end
+      // of a user's lifecycle.
       try {
         await advanceOperationForCommand({
           opId: op.id,

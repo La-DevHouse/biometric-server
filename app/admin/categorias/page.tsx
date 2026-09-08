@@ -31,7 +31,7 @@ export default async function CategoriasPage() {
     <div className="flex max-w-4xl flex-col gap-8">
       <section>
         <div className="mb-2 flex items-center justify-between">
-          <h3 className="m-0 text-sm font-semibold uppercase tracking-wide text-text/60">
+          <h3 className="m-0 text-sm font-semibold uppercase tracking-wide text-text/75">
             Departamentos ({departments.length})
           </h3>
           <DepartmentFormDialog />
@@ -54,7 +54,7 @@ export default async function CategoriasPage() {
               {departments.map((d) => (
                 <Tr key={d.id}>
                   <Td>{d.name}</Td>
-                  <Td className="font-mono text-xs">{d.code ?? <span className="text-text/40">—</span>}</Td>
+                  <Td className="font-mono text-xs">{d.code ?? <span className="text-text/60">—</span>}</Td>
                   <Td>{d._count.positions}</Td>
                   <Td>{d._count.employments}</Td>
                   <Td>
@@ -84,7 +84,7 @@ export default async function CategoriasPage() {
 
       <section>
         <div className="mb-2 flex items-center justify-between">
-          <h3 className="m-0 text-sm font-semibold uppercase tracking-wide text-text/60">
+          <h3 className="m-0 text-sm font-semibold uppercase tracking-wide text-text/75">
             Puestos ({positions.length})
           </h3>
           <PositionFormDialog departments={deptOptions} />
@@ -107,8 +107,8 @@ export default async function CategoriasPage() {
               {positions.map((p) => (
                 <Tr key={p.id}>
                   <Td>{p.name}</Td>
-                  <Td className="font-mono text-xs">{p.code ?? <span className="text-text/40">—</span>}</Td>
-                  <Td>{p.department?.name ?? <span className="text-text/40">—</span>}</Td>
+                  <Td className="font-mono text-xs">{p.code ?? <span className="text-text/60">—</span>}</Td>
+                  <Td>{p.department?.name ?? <span className="text-text/60">—</span>}</Td>
                   <Td>{p._count.employments}</Td>
                   <Td>
                     <Tag variant={p.status === "active" ? "accent" : "neutral"}>
