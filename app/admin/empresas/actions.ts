@@ -52,6 +52,7 @@ function fieldsFromForm(fd: FormData):
 }
 
 function buildFields(fd: FormData, tax_id: string | null) {
+  const bmRaw = str(fd, "business_model_id");
   return {
     name: str(fd, "name"),
     tax_id,
@@ -59,6 +60,7 @@ function buildFields(fd: FormData, tax_id: string | null) {
     shared_employees: fd.get("shared_employees") === "on",
     address: str(fd, "address") || null,
     parent_id: str(fd, "parent_id") === "" ? null : Number(str(fd, "parent_id")),
+    business_model_id: bmRaw === "" ? null : Number(bmRaw),
     ...thresholdsFromForm(fd),
   };
 }

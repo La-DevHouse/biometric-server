@@ -20,7 +20,14 @@ type CompanyRowData = Awaited<ReturnType<typeof getCompanies>>[number];
 
 export default async function EmpresasPage() {
   await requireUser();
-  const companies = await getCompanies();
+  const [companies, businessModels] = await Promise.all([
+    getCompanies(),
+    prisma.business_model.findMany({
+      where: { status: "active" },
+      select: { id: true, name: true },
+      orderBy: { name: "asc" },
+    }),
+  ]);
 
   const parentOptions = companies
     .filter((c) => c.parent_id === null)
@@ -34,7 +41,7 @@ export default async function EmpresasPage() {
         <p className="m-0 text-sm text-text/75">
           {companies.length} {companies.length === 1 ? "empresa" : "empresas"}
         </p>
-        <CompanyFormDialog parentOptions={parentOptions} />
+        <CompanyFormDialog parentOptions={parentOptions} businessModels={businessModels} />
       </div>
 
       {companies.length === 0 ? (

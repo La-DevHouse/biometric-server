@@ -26,19 +26,26 @@ export default async function EmpresaDetailPage({
     include: {
       parent: { select: { id: true, name: true } },
       children: { select: { id: true, name: true, status: true }, orderBy: { name: "asc" } },
+      business_model: { select: { name: true } },
       sites: { orderBy: { name: "asc" } },
       _count: { select: { employments: true, devices: true } },
     },
   });
   if (!company) notFound();
 
-  const parentOptions = (
-    await prisma.client_company.findMany({
+  const [parentRows, businessModels] = await Promise.all([
+    prisma.client_company.findMany({
       where: { parent_id: null },
       select: { id: true, name: true },
       orderBy: { name: "asc" },
-    })
-  ).filter((p) => p.id !== id);
+    }),
+    prisma.business_model.findMany({
+      where: { status: "active" },
+      select: { id: true, name: true },
+      orderBy: { name: "asc" },
+    }),
+  ]);
+  const parentOptions = parentRows.filter((p) => p.id !== id);
 
   const formValues: CompanyFormValues = {
     id: company.id,
@@ -48,6 +55,7 @@ export default async function EmpresaDetailPage({
     shared_employees: company.shared_employees,
     address: company.address,
     parent_id: company.parent_id,
+    business_model_id: company.business_model_id,
     late_tolerance_min: company.late_tolerance_min,
     early_leave_tolerance_min: company.early_leave_tolerance_min,
     absence_rule: company.absence_rule,
@@ -84,6 +92,10 @@ export default async function EmpresaDetailPage({
           }
         />
         <Row label="Empleados compartidos" value={company.shared_employees ? "Sí" : "No"} />
+        <Row
+          label="Modelo de negocio"
+          value={company.business_model?.name ?? "— hereda del grupo / sin especificar —"}
+        />
         <Row label="Dirección" value={company.address ?? "—"} />
         <Row label="Empleos" value={String(company._count.employments)} />
         <Row label="Dispositivos" value={String(company._count.devices)} />
@@ -100,7 +112,12 @@ export default async function EmpresaDetailPage({
           }
         />
         <div className="mt-1 flex gap-2">
-          <CompanyFormDialog company={formValues} parentOptions={parentOptions} trigger="ghost" />
+          <CompanyFormDialog
+            company={formValues}
+            parentOptions={parentOptions}
+            businessModels={businessModels}
+            trigger="ghost"
+          />
           <RecordStatusButton
             id={company.id}
             active={company.status === "active"}

@@ -93,17 +93,28 @@ function positionData(fd: FormData) {
   };
 }
 
+/** IDs de modelo de negocio marcados en el form. Vacío = cargo genérico. */
+function businessModelIds(fd: FormData): number[] {
+  return fd
+    .getAll("business_model_ids")
+    .map((v) => Number(v))
+    .filter((n) => Number.isFinite(n));
+}
+
 export async function createPositionAction(
   _prev: AdminActionState,
   fd: FormData
 ): Promise<AdminActionState> {
   const user = await requireUser();
   const d = positionData(fd);
+  const bmIds = businessModelIds(fd);
   if (!d.name) return { status: "error", error: "El nombre es obligatorio." };
 
   try {
-    const created = await prisma.position.create({ data: d });
-    await writeAudit({ actorId: user.id, action: "position.create", entityType: "position", entityId: created.id, after: created });
+    const created = await prisma.position.create({
+      data: { ...d, business_models: { create: bmIds.map((business_model_id) => ({ business_model_id })) } },
+    });
+    await writeAudit({ actorId: user.id, action: "position.create", entityType: "position", entityId: created.id, after: { ...created, business_model_ids: bmIds } });
     revalidatePath(PATH);
     return { status: "ok", message: `Puesto "${d.name}" creado.` };
   } catch (e) {
@@ -118,6 +129,7 @@ export async function updatePositionAction(
   const user = await requireUser();
   const id = Number(str(fd, "id"));
   const d = positionData(fd);
+  const bmIds = businessModelIds(fd);
   if (!Number.isFinite(id)) return { status: "error", error: "ID inválido." };
   if (!d.name) return { status: "error", error: "El nombre es obligatorio." };
 
@@ -125,8 +137,17 @@ export async function updatePositionAction(
   if (!before) return { status: "error", error: "El puesto no existe." };
 
   try {
-    const updated = await prisma.position.update({ where: { id }, data: d });
-    await writeAudit({ actorId: user.id, action: "position.update", entityType: "position", entityId: id, before, after: updated });
+    const updated = await prisma.position.update({
+      where: { id },
+      data: {
+        ...d,
+        business_models: {
+          deleteMany: {},
+          create: bmIds.map((business_model_id) => ({ business_model_id })),
+        },
+      },
+    });
+    await writeAudit({ actorId: user.id, action: "position.update", entityType: "position", entityId: id, before, after: { ...updated, business_model_ids: bmIds } });
     revalidatePath(PATH);
     return { status: "ok", message: "Puesto actualizado." };
   } catch (e) {
@@ -146,6 +167,75 @@ export async function setPositionStatusAction(
     actorId: user.id,
     action: active ? "position.reactivate" : "position.deactivate",
     entityType: "position",
+    entityId: id,
+    before: { status: before.status },
+    after: { status: active ? "active" : "inactive" },
+  });
+  revalidatePath(PATH);
+  return { ok: true };
+}
+
+// --------------------------------------------------------------------------
+// Modelos de negocio (tipo de comercio; filtra el catálogo de puestos)
+// --------------------------------------------------------------------------
+
+function businessModelData(fd: FormData) {
+  return { name: str(fd, "name"), code: str(fd, "code") || null };
+}
+
+export async function createBusinessModelAction(
+  _prev: AdminActionState,
+  fd: FormData
+): Promise<AdminActionState> {
+  const user = await requireUser();
+  const d = businessModelData(fd);
+  if (!d.name) return { status: "error", error: "El nombre es obligatorio." };
+
+  try {
+    const created = await prisma.business_model.create({ data: d });
+    await writeAudit({ actorId: user.id, action: "business_model.create", entityType: "business_model", entityId: created.id, after: created });
+    revalidatePath(PATH);
+    return { status: "ok", message: `Modelo de negocio "${d.name}" creado.` };
+  } catch (e) {
+    return { status: "error", error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+export async function updateBusinessModelAction(
+  _prev: AdminActionState,
+  fd: FormData
+): Promise<AdminActionState> {
+  const user = await requireUser();
+  const id = Number(str(fd, "id"));
+  const d = businessModelData(fd);
+  if (!Number.isFinite(id)) return { status: "error", error: "ID inválido." };
+  if (!d.name) return { status: "error", error: "El nombre es obligatorio." };
+
+  const before = await prisma.business_model.findUnique({ where: { id } });
+  if (!before) return { status: "error", error: "El modelo de negocio no existe." };
+
+  try {
+    const updated = await prisma.business_model.update({ where: { id }, data: d });
+    await writeAudit({ actorId: user.id, action: "business_model.update", entityType: "business_model", entityId: id, before, after: updated });
+    revalidatePath(PATH);
+    return { status: "ok", message: "Modelo de negocio actualizado." };
+  } catch (e) {
+    return { status: "error", error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+export async function setBusinessModelStatusAction(
+  id: number,
+  active: boolean
+): Promise<{ ok: boolean; error?: string }> {
+  const user = await requireUser();
+  const before = await prisma.business_model.findUnique({ where: { id } });
+  if (!before) return { ok: false, error: "El modelo de negocio no existe." };
+  await prisma.business_model.update({ where: { id }, data: { status: active ? "active" : "inactive" } });
+  await writeAudit({
+    actorId: user.id,
+    action: active ? "business_model.reactivate" : "business_model.deactivate",
+    entityType: "business_model",
     entityId: id,
     before: { status: before.status },
     after: { status: active ? "active" : "inactive" },

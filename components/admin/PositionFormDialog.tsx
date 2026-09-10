@@ -16,14 +16,17 @@ export interface PositionValues {
   code: string | null;
   description: string | null;
   department_id: number | null;
+  business_model_ids: number[];
 }
 
 export function PositionFormDialog({
   position,
   departments,
+  businessModels,
 }: {
   position?: PositionValues;
   departments: { id: number; name: string }[];
+  businessModels: { id: number; name: string }[];
 }) {
   const editing = !!position;
   const [open, setOpen] = useState(false);
@@ -73,6 +76,33 @@ export function PositionFormDialog({
             Descripción
             <input name="description" defaultValue={position?.description ?? ""} className={INPUT} />
           </label>
+          <fieldset className="border border-divider p-2.5 flex flex-col gap-1.5">
+            <legend className="text-[10px] uppercase tracking-widest text-text/70 px-1">
+              Modelos de negocio
+            </legend>
+            <p className="m-0 text-[11px] text-text/60">
+              Sin marcar ninguno = cargo genérico (aparece en todos los modelos).
+            </p>
+            {businessModels.length === 0 ? (
+              <p className="m-0 text-xs text-text/60">
+                No hay modelos de negocio cargados todavía.
+              </p>
+            ) : (
+              <div className="grid grid-cols-2 gap-1">
+                {businessModels.map((bm) => (
+                  <label key={bm.id} className="flex items-center gap-2 text-xs text-text/85">
+                    <input
+                      type="checkbox"
+                      name="business_model_ids"
+                      value={bm.id}
+                      defaultChecked={position?.business_model_ids.includes(bm.id) ?? false}
+                    />
+                    {bm.name}
+                  </label>
+                ))}
+              </div>
+            )}
+          </fieldset>
           <Btn type="submit" variant="primary" disabled={pending}>
             {pending ? "Guardando…" : editing ? "Guardar" : "Crear"}
           </Btn>

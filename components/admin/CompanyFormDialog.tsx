@@ -20,6 +20,7 @@ export interface CompanyFormValues {
   shared_employees: boolean;
   address: string | null;
   parent_id: number | null;
+  business_model_id: number | null;
   late_tolerance_min: number | null;
   early_leave_tolerance_min: number | null;
   absence_rule: "no_check_in" | "no_marks" | "under_hours" | null;
@@ -29,10 +30,12 @@ export interface CompanyFormValues {
 export function CompanyFormDialog({
   company,
   parentOptions,
+  businessModels,
   trigger,
 }: {
   company?: CompanyFormValues;
   parentOptions: { id: number; name: string }[];
+  businessModels: { id: number; name: string }[];
   trigger?: "primary" | "ghost";
 }) {
   const editing = !!company;
@@ -114,6 +117,22 @@ export function CompanyFormDialog({
               defaultChecked={company?.shared_employees ?? true}
             />
             Compartir empleados con todas las empresas del grupo
+          </label>
+
+          <label className={LABEL}>
+            Modelo de negocio
+            <select
+              name="business_model_id"
+              defaultValue={company?.business_model_id ?? ""}
+              className={INPUT}
+            >
+              <option value="">— hereda del grupo / sin especificar —</option>
+              {businessModels.map((bm) => (
+                <option key={bm.id} value={bm.id}>
+                  {bm.name}
+                </option>
+              ))}
+            </select>
           </label>
 
           <label className={LABEL}>
