@@ -55,9 +55,31 @@ function buildFields(fd: FormData, tax_id: string | null) {
   return {
     name: str(fd, "name"),
     tax_id,
+    is_group: fd.get("is_group") === "on",
+    shared_employees: fd.get("shared_employees") === "on",
     address: str(fd, "address") || null,
+    parent_id: str(fd, "parent_id") === "" ? null : Number(str(fd, "parent_id")),
     ...thresholdsFromForm(fd),
   };
+}
+
+/** Valida el padre para la regla de 2 niveles. `selfId` en edición. */
+async function checkParent(
+  parentId: number | null,
+  selfId: number | null
+): Promise<string | null> {
+  if (parentId == null) return null;
+  if (selfId != null && parentId === selfId) return "Una empresa no puede ser su propio padre.";
+  const parent = await prisma.client_company.findUnique({ where: { id: parentId } });
+  if (!parent) return "La empresa padre seleccionada no existe.";
+  if (parent.parent_id != null)
+    return "Esa empresa ya es una empresa hija — la jerarquía es de 2 niveles (padre → hijas).";
+  if (selfId != null) {
+    const childCount = await prisma.client_company.count({ where: { parent_id: selfId } });
+    if (childCount > 0)
+      return "Esta empresa ya es padre de otras; no puede pasar a ser hija.";
+  }
+  return null;
 }
 
 export async function createCompanyAction(
@@ -70,7 +92,10 @@ export async function createCompanyAction(
   const f = parsed.fields;
 
   if (!f.name) return { status: "error", error: "El nombre es obligatorio." };
-  if (!f.tax_id) return { status: "error", error: "El RIF es obligatorio." };
+  if (!f.is_group && !f.tax_id)
+    return { status: "error", error: "El RIF es obligatorio para empresas operativas (no-grupo)." };
+  const parentErr = await checkParent(f.parent_id, null);
+  if (parentErr) return { status: "error", error: parentErr };
 
   try {
     const created = await prisma.client_company.create({ data: f });
@@ -103,7 +128,10 @@ export async function updateCompanyAction(
   if ("error" in parsed) return { status: "error", error: parsed.error };
   const f = parsed.fields;
   if (!f.name) return { status: "error", error: "El nombre es obligatorio." };
-  if (!f.tax_id) return { status: "error", error: "El RIF es obligatorio." };
+  if (!f.is_group && !f.tax_id)
+    return { status: "error", error: "El RIF es obligatorio para empresas operativas (no-grupo)." };
+  const parentErr = await checkParent(f.parent_id, id);
+  if (parentErr) return { status: "error", error: parentErr };
 
   try {
     const updated = await prisma.client_company.update({ where: { id }, data: f });

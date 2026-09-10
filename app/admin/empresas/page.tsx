@@ -22,13 +22,19 @@ export default async function EmpresasPage() {
   await requireUser();
   const companies = await getCompanies();
 
+  const parentOptions = companies
+    .filter((c) => c.parent_id === null)
+    .map((c) => ({ id: c.id, name: c.name }));
+  const roots = companies.filter((c) => c.parent_id === null);
+  const childrenOf = (id: number) => companies.filter((c) => c.parent_id === id);
+
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between">
         <p className="m-0 text-sm text-text/75">
           {companies.length} {companies.length === 1 ? "empresa" : "empresas"}
         </p>
-        <CompanyFormDialog />
+        <CompanyFormDialog parentOptions={parentOptions} />
       </div>
 
       {companies.length === 0 ? (
@@ -42,6 +48,7 @@ export default async function EmpresasPage() {
             <tr>
               <Th>Empresa</Th>
               <Th>RIF</Th>
+              <Th>Tipo</Th>
               <Th>Sedes</Th>
               <Th>Empleos</Th>
               <Th>Estado</Th>
@@ -49,9 +56,12 @@ export default async function EmpresasPage() {
             </tr>
           </thead>
           <tbody>
-            {companies.map((c) => (
-              <CompanyRow key={c.id} c={c} />
-            ))}
+            {roots.flatMap((root) => [
+              <CompanyRow key={root.id} c={root} depth={0} />,
+              ...childrenOf(root.id).map((child) => (
+                <CompanyRow key={child.id} c={child} depth={1} />
+              )),
+            ])}
           </tbody>
         </Table>
       )}
@@ -59,13 +69,22 @@ export default async function EmpresasPage() {
   );
 }
 
-function CompanyRow({ c }: { c: CompanyRowData }) {
+function CompanyRow({ c, depth }: { c: CompanyRowData; depth: number }) {
   return (
     <Tr>
-      <Td className="font-medium">{c.name}</Td>
+      <Td>
+        <span
+          className={depth > 0 ? "text-text/80" : "font-medium"}
+          style={{ paddingLeft: depth * 18 }}
+        >
+          {depth > 0 ? "↳ " : ""}
+          {c.name}
+        </span>
+      </Td>
       <Td className="font-mono text-xs">
         {c.tax_id ?? <span className="text-text/60">—</span>}
       </Td>
+      <Td>{c.is_group ? <Tag variant="neutral">Grupo</Tag> : "Operativa"}</Td>
       <Td>{c._count.sites}</Td>
       <Td>{c._count.employments}</Td>
       <Td>

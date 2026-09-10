@@ -16,7 +16,10 @@ export interface CompanyFormValues {
   id: number;
   name: string;
   tax_id: string | null;
+  is_group: boolean;
+  shared_employees: boolean;
   address: string | null;
+  parent_id: number | null;
   late_tolerance_min: number | null;
   early_leave_tolerance_min: number | null;
   absence_rule: "no_check_in" | "no_marks" | "under_hours" | null;
@@ -25,13 +28,16 @@ export interface CompanyFormValues {
 
 export function CompanyFormDialog({
   company,
+  parentOptions,
   trigger,
 }: {
   company?: CompanyFormValues;
+  parentOptions: { id: number; name: string }[];
   trigger?: "primary" | "ghost";
 }) {
   const editing = !!company;
   const [open, setOpen] = useState(false);
+  const [isGroup, setIsGroup] = useState(company?.is_group ?? false);
   const [state, formAction, pending] = useActionState(
     editing ? updateCompanyAction : createCompanyAction,
     ADMIN_ACTION_INITIAL
@@ -46,6 +52,9 @@ export function CompanyFormDialog({
       push("error", state.error);
     }
   }, [state, push]);
+
+  // el padre no puede ser una empresa hija ni la empresa misma
+  const options = parentOptions.filter((p) => p.id !== company?.id);
 
   return (
     <>
@@ -65,15 +74,47 @@ export function CompanyFormDialog({
             <input name="name" required defaultValue={company?.name ?? ""} className={INPUT} autoFocus />
           </label>
 
+          <label className="flex items-center gap-2 text-xs text-text/85">
+            <input
+              type="checkbox"
+              name="is_group"
+              defaultChecked={company?.is_group ?? false}
+              onChange={(e) => setIsGroup(e.target.checked)}
+            />
+            Es un grupo de empresas (agrupa empresas hijas; sin RIF)
+          </label>
+
           <DocumentField
             kind="rif"
             label="RIF"
-            required
+            hint={isGroup ? "(no aplica a grupos)" : undefined}
+            required={!isGroup}
             prefixName="rif_prefix"
             numberName="rif_number"
             defaultPrefix={company ? splitDoc(company.tax_id).prefix : "J"}
             defaultNumber={splitDoc(company?.tax_id).number}
           />
+
+          <label className={LABEL}>
+            Empresa padre
+            <select name="parent_id" defaultValue={company?.parent_id ?? ""} className={INPUT}>
+              <option value="">— sin padre (nivel superior) —</option>
+              {options.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="flex items-center gap-2 text-xs text-text/85">
+            <input
+              type="checkbox"
+              name="shared_employees"
+              defaultChecked={company?.shared_employees ?? true}
+            />
+            Compartir empleados con todas las empresas del grupo
+          </label>
 
           <label className={LABEL}>
             Dirección

@@ -81,13 +81,22 @@ enum attendance_status  { present late early_leave absent }
 enum absence_rule       { no_check_in no_marks under_hours }
 enum export_scope       { company group combined }
 enum app_user_role      { admin operator viewer }   // Fase 1: todos 'admin'
+enum payroll_type       { quincenal semanal }       // en employment (Reunión 3, docs/09 §3.5)
 ```
 
 ---
 
 ## 4. Modelos de dominio (`schema.prisma`)
 
-Migración `0002_domain` (PR3 de Fase 2). Se crean **vacías**.
+Migración `0002_domain` aplicada 2026-08-31. Migraciones posteriores en §7.
+
+> **Historia de la jerarquía de empresas:** `0002_domain` la creó (padre/hijas,
+> `is_group`, `shared_employees`). El 2026-09-08 se quitó por error
+> (`20260908155808_remove_company_hierarchy`, commit `6ba1169`). Reunión 3
+> (2026-09-10) confirmó que ALCO sí la necesita → restaurada en
+> `20260910120000_restore_hierarchy_and_domain_refinements`, junto con
+> `business_model`, `payroll_type`, `logo`/rep. legal y `company_linked_at`.
+> Ver `docs/09-reunion-3.md` §3.1, §3.5.1 y §7.1 ítem 8.
 
 ### 4.1 Empresas y sedes
 
@@ -99,10 +108,18 @@ model client_company {
   children         client_company[] @relation("company_hierarchy")
   name             String
   tax_id           String?          // RIF J/G+dígitos. Requerido si is_group=false (CHECK §6)
-  is_group         Boolean          @default(false)
-  shared_employees Boolean          @default(false)
+  is_group         Boolean          @default(false)   // fila padre (agrupador); NO lleva RIF
+  shared_employees Boolean          @default(true)    // en la fila del grupo; activa el fan-out de enrolamiento (docs/09 §3.3)
   status           record_status    @default(active)
   address          String?
+
+  business_model_id Int?                               // tipo de comercio; filtra el catálogo de position (docs/09 §3.5.1). Nullable → hereda del grupo
+  business_model    business_model?  @relation(fields: [business_model_id], references: [id], onDelete: SetNull)
+
+  logo                  Bytes?                         // → recibo de pago (docs/09 §3.11)
+  legal_rep_name        String?                        // representante legal
+  legal_rep_national_id String?                        // cédula del rep. legal (PREFIJO-dígitos)
+  legal_rep_phone       String?
 
   // fallback de umbrales de asistencia (ver 07 §1.9). null → sin default de empresa
   late_tolerance_min        Int?
@@ -119,6 +136,7 @@ model client_company {
   devices         device[]
 
   @@index([parent_id])
+  @@index([business_model_id])
 }
 
 model site {
@@ -177,6 +195,7 @@ model employment {
   department_id     Int?
   department        department?       @relation(fields: [department_id], references: [id], onDelete: SetNull)
   payroll_ref       String?           // "Empleado Nómina" de Adempiere
+  payroll_type      payroll_type?     // quincenal | semanal. Null = sin nómina (contrato "en prueba")
   start_date        DateTime          @db.Date
   end_date          DateTime?         @db.Date
   status            employment_status @default(active)
@@ -191,9 +210,17 @@ model employment {
 }
 ```
 
-`department_id` directo en `employment` **además** de `position.department_id`: es
-intencional, espeja Adempiere ("Departamento Nómina" y "Puesto Nómina" eran campos
-separados) y permite que el puesto cambie sin arrastrar el departamento.
+**Tres ejes de categorización** (Reunión 3, `docs/09` §3.5.1):
+
+- **Modelo de negocio** — vive en `client_company.business_model_id`, no en el
+  contrato. Es el "Departamento de Nómina" de Adempiere renombrado. Filtra qué
+  `position` se ofrecen al crear el contrato (vía `position_business_model`).
+- **Cargo / puesto** — `employment.position_id`. El cargo vive en el contrato,
+  no en la persona: alguien puede ser gerente en una empresa y cocinero en otra.
+- **Departamento organizacional** — `employment.department_id` (+ `department`).
+  Opcional, **sin uso en Fase 1**; queda previsto para nómina/reportes (ej.
+  "Orientación", "COVI" en colegios). `position.department_id` deja de usarse como
+  eje de filtrado (lo reemplaza el modelo de negocio).
 
 ### 4.3 Categorización de cargo
 
@@ -222,9 +249,35 @@ model position {
   created_at    DateTime      @default(now()) @db.Timestamptz(6)
   updated_at    DateTime      @updatedAt @db.Timestamptz(6)
 
-  employments   employment[]
+  employments     employment[]
+  business_models position_business_model[]   // sin filas → cargo genérico (todos los modelos)
 
   @@index([department_id])
+}
+
+// Reunión 3 (docs/09 §3.5.1): tipo de comercio de la empresa; filtra el catálogo
+// de cargos. Reemplaza el "Departamento de Nómina" de Adempiere como concepto.
+model business_model {
+  id         Int           @id @default(autoincrement())
+  code       String?
+  name       String
+  status     record_status @default(active)
+  created_at DateTime      @default(now()) @db.Timestamptz(6)
+  updated_at DateTime      @updatedAt @db.Timestamptz(6)
+
+  companies client_company[]
+  positions position_business_model[]
+}
+
+// M:N position ↔ business_model. position sin ninguna fila acá = genérico.
+model position_business_model {
+  position_id       Int
+  position          position       @relation(fields: [position_id], references: [id], onDelete: Cascade)
+  business_model_id Int
+  business_model    business_model @relation(fields: [business_model_id], references: [id], onDelete: Cascade)
+
+  @@id([position_id, business_model_id])
+  @@index([business_model_id])
 }
 ```
 
@@ -331,6 +384,7 @@ model device {
   company           client_company? @relation(fields: [company_id], references: [id], onDelete: SetNull)
   site_id           Int?
   site              site?           @relation(fields: [site_id], references: [id], onDelete: SetNull)
+  company_linked_at DateTime?       @db.Timestamptz(6)  // cuándo se asoció a su empresa/sede (docs/09 §3.13)
   last_sync_at      BigInt?         // última sync EXITOSA de marcajes (≠ last_seen_at heartbeat)
   device_admin_note String?         // admin del lado de la empresa (texto libre, NO app_user)
 
@@ -479,8 +533,8 @@ app_user ──< export_run
 
 | Constraint | Dónde | Forma |
 | --- | --- | --- |
-| Jerarquía de 2 niveles | `client_company` | trigger `BEFORE INSERT/UPDATE`: rechazar si `parent_id` apunta a una fila cuyo `parent_id IS NOT NULL`. (CHECK no puede — necesita subquery.) |
-| RIF requerido en empresas hoja | `client_company` | `CHECK (is_group OR tax_id IS NOT NULL)` |
+| Jerarquía de 2 niveles | `client_company` | trigger `BEFORE INSERT/UPDATE`: rechazar si `parent_id` apunta a una fila cuyo `parent_id IS NOT NULL`. (CHECK no puede — necesita subquery.) Recreado en `20260910120000` tras el revert de `20260908155808`. |
+| RIF requerido en empresas hoja | `client_company` | `CHECK (is_group OR tax_id IS NOT NULL)`. Recreado en `20260910120000`. |
 | Un enrolado activo por slot | `employee_device_enrollment` | `CREATE UNIQUE INDEX … (dev_id, device_user_id) WHERE status = 'active'` |
 | Corrección apunta a día **o** log, no ambos ni ninguno | `attendance_correction` | `CHECK ((attendance_day_id IS NULL) <> (attendance_log_id IS NULL))` |
 | Rangos de fecha coherentes | `employment`, `shift` | `CHECK (end_date IS NULL OR end_date >= start_date)` / `effective_to` |
@@ -490,15 +544,14 @@ app_user ──< export_run
 
 ## 7. Orden de migraciones
 
-| Migración | PR | Contenido |
+| Migración | Fecha | Contenido |
 | --- | --- | --- |
-| `0001_protocol_baseline` | Fase 2 · PR1 | Las 8 tablas de protocolo tal cual (bigint millis, CHECKs crudos, `@@unique` de asistencia, sin FKs, sin columnas de dominio). |
-| `0002_domain` | Fase 2 · PR3 | Todos los modelos de §4 + enums de §3 + columnas nuevas en `device` / `attendance_log` (§4.6) + constraints crudos de §6. Tablas vacías. |
-
-Se puede partir `0002` en `0002_domain_core` (empresas/sedes/personas/categorías/
-grupos-turnos/biométrico) y `0003_attendance_platform` (attendance_day/correction/
-app_user/audit/export) si la revisión lo pide. Por defecto, una sola migración de
-dominio.
+| `20260830151045_protocol_baseline` | 2026-08-30 | Las 8 tablas de protocolo tal cual (bigint millis, `@@unique` de asistencia, sin FKs, sin columnas de dominio). |
+| `20260830151600_protocol_check_constraints` | 2026-08-30 | CHECKs de `status`/`stage`/`direction` (SQL crudo). |
+| `20260831211102_domain` | 2026-08-31 | Todos los modelos de §4 + enums de §3 + columnas nuevas en `device` / `attendance_log` (§4.6) + constraints crudos de §6. Tablas vacías. |
+| `20260901165749_site_timezone` | 2026-09-01 | `site.timezone TEXT NOT NULL DEFAULT 'America/Caracas'`. |
+| `20260908155808_remove_company_hierarchy` | 2026-09-08 | ⚠️ Quitó `parent_id`/`is_group`/`shared_employees` + trigger + CHECK. **Revertido por `20260910120000`.** |
+| `20260910120000_restore_hierarchy_and_domain_refinements` | 2026-09-10 | Reunión 3: restaura jerarquía (columnas + FK + índice + trigger 2 niveles + CHECK de RIF), agrega `business_model` + `position_business_model` + enum `payroll_type` + `employment.payroll_type` + `client_company.{logo, legal_rep_*}` + `device.company_linked_at`. |
 
 **Seeds mínimos** (script aparte, no migración): 1 `app_user` inicial para poder
 entrar al panel una vez que exista auth.
@@ -525,3 +578,15 @@ y qué queda para Fase 2 (valoración legal, feriados) está en `07-admin-ux-spe
 - [x] `employee_fingerprint` (copia canónica por empleado) separada de `enroll_data` (por dispositivo)
 - [x] Timestamps: protocolo `bigint` millis, dominio `timestamptz`
 - [x] Alcance §8: **Fase 1 incluye el motor de cálculo de asistencia** (valoración legal → Fase 2)
+
+### Adenda 2026-09-10 (Reunión 3)
+
+- [x] Jerarquía de empresas restaurada tras el revert del 2026-09-08 (`20260910120000`)
+- [x] `shared_employees` default `true`, vive en la fila del grupo → fan-out de enrolamiento
+- [x] `business_model` + `position_business_model` (M:N; sin filas = cargo genérico)
+- [x] `employment.payroll_type` (`quincenal` | `semanal`, nullable)
+- [x] `client_company.{logo, legal_rep_name, legal_rep_national_id, legal_rep_phone}`
+- [x] `device.company_linked_at`
+- [x] `employment.department_id` se mantiene, sin uso en Fase 1 (departamento organizacional real)
+
+Contexto y decisiones completas: `docs/09-reunion-3.md` §3.5.1, §7.1, §10.
