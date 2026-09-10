@@ -48,6 +48,7 @@ model devices {
   company           client_company? @relation(fields: [company_id], references: [id], onDelete: SetNull)
   site_id           Int?
   site              site?           @relation(fields: [site_id], references: [id], onDelete: SetNull)
+  company_linked_at DateTime?       @db.Timestamptz(6) // cuándo se asoció a la empresa/sede actual (docs/09 §3.13 / AI 7)
   last_sync_at      BigInt? // última sync EXITOSA de marcajes (≠ last_seen_at heartbeat)
   device_admin_note String? // admin del lado de la empresa cliente (texto libre, NO app_user)
 
@@ -227,17 +228,42 @@ enum app_user_role {
   viewer
 }
 
-/// Empresa cliente de ALCO. Una empresa = una razón social (un RIF); varias
-/// ubicaciones se modelan con `site`, no con jerarquía entre empresas —
-/// se probó y se descartó un esquema padre/hijas (2026-09-08): en la
-/// práctica todos los casos reales de ALCO son una sola empresa con varias
-/// sedes, no varias razones sociales distintas compartiendo empleados.
+enum payroll_type {
+  quincenal
+  semanal
+}
+
+/// Empresa cliente de ALCO. Jerarquía de 2 niveles (padre → hijas), `parent_id`
+/// simple y mutable; trigger en la migración impide un 3er nivel. Restaurada
+/// 2026-09-10 tras Reunión 3 (se había quitado el 2026-09-08 por error): ALCO
+/// sí maneja grupos de empresas con RIF distinto que comparten empleados
+/// (Grupo Farmalido, Grupo Perfume Factory). Ver docs/09-reunion-3.md §3.1.
+/// - `is_group`: fila padre (agrupador), NO lleva RIF (CHECK en migración).
+/// - `shared_employees`: en la fila del grupo. Si está activo, al activar un
+///   `employment` en cualquier empresa del grupo se enrola en TODOS los
+///   devices del grupo (fan-out). Default true. Ver docs/09 §3.3 / §7.1 ítem 5.
+/// - `business_model_id`: tipo de comercio (farmacia, restaurante…). Filtra el
+///   catálogo de `position` vía `position_business_model`. Nullable: hereda del
+///   grupo si no está seteado. Ver docs/09 §3.5.1.
 model client_company {
-  id      Int           @id @default(autoincrement())
-  name    String
-  tax_id  String? // RIF J/G+dígitos, requerido en la app para altas nuevas — nullable a nivel de columna solo para no romper filas ya existentes sin RIF cargado
-  status  record_status @default(active)
-  address String?
+  id               Int              @id @default(autoincrement())
+  parent_id        Int?
+  parent           client_company?  @relation("company_hierarchy", fields: [parent_id], references: [id], onDelete: Restrict)
+  children         client_company[] @relation("company_hierarchy")
+  name             String
+  tax_id           String? // RIF J/G+dígitos. Requerido si is_group=false (CHECK en migración). Nullable a nivel de columna para grupos y filas viejas sin RIF.
+  is_group         Boolean          @default(false)
+  shared_employees Boolean          @default(true)
+  status           record_status    @default(active)
+  address          String?
+
+  business_model_id Int?
+  business_model    business_model? @relation(fields: [business_model_id], references: [id], onDelete: SetNull)
+
+  logo                  Bytes? // logo de la empresa → recibo de pago (docs/09 §3.11)
+  legal_rep_name        String? // representante legal (docs/09 §3.11)
+  legal_rep_national_id String? // cédula del rep. legal (PREFIJO-dígitos)
+  legal_rep_phone       String?
 
   // fallback de umbrales de asistencia (docs/07 §1.9). null → sin default de empresa
   late_tolerance_min        Int?
@@ -253,6 +279,9 @@ model client_company {
   employee_groups employee_group[]
   devices         devices[]
   export_runs     export_run[]
+
+  @@index([parent_id])
+  @@index([business_model_id])
 }
 
 /// Sede física de una empresa. Los dispositivos y empleos apuntan acá.
@@ -313,6 +342,7 @@ model employment {
   department_id     Int?
   department        department?       @relation(fields: [department_id], references: [id], onDelete: SetNull)
   payroll_ref       String? // "Empleado Nómina" de Adempiere
+  payroll_type      payroll_type? // quincenal | semanal. Null = sin nómina (p.ej. contrato "en prueba"). Ver docs/09 §3.5 / §7.1 ítem 4
   start_date        DateTime          @db.Date
   end_date          DateTime?         @db.Date
   status            employment_status @default(active)
@@ -345,14 +375,44 @@ model position {
   name          String
   description   String?
   department_id Int?
-  department    department?    @relation(fields: [department_id], references: [id], onDelete: SetNull)
+  department    department?   @relation(fields: [department_id], references: [id], onDelete: SetNull)
   status        record_status @default(active)
   created_at    DateTime      @default(now()) @db.Timestamptz(6)
   updated_at    DateTime      @updatedAt @db.Timestamptz(6)
 
-  employments employment[]
+  employments     employment[]
+  business_models position_business_model[]
 
   @@index([department_id])
+}
+
+/// Tipo de comercio de una empresa (farmacia, restaurante, colegio…). Reemplaza
+/// el "Departamento de Nómina" de Adempiere como concepto. Filtra qué cargos
+/// (`position`) se ofrecen al crear un contrato, vía `position_business_model`.
+/// Ver docs/09-reunion-3.md §3.5.1.
+model business_model {
+  id         Int           @id @default(autoincrement())
+  code       String?
+  name       String
+  status     record_status @default(active)
+  created_at DateTime      @default(now()) @db.Timestamptz(6)
+  updated_at DateTime      @updatedAt @db.Timestamptz(6)
+
+  companies client_company[]
+  positions position_business_model[]
+}
+
+/// M:N `position` ↔ `business_model`. Un `position` sin ninguna fila acá =
+/// genérico: disponible en todos los modelos de negocio (administrativo,
+/// seguridad, cajero…). Ver docs/09-reunion-3.md §3.5.1 DC2.
+model position_business_model {
+  position_id       Int
+  position          position       @relation(fields: [position_id], references: [id], onDelete: Cascade)
+  business_model_id Int
+  business_model    business_model @relation(fields: [business_model_id], references: [id], onDelete: Cascade)
+
+  @@id([position_id, business_model_id])
+  @@index([business_model_id])
 }
 
 /// Grupo de empleados con horario común. El shift cuelga de acá (ALCO: el
