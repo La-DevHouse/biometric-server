@@ -56,6 +56,10 @@ export default async function EmpresaDetailPage({
     address: company.address,
     parent_id: company.parent_id,
     business_model_id: company.business_model_id,
+    has_logo: company.logo != null,
+    legal_rep_name: company.legal_rep_name,
+    legal_rep_national_id: company.legal_rep_national_id,
+    legal_rep_phone: company.legal_rep_phone,
     late_tolerance_min: company.late_tolerance_min,
     early_leave_tolerance_min: company.early_leave_tolerance_min,
     absence_rule: company.absence_rule,
@@ -97,6 +101,29 @@ export default async function EmpresaDetailPage({
           value={company.business_model?.name ?? "— hereda del grupo / sin especificar —"}
         />
         <Row label="Dirección" value={company.address ?? "—"} />
+        <Row
+          label="Representante legal"
+          value={
+            company.legal_rep_name
+              ? `${company.legal_rep_name}${company.legal_rep_national_id ? ` · ${company.legal_rep_national_id}` : ""}${company.legal_rep_phone ? ` · ${company.legal_rep_phone}` : ""}`
+              : "—"
+          }
+        />
+        <Row
+          label="Logo"
+          value={
+            company.logo != null ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={`/admin/empresas/${company.id}/logo`}
+                alt="logo"
+                className="h-10 w-auto border border-divider bg-surface object-contain p-0.5"
+              />
+            ) : (
+              "—"
+            )
+          }
+        />
         <Row label="Empleos" value={String(company._count.employments)} />
         <Row label="Dispositivos" value={String(company._count.devices)} />
         <Row

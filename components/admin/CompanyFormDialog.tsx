@@ -21,6 +21,10 @@ export interface CompanyFormValues {
   address: string | null;
   parent_id: number | null;
   business_model_id: number | null;
+  has_logo: boolean;
+  legal_rep_name: string | null;
+  legal_rep_national_id: string | null;
+  legal_rep_phone: string | null;
   late_tolerance_min: number | null;
   early_leave_tolerance_min: number | null;
   absence_rule: "no_check_in" | "no_marks" | "under_hours" | null;
@@ -139,6 +143,62 @@ export function CompanyFormDialog({
             Dirección
             <input name="address" defaultValue={company?.address ?? ""} className={INPUT} />
           </label>
+
+          <label className={LABEL}>
+            Logo{" "}
+            <span className="text-text/60">
+              (PNG/JPG/WEBP/SVG, máx 512 KB — sale en el recibo de pago)
+            </span>
+            <input
+              type="file"
+              name="logo"
+              accept="image/png,image/jpeg,image/webp,image/svg+xml"
+              className="text-xs"
+            />
+          </label>
+          {company?.has_logo && (
+            <div className="-mt-1 flex items-center gap-3">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={`/admin/empresas/${company.id}/logo`}
+                alt="logo actual"
+                className="h-10 w-auto border border-divider bg-surface object-contain p-0.5"
+              />
+              <label className="flex items-center gap-2 text-xs text-text/85">
+                <input type="checkbox" name="remove_logo" /> Quitar el logo actual
+              </label>
+            </div>
+          )}
+
+          <fieldset className="border border-divider p-2.5 flex flex-col gap-2">
+            <legend className="text-[10px] uppercase tracking-widest text-text/70 px-1">
+              Representante legal (opcional)
+            </legend>
+            <label className={LABEL}>
+              Nombre
+              <input
+                name="legal_rep_name"
+                defaultValue={company?.legal_rep_name ?? ""}
+                className={INPUT}
+              />
+            </label>
+            <DocumentField
+              kind="cedula"
+              label="Cédula"
+              prefixName="legal_rep_ced_prefix"
+              numberName="legal_rep_ced_number"
+              defaultPrefix={company ? splitDoc(company.legal_rep_national_id).prefix : "V"}
+              defaultNumber={splitDoc(company?.legal_rep_national_id).number}
+            />
+            <label className={LABEL}>
+              Teléfono
+              <input
+                name="legal_rep_phone"
+                defaultValue={company?.legal_rep_phone ?? ""}
+                className={INPUT}
+              />
+            </label>
+          </fieldset>
 
           <fieldset className="border border-divider p-2.5 flex flex-col gap-2">
             <legend className="text-[10px] uppercase tracking-widest text-text/70 px-1">

@@ -48,10 +48,19 @@ function fieldsFromForm(fd: FormData):
     if ("error" in rif) return { error: rif.error };
     tax_id = rif.value;
   }
-  return { fields: buildFields(fd, tax_id) };
+
+  let legal_rep_national_id: string | null = null;
+  const repCedNumber = str(fd, "legal_rep_ced_number");
+  if (repCedNumber) {
+    const ced = joinDoc(str(fd, "legal_rep_ced_prefix"), repCedNumber, "cedula");
+    if ("error" in ced) return { error: ced.error };
+    legal_rep_national_id = ced.value;
+  }
+
+  return { fields: buildFields(fd, tax_id, legal_rep_national_id) };
 }
 
-function buildFields(fd: FormData, tax_id: string | null) {
+function buildFields(fd: FormData, tax_id: string | null, legal_rep_national_id: string | null) {
   const bmRaw = str(fd, "business_model_id");
   return {
     name: str(fd, "name"),
@@ -61,8 +70,34 @@ function buildFields(fd: FormData, tax_id: string | null) {
     address: str(fd, "address") || null,
     parent_id: str(fd, "parent_id") === "" ? null : Number(str(fd, "parent_id")),
     business_model_id: bmRaw === "" ? null : Number(bmRaw),
+    legal_rep_name: str(fd, "legal_rep_name") || null,
+    legal_rep_national_id,
+    legal_rep_phone: str(fd, "legal_rep_phone") || null,
     ...thresholdsFromForm(fd),
   };
+}
+
+/**
+ * Logo del form. Devuelve: `Buffer` (archivo nuevo) · `null` (quitar el actual,
+ * checkbox `remove_logo`) · `undefined` (dejar como está).
+ */
+async function logoFromForm(fd: FormData): Promise<Uint8Array<ArrayBuffer> | null | undefined> {
+  if (str(fd, "remove_logo") === "on") return null;
+  const f = fd.get("logo");
+  if (!(f instanceof File) || f.size === 0) return undefined;
+  if (f.size > 512 * 1024) throw new Error("El logo no puede superar 512 KB.");
+  const ok = ["image/png", "image/jpeg", "image/webp", "image/svg+xml"];
+  if (f.type && !ok.includes(f.type))
+    throw new Error("Formato de logo no soportado (PNG, JPG, WEBP o SVG).");
+  // new Uint8Array(Buffer) → Uint8Array<ArrayBuffer>, que es lo que pide el tipo
+  // Bytes de Prisma (un ArrayBuffer directo se infiere como ArrayBufferLike).
+  // Mismo detalle que en lib/operations/advance.ts.
+  return new Uint8Array(Buffer.from(await f.arrayBuffer()));
+}
+
+/** Reemplaza el blob del logo por un resumen para no volcarlo al audit_log. */
+function auditView<T extends { logo?: Uint8Array<ArrayBufferLike> | null }>(row: T) {
+  return { ...row, logo: row.logo ? `[${row.logo.byteLength} bytes]` : null };
 }
 
 /** Valida el padre para la regla de 2 niveles. `selfId` en edición. */
@@ -99,14 +134,21 @@ export async function createCompanyAction(
   const parentErr = await checkParent(f.parent_id, null);
   if (parentErr) return { status: "error", error: parentErr };
 
+  let logo: Uint8Array<ArrayBuffer> | null | undefined;
   try {
-    const created = await prisma.client_company.create({ data: f });
+    logo = await logoFromForm(fd);
+  } catch (e) {
+    return { status: "error", error: e instanceof Error ? e.message : String(e) };
+  }
+
+  try {
+    const created = await prisma.client_company.create({ data: { ...f, logo: logo ?? null } });
     await writeAudit({
       actorId: user.id,
       action: "company.create",
       entityType: "client_company",
       entityId: created.id,
-      after: created,
+      after: auditView(created),
     });
     revalidatePath("/admin/empresas");
     return { status: "ok", message: `Empresa "${f.name}" creada.` };
@@ -135,15 +177,25 @@ export async function updateCompanyAction(
   const parentErr = await checkParent(f.parent_id, id);
   if (parentErr) return { status: "error", error: parentErr };
 
+  let logo: Uint8Array<ArrayBuffer> | null | undefined;
   try {
-    const updated = await prisma.client_company.update({ where: { id }, data: f });
+    logo = await logoFromForm(fd);
+  } catch (e) {
+    return { status: "error", error: e instanceof Error ? e.message : String(e) };
+  }
+
+  try {
+    const updated = await prisma.client_company.update({
+      where: { id },
+      data: logo === undefined ? f : { ...f, logo },
+    });
     await writeAudit({
       actorId: user.id,
       action: "company.update",
       entityType: "client_company",
       entityId: id,
-      before,
-      after: updated,
+      before: auditView(before),
+      after: auditView(updated),
     });
     revalidatePath("/admin/empresas");
     revalidatePath(`/admin/empresas/${id}`);
