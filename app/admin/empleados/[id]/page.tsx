@@ -87,7 +87,17 @@ export default async function EmpleadoDetailPage({
         <Field label="Documento" value={employee.national_id} mono />
         <Field label="RIF" value={employee.tax_id ?? "—"} mono />
         <Field label="Fecha de nacimiento" value={fmtDate(employee.birth_date)} />
-        <Field label="Huellas / enrolamientos" value={`${employee._count.fingerprints} · ${employee._count.enrollments}`} />
+        <Field
+          label="Huella"
+          value={
+            employee._count.fingerprints > 0 ? (
+              <Tag variant="accent">Sí ({employee._count.fingerprints})</Tag>
+            ) : (
+              <Tag variant="neutral">No</Tag>
+            )
+          }
+        />
+        <Field label="Enrolamientos" value={String(employee._count.enrollments)} />
         <div className="mt-1">
           <EmployeeFormDialog employee={form} />
         </div>

@@ -9,13 +9,21 @@ import { EmployeeFormDialog } from "@/components/admin/EmployeeFormDialog";
 
 export const dynamic = "force-dynamic";
 
-type SearchParams = Promise<{ q?: string; empresa?: string; estado?: string }>;
+type SearchParams = Promise<{
+  q?: string;
+  grupo?: string;
+  empresa?: string;
+  sede?: string;
+  estado?: string;
+}>;
 
 export default async function EmpleadosPage({ searchParams }: { searchParams: SearchParams }) {
   await requireUser();
   const sp = await searchParams;
   const q = (sp.q ?? "").trim();
+  const grupoId = sp.grupo ? Number(sp.grupo) : null;
   const empresaId = sp.empresa ? Number(sp.empresa) : null;
+  const siteId = sp.sede ? Number(sp.sede) : null;
   const estado = sp.estado === "pool" ? "pool" : sp.estado === "activo" ? "activo" : null;
 
   const where: Record<string, unknown> = {};
@@ -31,18 +39,27 @@ export default async function EmpleadosPage({ searchParams }: { searchParams: Se
   }
   if (estado === "pool") and.push({ employments: { none: { status: "active" } } });
   if (estado === "activo") and.push({ employments: { some: { status: "active" } } });
+  // Grupo: la empresa raíz o cualquiera de sus hijas.
+  if (grupoId)
+    and.push({
+      employments: {
+        some: { status: "active", company: { OR: [{ id: grupoId }, { parent_id: grupoId }] } },
+      },
+    });
   if (empresaId)
     and.push({ employments: { some: { status: "active", company_id: empresaId } } });
+  if (siteId) and.push({ employments: { some: { status: "active", site_id: siteId } } });
   if (and.length) where.AND = and;
 
-  const [employees, companies] = await Promise.all([
+  const [employees, companies, groups, sites] = await Promise.all([
     prisma.employee.findMany({
       where,
       include: {
         employments: {
           where: { status: "active" },
-          include: { company: { select: { name: true } } },
+          include: { company: { select: { name: true } }, site: { select: { name: true } } },
         },
+        _count: { select: { fingerprints: true } },
       },
       orderBy: [{ last_name: "asc" }, { first_name: "asc" }],
       take: 300,
@@ -50,6 +67,17 @@ export default async function EmpleadosPage({ searchParams }: { searchParams: Se
     prisma.client_company.findMany({
       where: { status: "active" },
       select: { id: true, name: true },
+      orderBy: { name: "asc" },
+    }),
+    // Grupos = empresas raíz que agrupan hijas (docs/09 §3.12: filtro por grupo).
+    prisma.client_company.findMany({
+      where: { status: "active", is_group: true },
+      select: { id: true, name: true },
+      orderBy: { name: "asc" },
+    }),
+    prisma.site.findMany({
+      where: { status: "active" },
+      select: { id: true, name: true, company: { select: { name: true } } },
       orderBy: { name: "asc" },
     }),
   ]);
@@ -68,12 +96,34 @@ export default async function EmpleadosPage({ searchParams }: { searchParams: Se
             />
           </label>
           <label className="flex flex-col gap-1 text-text/85">
+            Grupo
+            <select name="grupo" defaultValue={grupoId ?? ""} className="min-h-9 border border-divider bg-surface px-2.5 text-sm">
+              <option value="">todos</option>
+              {groups.map((g) => (
+                <option key={g.id} value={g.id}>
+                  {g.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex flex-col gap-1 text-text/85">
             Empresa
             <select name="empresa" defaultValue={empresaId ?? ""} className="min-h-9 border border-divider bg-surface px-2.5 text-sm">
               <option value="">todas</option>
               {companies.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex flex-col gap-1 text-text/85">
+            Sede
+            <select name="sede" defaultValue={siteId ?? ""} className="min-h-9 border border-divider bg-surface px-2.5 text-sm">
+              <option value="">todas</option>
+              {sites.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.company.name} — {s.name}
                 </option>
               ))}
             </select>
@@ -89,7 +139,7 @@ export default async function EmpleadosPage({ searchParams }: { searchParams: Se
           <button type="submit" className="min-h-9 border border-divider px-3 text-sm">
             Filtrar
           </button>
-          {(q || empresaId || estado) && (
+          {(q || grupoId || empresaId || siteId || estado) && (
             <Link href="/admin/empleados" className="min-h-9 self-center text-accent no-underline hover:underline">
               limpiar
             </Link>
@@ -111,7 +161,8 @@ export default async function EmpleadosPage({ searchParams }: { searchParams: Se
             <tr>
               <Th>Persona</Th>
               <Th>Documento</Th>
-              <Th>Empresa(s) activa(s)</Th>
+              <Th>Empresa(s) / sede(s) activa(s)</Th>
+              <Th>Huella</Th>
               <Th>Estado</Th>
               <Th />
             </tr>
@@ -123,10 +174,21 @@ export default async function EmpleadosPage({ searchParams }: { searchParams: Se
                   {e.last_name}, {e.first_name}
                 </Td>
                 <Td className="font-mono text-xs">{e.national_id}</Td>
+                <Td className="text-xs">
+                  {e.employments.length ? (
+                    e.employments
+                      .map((em) => `${em.company.name}${em.site ? ` (${em.site.name})` : ""}`)
+                      .join(", ")
+                  ) : (
+                    <span className="text-text/60">—</span>
+                  )}
+                </Td>
                 <Td>
-                  {e.employments.length
-                    ? e.employments.map((em) => em.company.name).join(", ")
-                    : <span className="text-text/60">—</span>}
+                  {e._count.fingerprints > 0 ? (
+                    <Tag variant="accent">Sí</Tag>
+                  ) : (
+                    <Tag variant="neutral">No</Tag>
+                  )}
                 </Td>
                 <Td>
                   {e.employments.length ? (
