@@ -157,10 +157,13 @@ async function resolvePositionId(
   });
   const bmId = company?.business_model_id ?? company?.parent?.business_model_id ?? null;
 
+  // `position` no tiene columna business_model: el vínculo es M:N vía
+  // position_business_model. Sin modelo efectivo → cargo genérico (sin filas).
+  const business_model_ids = bmId != null ? [bmId] : [];
   const created = await prisma.position.create({
     data: {
       name,
-      business_models: bmId != null ? { create: [{ business_model_id: bmId }] } : undefined,
+      business_models: { create: business_model_ids.map((id) => ({ business_model_id: id })) },
     },
   });
   await writeAudit({
@@ -168,7 +171,7 @@ async function resolvePositionId(
     action: "position.create",
     entityType: "position",
     entityId: created.id,
-    after: { ...created, via: "employment_form", business_model_id: bmId },
+    after: { ...created, via: "employment_form", business_model_ids },
   });
   return { id: created.id };
 }
