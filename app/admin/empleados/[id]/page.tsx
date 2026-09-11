@@ -114,6 +114,7 @@ export default async function EmpleadoDetailPage({
                 <Th>Sede</Th>
                 <Th>Grupo</Th>
                 <Th>Puesto / Depto</Th>
+                <Th>Nómina</Th>
                 <Th>Período</Th>
                 <Th>Estado</Th>
                 <Th />
@@ -129,6 +130,13 @@ export default async function EmpleadoDetailPage({
                     {em.position?.name ?? "—"}
                     {em.department?.name && (
                       <span className="text-text/60"> / {em.department.name}</span>
+                    )}
+                  </Td>
+                  <Td className="text-xs">
+                    {em.payroll_type ? (
+                      em.payroll_type === "quincenal" ? "Quincenal" : "Semanal"
+                    ) : (
+                      <span className="text-text/60">—</span>
                     )}
                   </Td>
                   <Td className="text-xs">

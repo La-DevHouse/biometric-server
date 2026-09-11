@@ -116,16 +116,61 @@ export async function updateEmployeeAction(
 // Empleo (employment)
 // --------------------------------------------------------------------------
 
+const PAYROLL_TYPES = ["quincenal", "semanal"] as const;
+
 function employmentData(fd: FormData) {
+  const posRaw = str(fd, "position_id");
+  const ptRaw = str(fd, "payroll_type");
   return {
     company_id: Number(str(fd, "company_id")),
     site_id: optId(fd, "site_id"),
     employee_group_id: optId(fd, "employee_group_id"),
-    position_id: optId(fd, "position_id"),
+    // "__new__" → null acá; lo resuelve resolvePositionId() creando el puesto
+    position_id: posRaw === "" || posRaw === "__new__" ? null : Number(posRaw),
     department_id: optId(fd, "department_id"),
     payroll_ref: str(fd, "payroll_ref") || null,
+    payroll_type: (PAYROLL_TYPES as readonly string[]).includes(ptRaw)
+      ? (ptRaw as (typeof PAYROLL_TYPES)[number])
+      : null,
     start_date: optDate(str(fd, "start_date")),
   };
+}
+
+/**
+ * Si el form eligió "otro: crear puesto nuevo", crea el `position` (asociado al
+ * modelo de negocio efectivo de la empresa, o genérico si no tiene) y devuelve
+ * su id. Si no, devuelve el `position_id` ya parseado.
+ */
+async function resolvePositionId(
+  fd: FormData,
+  fallbackPositionId: number | null,
+  companyId: number,
+  userId: number
+): Promise<{ id: number | null } | { error: string }> {
+  if (str(fd, "position_id") !== "__new__") return { id: fallbackPositionId };
+  const name = str(fd, "new_position_name");
+  if (!name) return { error: "Escribí el nombre del puesto nuevo." };
+
+  const company = await prisma.client_company.findUnique({
+    where: { id: companyId },
+    select: { business_model_id: true, parent: { select: { business_model_id: true } } },
+  });
+  const bmId = company?.business_model_id ?? company?.parent?.business_model_id ?? null;
+
+  const created = await prisma.position.create({
+    data: {
+      name,
+      business_models: bmId != null ? { create: [{ business_model_id: bmId }] } : undefined,
+    },
+  });
+  await writeAudit({
+    actorId: userId,
+    action: "position.create",
+    entityType: "position",
+    entityId: created.id,
+    after: { ...created, via: "employment_form", business_model_id: bmId },
+  });
+  return { id: created.id };
 }
 
 export async function createEmploymentAction(
@@ -138,6 +183,10 @@ export async function createEmploymentAction(
   if (!Number.isFinite(employee_id)) return { status: "error", error: "Persona inválida." };
   if (!Number.isFinite(d.company_id)) return { status: "error", error: "Seleccioná una empresa." };
   if (!d.start_date) return { status: "error", error: "La fecha de inicio es obligatoria." };
+
+  const pos = await resolvePositionId(fd, d.position_id, d.company_id, user.id);
+  if ("error" in pos) return { status: "error", error: pos.error };
+  d.position_id = pos.id;
 
   try {
     const created = await prisma.employment.create({
@@ -199,6 +248,10 @@ export async function transferEmployeeAction(
   if (transferDate < from.start_date)
     return { status: "error", error: "El traslado no puede ser anterior al inicio del empleo origen." };
 
+  const pos = await resolvePositionId(fd, d.position_id, d.company_id, user.id);
+  if ("error" in pos) return { status: "error", error: pos.error };
+  d.position_id = pos.id;
+
   try {
     const result = await prisma.$transaction(async (tx) => {
       const closed = await tx.employment.update({
@@ -214,6 +267,7 @@ export async function transferEmployeeAction(
           position_id: d.position_id,
           department_id: d.department_id,
           payroll_ref: d.payroll_ref,
+          payroll_type: d.payroll_type,
           start_date: transferDate,
         },
       });

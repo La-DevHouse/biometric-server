@@ -13,6 +13,7 @@ export interface EmploymentDefaults {
   position_id?: number | null;
   department_id?: number | null;
   payroll_ref?: string | null;
+  payroll_type?: "quincenal" | "semanal" | null;
   start_date?: string | null; // YYYY-MM-DD
 }
 
@@ -31,8 +32,20 @@ export function EmploymentFields({
   startLabel?: string;
 }) {
   const [companyId, setCompanyId] = useState<number | "">(defaults?.company_id ?? "");
+  const [positionSel, setPositionSel] = useState<string>(
+    defaults?.position_id != null ? String(defaults.position_id) : ""
+  );
   const sites = lookups.sites.filter((s) => s.company_id === companyId);
   const groups = lookups.groups.filter((g) => g.company_id === companyId);
+
+  // modelo de negocio efectivo de la empresa elegida → filtra los puestos
+  const effectiveBm =
+    companyId === "" ? null : lookups.companies.find((c) => c.id === companyId)?.business_model_id ?? null;
+  const positions = lookups.positions.filter(
+    (p) =>
+      p.business_model_ids.length === 0 || // genérico
+      (effectiveBm != null && p.business_model_ids.includes(effectiveBm))
+  );
 
   return (
     <div className="grid grid-cols-2 gap-2">
@@ -99,15 +112,40 @@ export function EmploymentFields({
 
       <label className={LABEL}>
         Puesto
-        <select name="position_id" className={INPUT} defaultValue={defaults?.position_id ?? ""}>
+        <select
+          name="position_id"
+          className={INPUT}
+          value={positionSel}
+          onChange={(e) => setPositionSel(e.target.value)}
+        >
           <option value="">— sin puesto —</option>
-          {lookups.positions.map((p) => (
+          {positions.map((p) => (
             <option key={p.id} value={p.id}>
               {p.name}
             </option>
           ))}
+          <option value="__new__">— otro: crear puesto nuevo —</option>
         </select>
       </label>
+
+      <label className={LABEL}>
+        Tipo de nómina
+        <select name="payroll_type" className={INPUT} defaultValue={defaults?.payroll_type ?? ""}>
+          <option value="">— sin nómina —</option>
+          <option value="quincenal">Quincenal</option>
+          <option value="semanal">Semanal</option>
+        </select>
+      </label>
+
+      {positionSel === "__new__" && (
+        <label className={`${LABEL} col-span-2`}>
+          Nombre del puesto nuevo *
+          <input name="new_position_name" className={INPUT} placeholder="ej. Cajero, Mesonero…" />
+          <span className="text-[11px] text-text/60">
+            Se crea en el catálogo{effectiveBm != null ? ", asociado al modelo de negocio de la empresa" : " como genérico"}.
+          </span>
+        </label>
+      )}
 
       <label className={LABEL}>
         Ref. nómina

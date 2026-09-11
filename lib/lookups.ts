@@ -2,12 +2,15 @@
 import { prisma } from "@/lib/db";
 
 export async function loadEmploymentLookups() {
-  const [companies, sites, groups, departments, positions] = await Promise.all([
+  const [companiesRaw, allForBm, sites, groups, departments, positionsRaw] = await Promise.all([
     prisma.client_company.findMany({
       where: { status: "active" },
-      select: { id: true, name: true },
+      select: { id: true, name: true, parent_id: true, business_model_id: true },
       orderBy: { name: "asc" },
     }),
+    // mapa id → modelo de negocio de TODAS las empresas (incl. inactivas) para
+    // resolver la herencia del grupo aunque el padre no esté activo
+    prisma.client_company.findMany({ select: { id: true, business_model_id: true } }),
     prisma.site.findMany({
       where: { status: "active" },
       select: { id: true, name: true, company_id: true },
@@ -25,10 +28,26 @@ export async function loadEmploymentLookups() {
     }),
     prisma.position.findMany({
       where: { status: "active" },
-      select: { id: true, name: true },
+      select: { id: true, name: true, business_models: { select: { business_model_id: true } } },
       orderBy: { name: "asc" },
     }),
   ]);
+
+  const bmById = new Map(allForBm.map((c) => [c.id, c.business_model_id]));
+  const companies = companiesRaw.map((c) => ({
+    id: c.id,
+    name: c.name,
+    // modelo de negocio efectivo: el propio, o el del grupo si no tiene
+    business_model_id:
+      c.business_model_id ?? (c.parent_id != null ? bmById.get(c.parent_id) ?? null : null),
+  }));
+  const positions = positionsRaw.map((p) => ({
+    id: p.id,
+    name: p.name,
+    // vacío = cargo genérico (aplica a todos los modelos de negocio)
+    business_model_ids: p.business_models.map((x) => x.business_model_id),
+  }));
+
   return { companies, sites, groups, departments, positions };
 }
 
