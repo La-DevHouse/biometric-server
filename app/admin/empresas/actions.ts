@@ -7,6 +7,7 @@ import { writeAudit } from "@/lib/audit";
 import type { AdminActionState } from "@/lib/adminActionState";
 import { joinDoc } from "@/lib/documento";
 import { DEFAULT_TZ, isValidTimeZone } from "@/lib/time";
+import { fanOutEmployeeToGroup } from "@/lib/enrollment";
 
 const ABSENCE_RULES = ["no_check_in", "no_marks", "under_hours"] as const;
 type AbsenceRule = (typeof ABSENCE_RULES)[number];
@@ -318,4 +319,72 @@ export async function setSiteStatusAction(
   });
   revalidatePath(`/admin/empresas/${before.company_id}`);
   return { ok: true };
+}
+
+// --------------------------------------------------------------------------
+// Re-sincronizar enrolamientos del grupo (docs/09 §7.1 ítem 6)
+// --------------------------------------------------------------------------
+
+/**
+ * Para cada persona con empleo activo en cualquier empresa del grupo de
+ * `companyId`, encola ADD_EMPLOYEE_TO_DEVICE en los equipos del grupo donde
+ * todavía no esté. Reparación manual del fan-out (equipo que estaba offline,
+ * flag recién activado, etc.).
+ */
+export async function resyncGroupEnrollmentsAction(
+  companyId: number
+): Promise<{ ok: boolean; message?: string; error?: string }> {
+  const user = await requireUser();
+
+  const c = await prisma.client_company.findUnique({
+    where: { id: companyId },
+    select: {
+      id: true,
+      shared_employees: true,
+      parent: { select: { id: true, shared_employees: true } },
+    },
+  });
+  if (!c) return { ok: false, error: "La empresa no existe." };
+  const root = c.parent
+    ? { id: c.parent.id, shared: c.parent.shared_employees }
+    : { id: c.id, shared: c.shared_employees };
+  if (!root.shared)
+    return { ok: false, error: "El grupo no tiene «Compartir empleados» activado." };
+
+  const children = await prisma.client_company.findMany({
+    where: { parent_id: root.id },
+    select: { id: true },
+  });
+  const companyIds = [root.id, ...children.map((x) => x.id)];
+
+  const rows = await prisma.employment.findMany({
+    where: { company_id: { in: companyIds }, status: "active" },
+    select: { employee_id: true },
+    distinct: ["employee_id"],
+  });
+
+  let started = 0;
+  let warnings = 0;
+  for (const r of rows) {
+    const res = await fanOutEmployeeToGroup(r.employee_id, root.id);
+    started += res.started;
+    warnings += res.notes.length;
+  }
+
+  await writeAudit({
+    actorId: user.id,
+    action: "enrollment.group_resync",
+    entityType: "client_company",
+    entityId: root.id,
+    after: { employees: rows.length, started, warnings },
+  });
+  revalidatePath("/admin/enrolamiento");
+  revalidatePath(`/admin/empresas/${companyId}`);
+
+  return {
+    ok: true,
+    message: `${rows.length} persona(s) revisadas · ${started} enrolamiento(s) encolado(s)${
+      warnings ? ` · ${warnings} aviso(s)` : ""
+    }.`,
+  };
 }

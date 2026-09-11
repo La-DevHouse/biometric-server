@@ -8,6 +8,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { CompanyFormDialog, type CompanyFormValues } from "@/components/admin/CompanyFormDialog";
 import { SiteFormDialog } from "@/components/admin/SiteFormDialog";
 import { RecordStatusButton } from "@/components/admin/RecordStatusButton";
+import { ResyncGroupButton } from "@/components/admin/ResyncGroupButton";
 import { setCompanyStatusAction, setSiteStatusAction } from "@/app/admin/empresas/actions";
 
 export const dynamic = "force-dynamic";
@@ -151,6 +152,9 @@ export default async function EmpresaDetailPage({
             label="empresa"
             action={setCompanyStatusAction}
           />
+          {company.parent_id === null && company.shared_employees && (
+            <ResyncGroupButton companyId={company.id} />
+          )}
         </div>
       </section>
 

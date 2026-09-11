@@ -7,6 +7,7 @@ import { requireUser } from "@/lib/auth";
 import { writeAudit } from "@/lib/audit";
 import type { AdminActionState } from "@/lib/adminActionState";
 import { joinDoc } from "@/lib/documento";
+import { fanOutEmployeeToGroup, fanOutNote } from "@/lib/enrollment";
 
 function str(fd: FormData, k: string) {
   return String(fd.get(k) ?? "").trim();
@@ -196,9 +197,18 @@ export async function createEmploymentAction(
       data: { ...d, start_date: d.start_date, employee_id },
     });
     await writeAudit({ actorId: user.id, action: "employment.create", entityType: "employment", entityId: created.id, after: created });
+
+    // Compartir empleados: enrolar en todos los equipos del grupo (no fatal).
+    let note = "";
+    try {
+      note = fanOutNote(await fanOutEmployeeToGroup(employee_id, d.company_id));
+    } catch (e) {
+      console.error("fan-out de enrolamiento falló:", e);
+    }
+
     revalidatePath(`/admin/empleados/${employee_id}`);
     revalidatePath("/admin/empleados");
-    return { status: "ok", message: "Empleo registrado." };
+    return { status: "ok", message: "Empleo registrado." + note };
   } catch (e) {
     return { status: "error", error: e instanceof Error ? e.message : String(e) };
   }
@@ -284,9 +294,17 @@ export async function transferEmployeeAction(
       before: { from_employment: result.closed.id, from_company: from.company_id },
       after: { new_employment: result.opened.id, to_company: d.company_id, date: transferDate },
     });
+
+    let note = "";
+    try {
+      note = fanOutNote(await fanOutEmployeeToGroup(from.employee_id, d.company_id));
+    } catch (e) {
+      console.error("fan-out de enrolamiento falló:", e);
+    }
+
     revalidatePath(`/admin/empleados/${from.employee_id}`);
     revalidatePath("/admin/empleados");
-    return { status: "ok", message: "Traslado registrado." };
+    return { status: "ok", message: "Traslado registrado." + note };
   } catch (e) {
     return { status: "error", error: e instanceof Error ? e.message : String(e) };
   }
