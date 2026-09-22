@@ -1,8 +1,7 @@
 "use client";
 
 import { docPrefixes, type DocKind } from "@/lib/documento";
-
-const INPUT = "min-h-9 px-2.5 text-sm bg-surface border border-divider rounded-none w-full";
+import { FIELD_INPUT as INPUT } from "@/components/ui/fieldStyles";
 
 /**
  * Tipo de documento (prefijo en <select>) + número (campo numérico).

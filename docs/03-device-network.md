@@ -36,6 +36,26 @@ Menú: `Comm Set → 2. TCP/IP → 2. Server Set`
 
 El reloj del dispositivo arranca en el año 2000 de fábrica. Encolar `SET_TIME` con parámetros vacíos (`{}`) — el servidor estampa la hora en el momento de la entrega, no en el momento de encolar, evitando el desfase de ~10s que se acumula esperando el próximo poll. Ver `05-commands-catalog.md` para el detalle verificado.
 
+### 4. Campo "ID del equipo" (`Comm Set → ID del equipo`) — estandarizado, no crítico
+
+Decisión de Reunión 3 (docs/09-reunion-3.md §3.9 / §7.1 ítem 14). Este campo es
+**cosmético para el sistema, no lo usa como identificador**: el sistema
+identifica cada equipo por su **número de serie** (`dev_id` del protocolo, ver
+`04-device-protocol-real.md`), que ya es único de fábrica — no depende de que
+alguien haya configurado bien este campo.
+
+Aun así, para que sea legible a simple vista en el menú del equipo (Ezequiel lo
+usa al configurar en sede), el estándar es:
+
+- **Una empresa, un equipo:** el RIF de la empresa (ej. `J123456789`).
+- **Una empresa, varios equipos en la misma sede:** RIF + sufijo numérico
+  (`J123456789-2`, `J123456789-3`, …). El firmware por defecto deja `1` en
+  todos los equipos nuevos — hay que cambiarlo a mano si hace falta
+  diferenciarlos visualmente.
+- Si no se estandariza (equipos ya desplegados con `1` a secas, por ejemplo),
+  **no es un problema urgente de corregir** — no rompe nada del lado del
+  sistema, solo hace menos legible el menú físico del equipo.
+
 ## Herramientas de diagnóstico disponibles
 
 Si un dispositivo no aparece conectado, antes de asumir que es un problema de red:

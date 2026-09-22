@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { Table, Th, Td, Tr } from "@/components/ui/Table";
+import { MobileList, MobileRow } from "@/components/ui/MobileRow";
 import { Tag } from "@/components/ui/Tag";
 import { LinkBtn } from "@/components/ui/Btn";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -50,29 +51,68 @@ export default async function EmpresasPage() {
           description="Creá la primera empresa cliente para empezar."
         />
       ) : (
-        <Table>
-          <thead>
-            <tr>
-              <Th>Empresa</Th>
-              <Th>RIF</Th>
-              <Th>Tipo</Th>
-              <Th>Sedes</Th>
-              <Th>Empleos</Th>
-              <Th>Estado</Th>
-              <Th />
-            </tr>
-          </thead>
-          <tbody>
+        <>
+          <div className="hidden md:block">
+            <Table>
+              <thead>
+                <tr>
+                  <Th>Empresa</Th>
+                  <Th>RIF</Th>
+                  <Th>Tipo</Th>
+                  <Th>Sedes</Th>
+                  <Th>Empleos</Th>
+                  <Th>Estado</Th>
+                  <Th />
+                </tr>
+              </thead>
+              <tbody>
+                {roots.flatMap((root) => [
+                  <CompanyRow key={root.id} c={root} depth={0} />,
+                  ...childrenOf(root.id).map((child) => (
+                    <CompanyRow key={child.id} c={child} depth={1} />
+                  )),
+                ])}
+              </tbody>
+            </Table>
+          </div>
+          <MobileList>
             {roots.flatMap((root) => [
-              <CompanyRow key={root.id} c={root} depth={0} />,
+              <CompanyMobileRow key={root.id} c={root} depth={0} />,
               ...childrenOf(root.id).map((child) => (
-                <CompanyRow key={child.id} c={child} depth={1} />
+                <CompanyMobileRow key={child.id} c={child} depth={1} />
               )),
             ])}
-          </tbody>
-        </Table>
+          </MobileList>
+        </>
       )}
     </div>
+  );
+}
+
+function CompanyMobileRow({ c, depth }: { c: CompanyRowData; depth: number }) {
+  return (
+    <MobileRow
+      href={`/admin/empresas/${c.id}`}
+      title={
+        <>
+          {depth > 0 ? "↳ " : ""}
+          {c.name}
+        </>
+      }
+      tags={
+        <>
+          <Tag variant={c.is_group ? "neutral" : "outline"}>{c.is_group ? "Grupo" : "Operativa"}</Tag>
+          <Tag variant={c.status === "active" ? "accent" : "neutral"}>
+            {c.status === "active" ? "Activa" : "Inactiva"}
+          </Tag>
+        </>
+      }
+      fields={[
+        { label: "RIF", value: c.tax_id ?? "—" },
+        { label: "Sedes", value: c._count.sites },
+        { label: "Empleos", value: c._count.employments },
+      ]}
+    />
   );
 }
 

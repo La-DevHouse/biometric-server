@@ -3,11 +3,12 @@
 import { useActionState, useEffect, useState } from "react";
 import { Dialog } from "@/components/ui/Dialog";
 import { Btn } from "@/components/ui/Btn";
+import { IconBtn } from "@/components/ui/IconBtn";
+import { Icon } from "@/components/ui/icons";
 import { useToast } from "./Toaster";
 import { endEmploymentAction } from "@/app/admin/empleados/actions";
 import { ADMIN_ACTION_INITIAL } from "@/lib/adminActionState";
-
-const INPUT = "min-h-9 px-2.5 text-sm bg-surface border border-divider rounded-none w-full";
+import { FIELD_INPUT as INPUT } from "@/components/ui/fieldStyles";
 
 export function EndEmploymentDialog({
   employmentId,
@@ -29,9 +30,7 @@ export function EndEmploymentDialog({
 
   return (
     <>
-      <Btn variant="ghost" onClick={() => setOpen(true)}>
-        Dar de baja
-      </Btn>
+      <IconBtn icon={Icon.power} label={`Dar de baja en ${companyName}`} tone="danger" onClick={() => setOpen(true)} />
       <Dialog open={open} onClose={() => setOpen(false)} title={`Dar de baja en ${companyName}`}>
         <form action={formAction} className="flex flex-col gap-3">
           <input type="hidden" name="id" value={employmentId} />

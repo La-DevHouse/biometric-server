@@ -1,0 +1,16 @@
+{
+  "name": "Marcaje — Grupo ALCO",
+  "short_name": "Marcaje",
+  "description": "Panel de administración del servidor biométrico de Grupo ALCO",
+  "start_url": "/admin",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f2f2f3",
+  "theme_color": "#3b6fa8",
+  "lang": "es",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

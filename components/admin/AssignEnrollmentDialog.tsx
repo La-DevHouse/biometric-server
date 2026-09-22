@@ -1,13 +1,12 @@
 "use client";
 
-import { useActionState, useEffect, useState } from "react";
+import { useActionState, useEffect, useId, useState } from "react";
 import { Dialog } from "@/components/ui/Dialog";
 import { Btn } from "@/components/ui/Btn";
 import { useToast } from "./Toaster";
 import { assignEnrollmentAction } from "@/app/admin/enrolamiento/actions";
 import { ADMIN_ACTION_INITIAL } from "@/lib/adminActionState";
-
-const INPUT = "min-h-9 px-2.5 text-sm bg-surface border border-divider rounded-none w-full";
+import { FIELD_INPUT as INPUT } from "@/components/ui/fieldStyles";
 
 export interface EnrollCandidate {
   id: number;
@@ -28,6 +27,7 @@ export function AssignEnrollmentDialog({
   const [open, setOpen] = useState(false);
   const [state, formAction, pending] = useActionState(assignEnrollmentAction, ADMIN_ACTION_INITIAL);
   const { push } = useToast();
+  const formId = useId();
 
   useEffect(() => {
     if (state.status === "ok") {
@@ -45,8 +45,13 @@ export function AssignEnrollmentDialog({
         open={open}
         onClose={() => setOpen(false)}
         title={`Vincular slot ${deviceUserId}${deviceUserName ? ` · ${deviceUserName}` : ""}`}
+        footer={
+          <Btn type="submit" form={formId} variant="primary" disabled={pending || candidates.length === 0}>
+            {pending ? "Vinculando…" : "Vincular"}
+          </Btn>
+        }
       >
-        <form action={formAction} className="flex flex-col gap-3">
+        <form id={formId} action={formAction} className="flex flex-col gap-3">
           <input type="hidden" name="dev_id" value={devId} />
           <input type="hidden" name="device_user_id" value={deviceUserId} />
           <p className="m-0 text-xs text-text/70">
@@ -72,9 +77,6 @@ export function AssignEnrollmentDialog({
               </select>
             )}
           </label>
-          <Btn type="submit" variant="primary" disabled={pending || candidates.length === 0}>
-            {pending ? "Vinculando…" : "Vincular"}
-          </Btn>
         </form>
       </Dialog>
     </>

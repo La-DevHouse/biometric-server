@@ -3,11 +3,12 @@
 import { useState } from "react";
 import { Dialog } from "@/components/ui/Dialog";
 import { Btn } from "@/components/ui/Btn";
+import { IconBtn } from "@/components/ui/IconBtn";
+import { Icon } from "@/components/ui/icons";
 import { OperationProgress, OperationResult } from "./OperationStatus";
 import { useOperation } from "./useOperation";
 import { pushFingerprintAction } from "@/app/admin/actions";
-
-const INPUT = "min-h-9 px-2.5 text-sm bg-surface border border-divider rounded-none w-full";
+import { FIELD_INPUT as INPUT } from "@/components/ui/fieldStyles";
 
 export interface PushTarget {
   devId: string;
@@ -40,9 +41,11 @@ export function PushFingerprintDialog({
 
   return (
     <>
-      <Btn variant="ghost" onClick={() => setOpen(true)}>
-        Copiar a otro equipo
-      </Btn>
+      <IconBtn
+        icon={Icon.send}
+        label={`Copiar huella (dedo ${fingerIndex}) a otro equipo`}
+        onClick={() => setOpen(true)}
+      />
       <Dialog open={open} onClose={close} closable={!busy} title={`Copiar huella (dedo ${fingerIndex}) a otro equipo`}>
         <div className="flex flex-col gap-3">
           {!op && (

@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Btn } from "@/components/ui/Btn";
+import { IconBtn } from "@/components/ui/IconBtn";
+import { Icon } from "@/components/ui/icons";
 import { useToast } from "./Toaster";
 import { endEnrollmentAction } from "@/app/admin/enrolamiento/actions";
 
@@ -21,19 +22,11 @@ export function UnlinkEnrollmentButton({ id }: { id: number }) {
   }
 
   if (!confirming)
-    return (
-      <Btn variant="ghost" onClick={() => setConfirming(true)}>
-        Desvincular
-      </Btn>
-    );
+    return <IconBtn icon={Icon.unlink} label="Desvincular" tone="danger" onClick={() => setConfirming(true)} />;
   return (
-    <span className="inline-flex items-center gap-1">
-      <Btn variant="secondary" disabled={pending} onClick={run}>
-        {pending ? "…" : "Confirmar"}
-      </Btn>
-      <Btn variant="ghost" onClick={() => setConfirming(false)}>
-        Cancelar
-      </Btn>
+    <span className="inline-flex items-center gap-1.5">
+      <IconBtn icon={Icon.check} label="Confirmar desvinculación" tone="danger" disabled={pending} onClick={run} />
+      <IconBtn icon={Icon.close} label="Cancelar" onClick={() => setConfirming(false)} />
     </span>
   );
 }

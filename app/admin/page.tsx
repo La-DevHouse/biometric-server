@@ -6,6 +6,7 @@ import { formatVerifyMode } from "@/lib/verifyMode";
 import { StatCard } from "@/components/ui/StatCard";
 import { Card, CardMeta } from "@/components/ui/Card";
 import { Table, Th, Td, Tr } from "@/components/ui/Table";
+import { MobileList, MobileRow } from "@/components/ui/MobileRow";
 import { LinkBtn } from "@/components/ui/Btn";
 import { EmptyState } from "@/components/ui/EmptyState";
 
@@ -90,17 +91,25 @@ export default async function InicioPage() {
           kicker="Equipos en línea"
           value={`${onlineDevices.length} / ${devices.length}`}
           meta="visto en los últimos 30 s"
+          tone="accent"
         />
-        <StatCard kicker="Marcaciones hoy" value={totalToday} meta="llegan solas en tiempo real" />
+        <StatCard
+          kicker="Marcaciones hoy"
+          value={totalToday}
+          meta="llegan solas en tiempo real"
+          tone="accent2"
+        />
         <StatCard
           kicker="Operaciones en curso"
           value={activeOpsCount}
           meta="comandos en cola o ejecutando"
+          tone="accent2"
         />
         <StatCard
           kicker="Usuarios registrados"
           value={totalUsers}
           meta={`en ${devices.length} equipo${devices.length === 1 ? "" : "s"}`}
+          tone="accent"
         />
       </div>
 
@@ -118,33 +127,50 @@ export default async function InicioPage() {
       )}
 
       <div className="flex flex-col gap-2">
-        <h3 className="font-heading text-lg m-0">Últimas marcaciones</h3>
+        <h3 className="font-heading text-xl font-semibold tracking-tight m-0">Últimas marcaciones</h3>
         {recentLogs.length === 0 ? (
           <EmptyState
             title="Todavía no hay marcaciones"
             description="Aparecerán aquí en tiempo real en cuanto un equipo reporte una."
           />
         ) : (
-          <Table>
-            <thead>
-              <tr>
-                <Th>Hora</Th>
-                <Th>Usuario</Th>
-                <Th>Dispositivo</Th>
-                <Th>Verificación</Th>
-              </tr>
-            </thead>
-            <tbody>
+          <>
+            <div className="hidden md:block">
+              <Table>
+                <thead>
+                  <tr>
+                    <Th>Hora</Th>
+                    <Th>Usuario</Th>
+                    <Th>Dispositivo</Th>
+                    <Th>Verificación</Th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {recentLogs.map((r, i) => (
+                    <Tr key={i}>
+                      <Td>{fmtTime(r.io_time)}</Td>
+                      <Td>{r.display_name}</Td>
+                      <Td>{r.device_name}</Td>
+                      <Td>{formatVerifyMode(r.verify_mode)}</Td>
+                    </Tr>
+                  ))}
+                </tbody>
+              </Table>
+            </div>
+            <MobileList>
               {recentLogs.map((r, i) => (
-                <Tr key={i}>
-                  <Td>{fmtTime(r.io_time)}</Td>
-                  <Td>{r.display_name}</Td>
-                  <Td>{r.device_name}</Td>
-                  <Td>{formatVerifyMode(r.verify_mode)}</Td>
-                </Tr>
+                <MobileRow
+                  key={i}
+                  title={r.display_name}
+                  tags={<span className="text-xs text-text/60">{fmtTime(r.io_time)}</span>}
+                  fields={[
+                    { label: "Dispositivo", value: r.device_name },
+                    { label: "Verificación", value: formatVerifyMode(r.verify_mode) },
+                  ]}
+                />
               ))}
-            </tbody>
-          </Table>
+            </MobileList>
+          </>
         )}
       </div>
 

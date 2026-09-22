@@ -1,7 +1,8 @@
 "use client";
 
 import { useTransition } from "react";
-import { Btn } from "@/components/ui/Btn";
+import { IconBtn } from "@/components/ui/IconBtn";
+import { Icon } from "@/components/ui/icons";
 import { useToast } from "./Toaster";
 import { resyncGroupEnrollmentsAction } from "@/app/admin/empresas/actions";
 
@@ -14,8 +15,9 @@ export function ResyncGroupButton({ companyId }: { companyId: number }) {
   const { push } = useToast();
 
   return (
-    <Btn
-      variant="ghost"
+    <IconBtn
+      icon={Icon.sync}
+      label="Re-sincronizar grupo"
       disabled={pending}
       onClick={() =>
         start(async () => {
@@ -23,8 +25,6 @@ export function ResyncGroupButton({ companyId }: { companyId: number }) {
           push(r.ok ? "ok" : "error", r.ok ? r.message ?? "Listo." : r.error ?? "No se pudo.");
         })
       }
-    >
-      {pending ? "Propagando…" : "Re-sincronizar grupo"}
-    </Btn>
+    />
   );
 }

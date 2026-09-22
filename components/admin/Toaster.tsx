@@ -33,7 +33,7 @@ const KIND_LABEL: Record<ToastKind, string> = {
 const KIND_CLASS: Record<ToastKind, string> = {
   ok: "border-accent",
   warn: "border-accent2",
-  error: "border-text/40",
+  error: "border-danger-600",
 };
 
 /**
@@ -67,16 +67,16 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       <dialog
         ref={dialogRef}
         onCancel={(e) => e.preventDefault()}
-        className="backdrop:bg-text/40 border border-divider bg-bg p-0 w-full max-w-sm shadow-lg m-auto"
+        className="backdrop:bg-text/40 border border-text bg-surface p-0 w-[min(92vw,24rem)] shadow-hard m-auto"
       >
         {current && (
           <div className={cx("flex flex-col gap-3 p-4 border-t-4", KIND_CLASS[current.kind])}>
-            <h3 className="font-heading text-lg m-0">{KIND_LABEL[current.kind]}</h3>
+            <h3 className="font-heading text-xl font-semibold tracking-tight m-0">{KIND_LABEL[current.kind]}</h3>
             <p className="text-sm m-0 whitespace-pre-wrap">{current.message}</p>
             <button
               type="button"
               onClick={dismiss}
-              className="self-end min-h-9 px-4 text-sm bg-accent text-bg border-none cursor-pointer"
+              className="self-end min-h-9 px-4 text-sm font-heading font-semibold bg-text text-white hover:bg-accent border-none cursor-pointer"
             >
               Cerrar
             </button>

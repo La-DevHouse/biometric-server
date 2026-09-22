@@ -3,7 +3,9 @@ import { requireUser } from "@/lib/auth";
 import { allAsync, initDb } from "@/lib/db";
 import { DeviceSelect } from "@/components/ui/DeviceSelect";
 import { Table, Th, Td, Tr } from "@/components/ui/Table";
+import { MobileList, MobileRow } from "@/components/ui/MobileRow";
 import { Tag } from "@/components/ui/Tag";
+import { Icon } from "@/components/ui/icons";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { OpButton } from "@/components/admin/OpButton";
 import { CreateUserDialog } from "@/components/admin/CreateUserDialog";
@@ -76,8 +78,13 @@ export default async function UsuariosPage({
         </Suspense>
         {effectiveDevId && (
           <>
-            <OpButton action={syncUsersAction} hidden={{ dev_id: effectiveDevId }} title="Sincronizar lista desde el equipo">
-              Sincronizar lista desde el equipo
+            <OpButton
+              action={syncUsersAction}
+              hidden={{ dev_id: effectiveDevId }}
+              title="Sincronizar lista desde el equipo"
+              variant="icon"
+            >
+              {Icon.sync}
             </OpButton>
             <div className="ml-auto">
               <CreateUserDialog devId={effectiveDevId} />
@@ -99,55 +106,96 @@ export default async function UsuariosPage({
         />
       ) : (
         <>
-          <Table>
-            <thead>
-              <tr>
-                <Th>ID</Th>
-                <Th>Nombre</Th>
-                <Th>Privilegio</Th>
-                <Th>Biométricos</Th>
-                <Th>Acciones</Th>
-              </tr>
-            </thead>
-            <tbody>
-              {users.map((u) => (
-                <Tr key={u.user_id}>
-                  <Td className="font-mono">{u.user_id}</Td>
-                  <Td>{u.user_name || <span className="text-text/70">Sin nombre</span>}</Td>
-                  <Td>
-                    <PrivilegeTag privilege={u.user_privilege} />
-                  </Td>
-                  <Td>
-                    {u.bio_count > 0 ? (
-                      `${u.bio_count} plantilla${u.bio_count === 1 ? "" : "s"}`
-                    ) : (
-                      <span className="text-text/70">Sin sincronizar</span>
-                    )}
-                  </Td>
-                  <Td>
-                    <div className="flex gap-1.5 flex-wrap">
-                      <RenameUserDialog
-                        devId={effectiveDevId!}
-                        userId={u.user_id}
-                        currentName={u.user_name || ""}
-                      />
-                      <ChangePrivilegeDialog
-                        devId={effectiveDevId!}
-                        userId={u.user_id}
-                        currentPrivilege={u.user_privilege}
-                      />
-                      <ViewBiometricsDialog devId={effectiveDevId!} userId={u.user_id} />
-                      <DeleteUserDialog
-                        devId={effectiveDevId!}
-                        userId={u.user_id}
-                        userName={u.user_name || ""}
-                      />
-                    </div>
-                  </Td>
-                </Tr>
-              ))}
-            </tbody>
-          </Table>
+          <div className="hidden md:block">
+            <Table>
+              <thead>
+                <tr>
+                  <Th>ID</Th>
+                  <Th>Nombre</Th>
+                  <Th>Privilegio</Th>
+                  <Th>Biométricos</Th>
+                  <Th>Acciones</Th>
+                </tr>
+              </thead>
+              <tbody>
+                {users.map((u) => (
+                  <Tr key={u.user_id}>
+                    <Td className="font-mono">{u.user_id}</Td>
+                    <Td>{u.user_name || <span className="text-text/70">Sin nombre</span>}</Td>
+                    <Td>
+                      <PrivilegeTag privilege={u.user_privilege} />
+                    </Td>
+                    <Td>
+                      {u.bio_count > 0 ? (
+                        `${u.bio_count} plantilla${u.bio_count === 1 ? "" : "s"}`
+                      ) : (
+                        <span className="text-text/70">Sin sincronizar</span>
+                      )}
+                    </Td>
+                    <Td>
+                      <div className="flex gap-1.5 flex-wrap">
+                        <RenameUserDialog
+                          devId={effectiveDevId!}
+                          userId={u.user_id}
+                          currentName={u.user_name || ""}
+                        />
+                        <ChangePrivilegeDialog
+                          devId={effectiveDevId!}
+                          userId={u.user_id}
+                          currentPrivilege={u.user_privilege}
+                        />
+                        <ViewBiometricsDialog devId={effectiveDevId!} userId={u.user_id} />
+                        <DeleteUserDialog
+                          devId={effectiveDevId!}
+                          userId={u.user_id}
+                          userName={u.user_name || ""}
+                        />
+                      </div>
+                    </Td>
+                  </Tr>
+                ))}
+              </tbody>
+            </Table>
+          </div>
+          <MobileList>
+            {users.map((u) => (
+              <MobileRow
+                key={u.user_id}
+                title={u.user_name || "Sin nombre"}
+                tags={<PrivilegeTag privilege={u.user_privilege} />}
+                fields={[
+                  { label: "ID", value: u.user_id },
+                  {
+                    label: "Biométricos",
+                    value:
+                      u.bio_count > 0
+                        ? `${u.bio_count} plantilla${u.bio_count === 1 ? "" : "s"}`
+                        : "Sin sincronizar",
+                  },
+                ]}
+                actions={
+                  <>
+                    <RenameUserDialog
+                      devId={effectiveDevId!}
+                      userId={u.user_id}
+                      currentName={u.user_name || ""}
+                    />
+                    <ChangePrivilegeDialog
+                      devId={effectiveDevId!}
+                      userId={u.user_id}
+                      currentPrivilege={u.user_privilege}
+                    />
+                    <ViewBiometricsDialog devId={effectiveDevId!} userId={u.user_id} />
+                    <DeleteUserDialog
+                      devId={effectiveDevId!}
+                      userId={u.user_id}
+                      userName={u.user_name || ""}
+                    />
+                  </>
+                }
+              />
+            ))}
+          </MobileList>
           <p className="text-xs text-text/70 max-w-lg">
             Nombre y privilegio se editan por separado: cada uno usa su propio comando seguro. No
             existe la edición libre de "toda la ficha" porque reconstruye al usuario en el equipo y

@@ -1,17 +1,17 @@
 "use client";
 
-import { useActionState, useEffect, useState } from "react";
+import { useActionState, useEffect, useId, useState } from "react";
 import { Dialog } from "@/components/ui/Dialog";
 import { Btn } from "@/components/ui/Btn";
+import { IconBtn } from "@/components/ui/IconBtn";
+import { Icon } from "@/components/ui/icons";
 import { useToast } from "./Toaster";
 import {
   createBusinessModelAction,
   updateBusinessModelAction,
 } from "@/app/admin/categorias/actions";
 import { ADMIN_ACTION_INITIAL } from "@/lib/adminActionState";
-
-const INPUT = "min-h-9 px-2.5 text-sm bg-surface border border-divider rounded-none w-full";
-const LABEL = "flex flex-col gap-1 text-xs text-text/85";
+import { FIELD_INPUT as INPUT, FIELD_LABEL as LABEL } from "@/components/ui/fieldStyles";
 
 export interface BusinessModelValues {
   id: number;
@@ -27,6 +27,7 @@ export function BusinessModelFormDialog({ model }: { model?: BusinessModelValues
     ADMIN_ACTION_INITIAL
   );
   const { push } = useToast();
+  const formId = useId();
 
   useEffect(() => {
     if (state.status === "ok") {
@@ -39,15 +40,22 @@ export function BusinessModelFormDialog({ model }: { model?: BusinessModelValues
 
   return (
     <>
-      <Btn variant={editing ? "ghost" : "primary"} onClick={() => setOpen(true)}>
-        {editing ? "Editar" : "+ Modelo de negocio"}
-      </Btn>
+      {editing ? (
+        <IconBtn icon={Icon.edit} label="Editar modelo de negocio" onClick={() => setOpen(true)} />
+      ) : (
+        <IconBtn icon={Icon.add} label="Nuevo modelo de negocio" onClick={() => setOpen(true)} />
+      )}
       <Dialog
         open={open}
         onClose={() => setOpen(false)}
         title={editing ? "Editar modelo de negocio" : "Nuevo modelo de negocio"}
+        footer={
+          <Btn type="submit" form={formId} variant="primary" disabled={pending}>
+            {pending ? "Guardando…" : editing ? "Guardar" : "Crear"}
+          </Btn>
+        }
       >
-        <form action={formAction} className="flex flex-col gap-3">
+        <form id={formId} action={formAction} className="flex flex-col gap-3">
           {editing && <input type="hidden" name="id" value={model.id} />}
           <label className={LABEL}>
             Nombre *
@@ -57,9 +65,6 @@ export function BusinessModelFormDialog({ model }: { model?: BusinessModelValues
             Código <span className="text-text/60">(opcional — identificador corto de ALCO para reportes)</span>
             <input name="code" defaultValue={model?.code ?? ""} className={INPUT} />
           </label>
-          <Btn type="submit" variant="primary" disabled={pending}>
-            {pending ? "Guardando…" : editing ? "Guardar" : "Crear"}
-          </Btn>
         </form>
       </Dialog>
     </>

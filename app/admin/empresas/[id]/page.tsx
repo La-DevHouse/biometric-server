@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { Table, Th, Td, Tr } from "@/components/ui/Table";
+import { MobileList, MobileRow } from "@/components/ui/MobileRow";
 import { Tag } from "@/components/ui/Tag";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { CompanyFormDialog, type CompanyFormValues } from "@/components/admin/CompanyFormDialog";
@@ -74,7 +75,7 @@ export default async function EmpresaDetailPage({
           ← Empresas
         </Link>
         <div className="mt-1 flex items-center gap-3">
-          <h2 className="m-0 text-2xl">{company.name}</h2>
+          <h2 className="font-heading text-2xl font-semibold tracking-tight m-0">{company.name}</h2>
           <Tag variant={company.status === "active" ? "accent" : "neutral"}>
             {company.status === "active" ? "Activa" : "Inactiva"}
           </Tag>
@@ -140,12 +141,7 @@ export default async function EmpresaDetailPage({
           }
         />
         <div className="mt-1 flex gap-2">
-          <CompanyFormDialog
-            company={formValues}
-            parentOptions={parentOptions}
-            businessModels={businessModels}
-            trigger="ghost"
-          />
+          <CompanyFormDialog company={formValues} parentOptions={parentOptions} businessModels={businessModels} />
           <RecordStatusButton
             id={company.id}
             active={company.status === "active"}
@@ -184,29 +180,64 @@ export default async function EmpresaDetailPage({
         {company.sites.length === 0 ? (
           <EmptyState title="Sin sedes" description="Agregá al menos una sede para asignarle dispositivos y empleos." />
         ) : (
-          <Table>
-            <thead>
-              <tr>
-                <Th>Nombre</Th>
-                <Th>Código</Th>
-                <Th>Zona horaria</Th>
-                <Th>Estado</Th>
-                <Th />
-              </tr>
-            </thead>
-            <tbody>
+          <>
+            <div className="hidden md:block">
+              <Table>
+                <thead>
+                  <tr>
+                    <Th>Nombre</Th>
+                    <Th>Código</Th>
+                    <Th>Zona horaria</Th>
+                    <Th>Estado</Th>
+                    <Th />
+                  </tr>
+                </thead>
+                <tbody>
+                  {company.sites.map((s) => (
+                    <Tr key={s.id}>
+                      <Td>{s.name}</Td>
+                      <Td className="font-mono text-xs">{s.code ?? <span className="text-text/60">—</span>}</Td>
+                      <Td className="text-xs">{s.timezone}</Td>
+                      <Td>
+                        <Tag variant={s.status === "active" ? "accent" : "neutral"}>
+                          {s.status === "active" ? "Activa" : "Inactiva"}
+                        </Tag>
+                      </Td>
+                      <Td>
+                        <span className="inline-flex items-center gap-1">
+                          <SiteFormDialog
+                            companyId={company.id}
+                            site={{ id: s.id, name: s.name, code: s.code, timezone: s.timezone }}
+                          />
+                          <RecordStatusButton
+                            id={s.id}
+                            active={s.status === "active"}
+                            label="sede"
+                            action={setSiteStatusAction}
+                          />
+                        </span>
+                      </Td>
+                    </Tr>
+                  ))}
+                </tbody>
+              </Table>
+            </div>
+            <MobileList>
               {company.sites.map((s) => (
-                <Tr key={s.id}>
-                  <Td>{s.name}</Td>
-                  <Td className="font-mono text-xs">{s.code ?? <span className="text-text/60">—</span>}</Td>
-                  <Td className="text-xs">{s.timezone}</Td>
-                  <Td>
+                <MobileRow
+                  key={s.id}
+                  title={s.name}
+                  tags={
                     <Tag variant={s.status === "active" ? "accent" : "neutral"}>
                       {s.status === "active" ? "Activa" : "Inactiva"}
                     </Tag>
-                  </Td>
-                  <Td>
-                    <span className="inline-flex items-center gap-1">
+                  }
+                  fields={[
+                    { label: "Código", value: s.code ?? "—" },
+                    { label: "Zona horaria", value: s.timezone },
+                  ]}
+                  actions={
+                    <>
                       <SiteFormDialog
                         companyId={company.id}
                         site={{ id: s.id, name: s.name, code: s.code, timezone: s.timezone }}
@@ -217,12 +248,12 @@ export default async function EmpresaDetailPage({
                         label="sede"
                         action={setSiteStatusAction}
                       />
-                    </span>
-                  </Td>
-                </Tr>
+                    </>
+                  }
+                />
               ))}
-            </tbody>
-          </Table>
+            </MobileList>
+          </>
         )}
       </section>
     </div>
@@ -239,8 +270,8 @@ function Row({
   mono?: boolean;
 }) {
   return (
-    <div className="flex gap-3">
-      <span className="w-44 flex-none text-text/70">{label}</span>
+    <div className="flex flex-col gap-0.5 sm:flex-row sm:gap-3">
+      <span className="sm:w-44 sm:flex-none text-text/70">{label}</span>
       <span className={mono ? "font-mono" : undefined}>{value}</span>
     </div>
   );

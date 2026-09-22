@@ -306,15 +306,16 @@ model site {
 /// La persona. Registro global permanente (pool de reclutamiento) — nunca se
 /// borra, puede no tener ningún employment activo.
 model employee {
-  id          Int       @id @default(autoincrement())
-  national_id String    @unique // V/E/J/G + dígitos, validado en app
-  tax_id      String?
-  first_name  String
-  last_name   String
-  birth_date  DateTime? @db.Date
-  photo       Bytes?
-  created_at  DateTime  @default(now()) @db.Timestamptz(6)
-  updated_at  DateTime  @updatedAt @db.Timestamptz(6)
+  id           Int       @id @default(autoincrement())
+  national_id  String    @unique // V/E/J/G + dígitos, validado en app
+  tax_id       String?
+  first_name   String
+  last_name    String
+  birth_date   DateTime? @db.Date
+  photo        Bytes?
+  cedula_photo Bytes? // foto de la cédula subida para autocompletar (docs/09 §3.10) — se conserva luego de extraer los datos, decisión explícita del cliente
+  created_at   DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at   DateTime  @updatedAt @db.Timestamptz(6)
 
   employments     employment[]
   enrollments     employee_device_enrollment[]

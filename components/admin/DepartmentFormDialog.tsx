@@ -1,14 +1,14 @@
 "use client";
 
-import { useActionState, useEffect, useState } from "react";
+import { useActionState, useEffect, useId, useState } from "react";
 import { Dialog } from "@/components/ui/Dialog";
 import { Btn } from "@/components/ui/Btn";
+import { IconBtn } from "@/components/ui/IconBtn";
+import { Icon } from "@/components/ui/icons";
 import { useToast } from "./Toaster";
 import { createDepartmentAction, updateDepartmentAction } from "@/app/admin/categorias/actions";
 import { ADMIN_ACTION_INITIAL } from "@/lib/adminActionState";
-
-const INPUT = "min-h-9 px-2.5 text-sm bg-surface border border-divider rounded-none w-full";
-const LABEL = "flex flex-col gap-1 text-xs text-text/85";
+import { FIELD_INPUT as INPUT, FIELD_LABEL as LABEL } from "@/components/ui/fieldStyles";
 
 export interface DepartmentValues {
   id: number;
@@ -25,6 +25,7 @@ export function DepartmentFormDialog({ department }: { department?: DepartmentVa
     ADMIN_ACTION_INITIAL
   );
   const { push } = useToast();
+  const formId = useId();
 
   useEffect(() => {
     if (state.status === "ok") {
@@ -37,11 +38,22 @@ export function DepartmentFormDialog({ department }: { department?: DepartmentVa
 
   return (
     <>
-      <Btn variant={editing ? "ghost" : "primary"} onClick={() => setOpen(true)}>
-        {editing ? "Editar" : "+ Departamento"}
-      </Btn>
-      <Dialog open={open} onClose={() => setOpen(false)} title={editing ? "Editar departamento" : "Nuevo departamento"}>
-        <form action={formAction} className="flex flex-col gap-3">
+      {editing ? (
+        <IconBtn icon={Icon.edit} label="Editar departamento" onClick={() => setOpen(true)} />
+      ) : (
+        <IconBtn icon={Icon.add} label="Nuevo departamento" onClick={() => setOpen(true)} />
+      )}
+      <Dialog
+        open={open}
+        onClose={() => setOpen(false)}
+        title={editing ? "Editar departamento" : "Nuevo departamento"}
+        footer={
+          <Btn type="submit" form={formId} variant="primary" disabled={pending}>
+            {pending ? "Guardando…" : editing ? "Guardar" : "Crear"}
+          </Btn>
+        }
+      >
+        <form id={formId} action={formAction} className="flex flex-col gap-3">
           {editing && <input type="hidden" name="id" value={department.id} />}
           <label className={LABEL}>
             Nombre *
@@ -55,9 +67,6 @@ export function DepartmentFormDialog({ department }: { department?: DepartmentVa
             Descripción
             <input name="description" defaultValue={department?.description ?? ""} className={INPUT} />
           </label>
-          <Btn type="submit" variant="primary" disabled={pending}>
-            {pending ? "Guardando…" : editing ? "Guardar" : "Crear"}
-          </Btn>
         </form>
       </Dialog>
     </>

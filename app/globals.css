@@ -8,22 +8,24 @@
      instead of needing arbitrary values everywhere. */
   --spacing: 3.4px;
 
-  --color-bg: #f2f2f3;
-  --color-surface: #e9e9ea;
-  --color-text: #1d1f20;
-  /* Paleta alineada al logo de Grupo Alco (2026-09-08): azul primario (fondo
-     del isotipo) + naranja como acento secundario (las balanzas del logo),
-     que ya encajaba semánticamente con el uso existente de accent-2 para
-     "atención"/advertencia. */
+  /* Paleta "Sistema de diseño" (Claude Design, 2026-09-22) — grises más fríos
+     y con más escalones que la anterior, surface pasa de gris a blanco puro
+     (las superficies "flotan" sobre bg en vez de hundirse). accent y warn
+     quedan EXACTAMENTE iguales a la paleta anterior (#3B6FA8 / #E2932E) —
+     nada que migrar en los usos que ya dependían de esos dos. */
+  --color-bg: #eceef0;
+  --color-surface: #ffffff;
+  --color-text: #101215;
   --color-accent: #3b6fa8;
   --color-accent-2: #e2932e;
-  /* Precomputed rather than applied as a Tailwind opacity modifier
-     (border-text/16): --color-text feeding Tailwind's color-scale
-     detection would make "text" a valid color name, colliding in spirit
-     with the text-{size} typography utilities Tailwind already reserves
-     that prefix for. A standalone token, exactly as the original design
-     defines it, sidesteps the ambiguity entirely. */
-  --color-divider: color-mix(in srgb, #1d1f20 16%, transparent);
+  /* Borde plano en vez del color-mix translúcido anterior — la maqueta usa
+     grises sólidos concretos en toda la escala de borde/chrome, no una
+     superposición semitransparente. */
+  --color-divider: #c9cfd6;
+  /* Fondo de chrome estructural (header/footer de diálogo, header de tabla,
+     summary de Collapsible) — no es parte de la rampa neutral genérica,
+     es un tono muy puntual que se repite en esos 3 lugares específicos. */
+  --color-chrome: #f4f5f7;
 
   /* accent2 (no hyphen before the digit) is a deliberate rename of the
      design's "accent-2-100..900" ramp: Tailwind v4 detects a color scale by
@@ -32,38 +34,83 @@
      parse ("accent" shade "2-100"? "accent-2" shade "100"?). accent2-100
      removes that ambiguity while keeping --color-accent-2 above as the
      flat base color the original design also defines. */
-  --color-neutral-100: #f5f5f8;
-  --color-neutral-200: #e7e7ea;
-  --color-neutral-300: #d4d4d7;
-  --color-neutral-400: #b7b7ba;
-  --color-neutral-500: #98989b;
-  --color-neutral-600: #7a7a7d;
-  --color-neutral-700: #5d5d60;
-  --color-neutral-800: #424244;
-  --color-neutral-900: #2b2b2d;
+  --color-neutral-100: #f6f7f8;
+  --color-neutral-200: #e4e7ea;
+  --color-neutral-300: #d7dbe0;
+  --color-neutral-400: #c9cfd6;
+  --color-neutral-500: #b7bec6;
+  --color-neutral-600: #a3aab2;
+  --color-neutral-700: #767d86;
+  --color-neutral-800: #4a5058;
+  --color-neutral-900: #101215;
 
-  --color-accent-100: #eaf2fa;
+  --color-accent-100: #eaf1f8;
   --color-accent-200: #cee2f3;
   --color-accent-300: #a7cae8;
   --color-accent-400: #7aacd6;
   --color-accent-500: #548fbf;
   --color-accent-600: #3b6fa8;
-  --color-accent-700: #2c5480;
+  --color-accent-700: #2b537e;
   --color-accent-800: #1f3c5c;
   --color-accent-900: #14263c;
 
-  --color-accent2-100: #fcf0dd;
+  --color-accent2-100: #fcf3e4;
   --color-accent2-200: #f8ddb0;
   --color-accent2-300: #f2c17a;
   --color-accent2-400: #eba54a;
   --color-accent2-500: #e2932e;
   --color-accent2-600: #c67920;
-  --color-accent2-700: #9c5f1a;
+  --color-accent2-700: #8a5a11;
   --color-accent2-800: #714514;
   --color-accent2-900: #472c0d;
 
-  --font-sans: var(--font-barlow), system-ui, sans-serif;
-  --font-heading: var(--font-barlow-condensed), system-ui, sans-serif;
+  /* Danger — no existía como color semántico propio antes de este sistema
+     (los botones "Eliminar" y los estados de error no tenían tratamiento
+     distinto de un botón cualquiera). Solo 3 pasos: son los únicos 3 valores
+     que da la maqueta (borde/ícono, texto-sobre-claro, fondo-tenue) — no
+     inventé una rampa de 9 pasos que nadie pidió. */
+  --color-danger-100: #fdf3f2;
+  --color-danger-600: #b42318;
+  --color-danger-700: #8f1d15;
+
+  --font-sans: var(--font-archivo), system-ui, sans-serif;
+  /* Sin cara "display" separada en el nuevo sistema (los títulos son Archivo
+     600 con tracking negativo, no una condensada aparte como Barlow
+     Condensed antes) — heading apunta a la misma Archivo. El tracking
+     ajustado se aplica en el punto de uso (tracking-tight en h1/h2/títulos
+     de diálogo), no acá. */
+  --font-heading: var(--font-archivo), system-ui, sans-serif;
+  /* JetBrains Mono — la voz tipográfica nueva para todo lo que es "chrome"
+     de UI: labels de campo, headers de tabla, kickers, números grandes de
+     StatCard. No reemplaza a font-sans, es una tercera familia explícita
+     que se aplica con font-mono en el punto de uso. */
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, monospace;
+
+  /* Escala tipográfica del "Sistema de diseño" (2026-09-22): la subida grande
+     de antes (pedido de Reunión 3 §7.1 / AI 21, "todos tenemos +40, la letra
+     chiquita") no era cohesiva con la densidad del sistema nuevo — inputs,
+     botones y el dropzone se veían inflados frente al resto (borde fino,
+     chrome mono, controles de 32px). Vuelve a los tamaños de la maqueta, con
+     un empujón de +2px en los 4 escalones de lectura (título de página,
+     título de sección/diálogo, nombre de fila/card title, cuerpo) como
+     punto medio — mute/label/kicker (mono, 2xs) se quedan tal cual la
+     maqueta, no forman parte de "lectura". Progresión 26/20/17/15/12/10px.
+     Line-height recalculado para la densidad nueva, no heredado de la escala
+     anterior. */
+  --text-2xs: 0.625rem; /* 10px — mono: table header, kicker, tag, nav, label de campo */
+  --text-2xs--line-height: 0.875rem;
+  --text-xs: 0.75rem; /* 12px — texto secundario, hints */
+  --text-xs--line-height: 1rem;
+  --text-sm: 0.9375rem; /* 15px (13+2) — cuerpo, el 95% del panel */
+  --text-sm--line-height: 1.25rem;
+  --text-base: 1rem; /* 16px — reserva, sin uso extendido hoy */
+  --text-base--line-height: 1.375rem;
+  --text-lg: 1.0625rem; /* 17px (15+2) — nombre de fila, card title */
+  --text-lg--line-height: 1.375rem;
+  --text-xl: 1.25rem; /* 20px (18+2) — título de sección y de diálogo */
+  --text-xl--line-height: 1.625rem;
+  --text-2xl: 1.625rem; /* 26px (24+2) — título de página */
+  --text-2xl--line-height: 2rem;
 
   --radius-sm: 2px;
   --radius-md: 4px;
@@ -73,6 +120,11 @@
   --shadow-sm: 0 1px 2px rgb(43 43 45 / 14%);
   --shadow-md: 0 3px 10px rgb(43 43 45 / 16%);
   --shadow-lg: 0 12px 32px rgb(43 43 45 / 22%);
+  /* Sombra dura offset, sin blur — la firma del diálogo en el nuevo sistema
+     ("6px 6px 0"). No es una progresión de elevación como shadow-sm/md/lg de
+     arriba, es un solo efecto puntual — por eso un nombre propio, no un
+     escalón más de esa rampa. */
+  --shadow-hard: 6px 6px 0 rgb(16 18 21 / 8%);
 }
 
 /* This design is light-only. The previous prefers-color-scheme block flipped
@@ -99,29 +151,8 @@
     animation: op-pulse 1.2s ease-in-out infinite;
   }
 
-  /* The design's "blueprint" registration-mark corners: a small crosshair
-     (a vertical + a horizontal hairline) sitting just outside each corner
-     of a card, via <Corner /> in components/ui/Card.tsx. Precise absolute
-     positioning with two pseudo-elements per mark — not reasonably a
-     Tailwind utility composition, so kept as the literal CSS from the
-     original design (matched pixel-for-pixel: 11px box, lines at 5px,
-     marks offset -6px outside the border). */
-  .blueprint-corner {
-    position: absolute;
-    width: 11px;
-    height: 11px;
-    color: color-mix(in srgb, var(--color-text) 55%, transparent);
-  }
-  .blueprint-corner::before,
-  .blueprint-corner::after {
-    content: "";
-    position: absolute;
-    background: currentColor;
-  }
-  .blueprint-corner::before { left: 5px; top: 0; width: 1px; height: 100%; }
-  .blueprint-corner::after { top: 5px; left: 0; width: 100%; height: 1px; }
-  .blueprint-corner-tl { top: -6px; left: -6px; }
-  .blueprint-corner-tr { top: -6px; right: -6px; }
-  .blueprint-corner-bl { bottom: -6px; left: -6px; }
-  .blueprint-corner-br { bottom: -6px; right: -6px; }
+  /* Las marcas de esquina de Card (StatCard) ahora son 2 brackets en L con
+     utilidades de Tailwind directas (ver Corners() en Card.tsx) — el
+     crosshair de 4 esquinas de acá quedó reemplazado por el sistema nuevo,
+     sin usos que lo referencien ya. */
 }

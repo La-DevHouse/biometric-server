@@ -29,14 +29,19 @@ interface DeviceDetail {
   stat_updated_at: number | null;
   company_id: number | null;
   site_id: number | null;
+  company_linked_at: Date | null;
   device_admin_note: string | null;
+}
+
+function fmtDate(d: Date | null): string {
+  return d ? d.toISOString().slice(0, 10) : "—";
 }
 
 async function getData(devId: string) {
   await initDb();
   const device = await getAsync<DeviceDetail>(
     `SELECT dev_id, fk_name, firmware, last_seen_at, stat_fp_count, stat_log_count, stat_updated_at,
-            company_id, site_id, device_admin_note
+            company_id, site_id, company_linked_at, device_admin_note
        FROM devices WHERE dev_id = ?`,
     [devId]
   );
@@ -84,7 +89,7 @@ export default async function DeviceDetailPage({
       </LinkBtn>
 
       <div className="flex items-center gap-4 flex-wrap">
-        <h3 className="font-heading text-2xl m-0">{device.fk_name || device.dev_id}</h3>
+        <h3 className="font-heading text-2xl font-semibold tracking-tight m-0">{device.fk_name || device.dev_id}</h3>
         <Tag variant={online ? "accent" : "neutral"}>{online ? "En línea" : "Desconectado"}</Tag>
         <span className="text-sm text-text/70 font-mono">{device.dev_id}</span>
         <span className="text-sm text-text/70">· {formatRelativeTime(device.last_seen_at)}</span>
@@ -98,7 +103,7 @@ export default async function DeviceDetailPage({
 
       <div className="flex flex-col gap-2 border border-divider p-4">
         <div className="flex items-center justify-between gap-3">
-          <h4 className="font-heading text-lg m-0">Asignación</h4>
+          <h4 className="font-heading text-xl font-semibold tracking-tight m-0">Asignación</h4>
           <DeviceAssignDialog
             devId={device.dev_id}
             companies={companies}
@@ -119,6 +124,12 @@ export default async function DeviceDetailPage({
             <span className="text-text/70">Sede: </span>
             {siteName ?? <span className="text-text/60">—</span>}
           </div>
+          {companyName && (
+            <div>
+              <span className="text-text/70">Asignado desde: </span>
+              {fmtDate(device.company_linked_at)}
+            </div>
+          )}
           {device.device_admin_note && (
             <div>
               <span className="text-text/70">Nota: </span>
@@ -183,7 +194,7 @@ export default async function DeviceDetailPage({
       </div>
 
       <div className="flex flex-col gap-2">
-        <h4 className="font-heading text-lg m-0">Zona de riesgo</h4>
+        <h4 className="font-heading text-xl font-semibold tracking-tight m-0">Zona de riesgo</h4>
         <p className="text-sm text-text/70 max-w-lg">
           Estas acciones borran datos del equipo físico y no se pueden deshacer. El servidor conserva
           lo ya sincronizado.

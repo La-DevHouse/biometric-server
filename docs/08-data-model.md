@@ -8,15 +8,20 @@ Decisiones del §9 confirmadas; alcance del §8 decidido (Fase 1 **sí** incluye
 motor de cálculo de asistencia). Cambios de schema a partir de acá son
 migraciones nuevas, no ediciones.
 
-> **Enmienda (2026-09-08):** se revirtió la jerarquía padre/hijas de
-> `client_company` (`parent_id`/`is_group`/`shared_employees`, §4.1 y §6 más
-> abajo) — migración `20260908155808_remove_company_hierarchy`. En la
-> práctica ningún cliente real de ALCO necesitaba varias razones sociales
-> compartiendo empleados; todos los casos (incl. el único cliente real
-> cargado, Farmacia Farmalido) son una sola empresa con varias `site`, que ya
-> cubrían la necesidad real de "varias ubicaciones". El bloque de `prisma`
-> abajo queda tal cual como registro histórico de lo firmado originalmente —
-> ver el schema actual en `prisma/schema.prisma` para la versión vigente.
+> **Historia de la jerarquía padre/hijas (leer en orden, no te quedes con la
+> primera línea):** la jerarquía de `client_company`
+> (`parent_id`/`is_group`/`shared_employees`) se **quitó por error** el
+> 2026-09-08 (migración `20260908155808_remove_company_hierarchy`, con el
+> razonamiento — equivocado — de que ningún cliente real de ALCO necesitaba
+> varias razones sociales compartiendo empleados). Reunión 3 (2026-09-10)
+> confirmó que **sí la necesita** (Grupo Farmalido, Grupo Perfume Factory —
+> ver `docs/09-reunion-3.md` §3.1), así que se **restauró** en
+> `20260910120000_restore_hierarchy_and_domain_refinements`, junto con los
+> refinamientos de esa reunión (`business_model`, `payroll_type`, logo/rep.
+> legal — ver la "Adenda 2026-09-10" más abajo). **El estado vigente es el que
+> está en `prisma/schema.prisma` hoy: la jerarquía SÍ existe.** El bloque de
+> `prisma` de este documento (§4 más abajo) es el borrador firmado
+> originalmente el 2026-08-30 — para el schema real, siempre `prisma/schema.prisma`.
 
 ---
 

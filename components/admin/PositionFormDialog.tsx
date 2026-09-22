@@ -1,14 +1,14 @@
 "use client";
 
-import { useActionState, useEffect, useState } from "react";
+import { useActionState, useEffect, useId, useState } from "react";
 import { Dialog } from "@/components/ui/Dialog";
 import { Btn } from "@/components/ui/Btn";
+import { IconBtn } from "@/components/ui/IconBtn";
+import { Icon } from "@/components/ui/icons";
 import { useToast } from "./Toaster";
 import { createPositionAction, updatePositionAction } from "@/app/admin/categorias/actions";
 import { ADMIN_ACTION_INITIAL } from "@/lib/adminActionState";
-
-const INPUT = "min-h-9 px-2.5 text-sm bg-surface border border-divider rounded-none w-full";
-const LABEL = "flex flex-col gap-1 text-xs text-text/85";
+import { FIELD_INPUT as INPUT, FIELD_LABEL as LABEL } from "@/components/ui/fieldStyles";
 
 export interface PositionValues {
   id: number;
@@ -35,6 +35,7 @@ export function PositionFormDialog({
     ADMIN_ACTION_INITIAL
   );
   const { push } = useToast();
+  const formId = useId();
 
   useEffect(() => {
     if (state.status === "ok") {
@@ -47,11 +48,22 @@ export function PositionFormDialog({
 
   return (
     <>
-      <Btn variant={editing ? "ghost" : "primary"} onClick={() => setOpen(true)}>
-        {editing ? "Editar" : "+ Puesto"}
-      </Btn>
-      <Dialog open={open} onClose={() => setOpen(false)} title={editing ? "Editar puesto" : "Nuevo puesto"}>
-        <form action={formAction} className="flex flex-col gap-3">
+      {editing ? (
+        <IconBtn icon={Icon.edit} label="Editar puesto" onClick={() => setOpen(true)} />
+      ) : (
+        <IconBtn icon={Icon.add} label="Nuevo puesto" onClick={() => setOpen(true)} />
+      )}
+      <Dialog
+        open={open}
+        onClose={() => setOpen(false)}
+        title={editing ? "Editar puesto" : "Nuevo puesto"}
+        footer={
+          <Btn type="submit" form={formId} variant="primary" disabled={pending}>
+            {pending ? "Guardando…" : editing ? "Guardar" : "Crear"}
+          </Btn>
+        }
+      >
+        <form id={formId} action={formAction} className="flex flex-col gap-3">
           {editing && <input type="hidden" name="id" value={position.id} />}
           <label className={LABEL}>
             Nombre *
@@ -77,10 +89,10 @@ export function PositionFormDialog({
             <input name="description" defaultValue={position?.description ?? ""} className={INPUT} />
           </label>
           <fieldset className="border border-divider p-2.5 flex flex-col gap-1.5">
-            <legend className="text-[10px] uppercase tracking-widest text-text/70 px-1">
+            <legend className="text-xs uppercase tracking-widest text-text/70 px-1">
               Modelos de negocio
             </legend>
-            <p className="m-0 text-[11px] text-text/60">
+            <p className="m-0 text-xs text-text/60">
               Sin marcar ninguno = cargo genérico (aparece en todos los modelos).
             </p>
             {businessModels.length === 0 ? (
@@ -88,7 +100,7 @@ export function PositionFormDialog({
                 No hay modelos de negocio cargados todavía.
               </p>
             ) : (
-              <div className="grid grid-cols-2 gap-1">
+              <div className="flex flex-col sm:grid sm:grid-cols-2 gap-1">
                 {businessModels.map((bm) => (
                   <label key={bm.id} className="flex items-center gap-2 text-xs text-text/85">
                     <input
@@ -103,9 +115,6 @@ export function PositionFormDialog({
               </div>
             )}
           </fieldset>
-          <Btn type="submit" variant="primary" disabled={pending}>
-            {pending ? "Guardando…" : editing ? "Guardar" : "Crear"}
-          </Btn>
         </form>
       </Dialog>
     </>

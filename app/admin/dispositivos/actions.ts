@@ -54,9 +54,15 @@ export async function assignDeviceAction(
       return { status: "error", error: "La sede no pertenece a la empresa elegida." };
   }
 
+  // Timestamp de "desde cuándo" está en esta empresa/sede (docs/09 §3.13 / AI 7):
+  // se refresca solo cuando la asociación realmente cambia; re-guardar el mismo
+  // par empresa/sede no reinicia la fecha. Al desasignar, se limpia.
+  const linkChanged = company_id !== device.company_id || site_id !== device.site_id;
+  const company_linked_at = company_id == null ? null : linkChanged ? new Date() : undefined;
+
   await prisma.devices.update({
     where: { dev_id },
-    data: { company_id, site_id, device_admin_note },
+    data: { company_id, site_id, device_admin_note, company_linked_at },
   });
   await writeAudit({
     actorId: user.id,

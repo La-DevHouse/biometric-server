@@ -6,8 +6,7 @@ import { Btn } from "@/components/ui/Btn";
 import { OperationProgress, OperationResult } from "./OperationStatus";
 import { useOperation } from "./useOperation";
 import { renameDeviceAction } from "@/app/admin/actions";
-
-const INPUT_CLASS = "min-h-9 px-2.5 text-sm bg-surface border border-divider rounded-none w-full";
+import { FIELD_INPUT as INPUT_CLASS } from "@/components/ui/fieldStyles";
 
 export function RenameDeviceDialog({ devId, currentName }: { devId: string; currentName: string }) {
   const [open, setOpen] = useState(false);

@@ -3,11 +3,12 @@
 import { useActionState, useEffect, useState } from "react";
 import { Dialog } from "@/components/ui/Dialog";
 import { Btn } from "@/components/ui/Btn";
+import { IconBtn } from "@/components/ui/IconBtn";
+import { Icon } from "@/components/ui/icons";
 import { useToast } from "./Toaster";
 import { resetPasswordAction } from "@/app/admin/cuentas/actions";
 import { ADMIN_ACTION_INITIAL } from "@/lib/adminActionState";
-
-const INPUT = "min-h-9 px-2.5 text-sm bg-surface border border-divider rounded-none w-full";
+import { FIELD_INPUT as INPUT } from "@/components/ui/fieldStyles";
 
 export function ResetPasswordDialog({ id, name }: { id: number; name: string }) {
   const [open, setOpen] = useState(false);
@@ -23,9 +24,7 @@ export function ResetPasswordDialog({ id, name }: { id: number; name: string }) 
 
   return (
     <>
-      <Btn variant="ghost" onClick={() => setOpen(true)}>
-        Resetear contraseña
-      </Btn>
+      <IconBtn icon={Icon.key} label={`Resetear contraseña — ${name}`} onClick={() => setOpen(true)} />
       <Dialog open={open} onClose={() => setOpen(false)} title={`Resetear contraseña — ${name}`}>
         <form action={formAction} className="flex flex-col gap-3">
           <input type="hidden" name="id" value={id} />

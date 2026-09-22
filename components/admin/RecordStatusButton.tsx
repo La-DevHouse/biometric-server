@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Btn } from "@/components/ui/Btn";
+import { IconBtn } from "@/components/ui/IconBtn";
+import { Icon } from "@/components/ui/icons";
 import { useToast } from "./Toaster";
 
 /**
@@ -35,25 +36,21 @@ export function RecordStatusButton({
   if (active) {
     return confirming ? (
       <span className="inline-flex items-center gap-1.5">
-        <Btn variant="secondary" disabled={pending} onClick={() => run(false)}>
-          {pending ? "…" : `Desactivar ${label}`}
-        </Btn>
-        <Btn variant="ghost" onClick={() => setConfirming(false)}>
-          Cancelar
-        </Btn>
+        <IconBtn
+          icon={Icon.check}
+          label={`Confirmar: desactivar ${label}`}
+          tone="danger"
+          disabled={pending}
+          onClick={() => run(false)}
+        />
+        <IconBtn icon={Icon.close} label="Cancelar" onClick={() => setConfirming(false)} />
       </span>
     ) : (
-      <Btn variant="ghost" onClick={() => setConfirming(true)}>
-        Desactivar
-      </Btn>
+      <IconBtn icon={Icon.power} label={`Desactivar ${label}`} tone="danger" onClick={() => setConfirming(true)} />
     );
   }
 
-  return (
-    <Btn variant="ghost" disabled={pending} onClick={() => run(true)}>
-      {pending ? "…" : "Reactivar"}
-    </Btn>
-  );
+  return <IconBtn icon={Icon.power} label={`Reactivar ${label}`} disabled={pending} onClick={() => run(true)} />;
 }
 
 function cap(s: string): string {

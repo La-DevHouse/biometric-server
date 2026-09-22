@@ -6,9 +6,7 @@ import { Btn } from "@/components/ui/Btn";
 import { useToast } from "./Toaster";
 import { assignDeviceAction } from "@/app/admin/dispositivos/actions";
 import { ADMIN_ACTION_INITIAL } from "@/lib/adminActionState";
-
-const INPUT = "min-h-9 px-2.5 text-sm bg-surface border border-divider rounded-none w-full";
-const LABEL = "flex flex-col gap-1 text-xs text-text/85";
+import { FIELD_INPUT as INPUT, FIELD_LABEL as LABEL } from "@/components/ui/fieldStyles";
 
 export function DeviceAssignDialog({
   devId,

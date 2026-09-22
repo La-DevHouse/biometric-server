@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { Dialog } from "@/components/ui/Dialog";
 import { Btn } from "@/components/ui/Btn";
+import { IconBtn } from "@/components/ui/IconBtn";
+import { Icon } from "@/components/ui/icons";
 import { OperationProgress, OperationResult } from "./OperationStatus";
 import { useOperation } from "./useOperation";
 import { changePrivilegeAction } from "@/app/admin/actions";
@@ -43,9 +45,7 @@ export function ChangePrivilegeDialog({
 
   return (
     <>
-      <Btn variant="ghost" onClick={() => setOpen(true)}>
-        Privilegio
-      </Btn>
+      <IconBtn icon={Icon.rank} label={`Privilegio de usuario ${userId}`} onClick={() => setOpen(true)} />
       <Dialog open={open} onClose={close} closable={!busy} title={`Privilegio de usuario ${userId}`}>
         <div className="flex flex-col gap-3">
           {!op && (

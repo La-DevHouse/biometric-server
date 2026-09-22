@@ -1,16 +1,26 @@
 "use client";
 
-import { useActionState, useEffect, useState } from "react";
+import { useActionState, useEffect, useId, useRef, useState } from "react";
 import { Dialog } from "@/components/ui/Dialog";
 import { Btn } from "@/components/ui/Btn";
+import { IconBtn } from "@/components/ui/IconBtn";
+import { Icon } from "@/components/ui/icons";
+import { Collapsible } from "@/components/ui/Collapsible";
+import { FileDropzone, type DropzoneState } from "@/components/ui/FileDropzone";
 import { useToast } from "./Toaster";
 import { DocumentField } from "./DocumentField";
+import { DocumentCameraCapture } from "./DocumentCameraCapture";
+import { FileIconButton } from "./FileIconButton";
 import { splitDoc } from "@/lib/documento";
-import { createCompanyAction, updateCompanyAction } from "@/app/admin/empresas/actions";
+import {
+  createCompanyAction,
+  updateCompanyAction,
+  parseRifPdfAction,
+  extractRifPhotoAction,
+} from "@/app/admin/empresas/actions";
 import { ADMIN_ACTION_INITIAL } from "@/lib/adminActionState";
-
-const INPUT = "min-h-9 px-2.5 text-sm bg-surface border border-divider rounded-none w-full";
-const LABEL = "flex flex-col gap-1 text-xs text-text/85";
+import type { RifExtractedFields } from "@/lib/rifParser";
+import { FIELD_INPUT as INPUT, FIELD_LABEL as LABEL } from "@/components/ui/fieldStyles";
 
 export interface CompanyFormValues {
   id: number;
@@ -35,21 +45,34 @@ export function CompanyFormDialog({
   company,
   parentOptions,
   businessModels,
-  trigger,
 }: {
   company?: CompanyFormValues;
   parentOptions: { id: number; name: string }[];
   businessModels: { id: number; name: string }[];
-  trigger?: "primary" | "ghost";
 }) {
   const editing = !!company;
   const [open, setOpen] = useState(false);
   const [isGroup, setIsGroup] = useState(company?.is_group ?? false);
+  const [rifParsing, setRifParsing] = useState(false);
+  const [rifCaptureOpen, setRifCaptureOpen] = useState(false);
+  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [logoPreview, setLogoPreview] = useState<string | null>(null);
+  const [logoError, setLogoError] = useState<string | null>(null);
+  const [removeExistingLogo, setRemoveExistingLogo] = useState(false);
   const [state, formAction, pending] = useActionState(
     editing ? updateCompanyAction : createCompanyAction,
     ADMIN_ACTION_INITIAL
   );
   const { push } = useToast();
+  const formId = useId();
+  const formRef = useRef<HTMLFormElement>(null);
+  const logoInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    return () => {
+      if (logoPreview) URL.revokeObjectURL(logoPreview);
+    };
+  }, [logoPreview]);
 
   useEffect(() => {
     if (state.status === "ok") {
@@ -63,18 +86,127 @@ export function CompanyFormDialog({
   // el padre no puede ser una empresa hija ni la empresa misma
   const options = parentOptions.filter((p) => p.id !== company?.id);
 
+  function applyRifFields(fields: RifExtractedFields) {
+    const form = formRef.current;
+    if (!form) return;
+    setIsGroup(false);
+    (form.elements.namedItem("is_group") as HTMLInputElement).checked = false;
+    (form.elements.namedItem("rif_prefix") as HTMLSelectElement).value = fields.taxIdPrefix;
+    (form.elements.namedItem("rif_number") as HTMLInputElement).value = fields.taxIdNumber;
+    (form.elements.namedItem("name") as HTMLInputElement).value = fields.businessName;
+    if (fields.address) (form.elements.namedItem("address") as HTMLInputElement).value = fields.address;
+  }
+
+  // Un solo punto de entrada para "subir archivo" — PDF (comprobante del
+  // SENIAT) o foto van al mismo botón, y se enrutan según el MIME type al
+  // parser determinístico (PDF) o a Gemini (foto). La cámara siempre da una
+  // foto, así que reusa la misma rama.
+  async function handleRifFile(file: File) {
+    setRifParsing(true);
+    const fd = new FormData();
+    const isPdf = file.type === "application/pdf";
+    fd.set(isPdf ? "rif_pdf" : "photo", file);
+    const res = isPdf ? await parseRifPdfAction(fd) : await extractRifPhotoAction(fd);
+    setRifParsing(false);
+
+    if (!res.ok) {
+      push("error", res.error);
+      return;
+    }
+    applyRifFields(res.fields);
+    push("ok", "RIF leído — revisá los datos antes de guardar.");
+  }
+
+  const LOGO_ACCEPT = ["image/png", "image/jpeg", "image/webp", "image/svg+xml"];
+  const LOGO_MAX_BYTES = 512 * 1024;
+
+  function handleLogoFile(file: File) {
+    // Feedback inmediato, sin ida y vuelta al servidor — el server action
+    // valida esto mismo igual, esto es solo para no hacer esperar el submit.
+    if (file.type && !LOGO_ACCEPT.includes(file.type)) {
+      setLogoError("Formato no soportado (PNG, JPG, WEBP o SVG)");
+      return;
+    }
+    if (file.size > LOGO_MAX_BYTES) {
+      setLogoError("El archivo supera los 512 KB");
+      return;
+    }
+    setLogoError(null);
+    setRemoveExistingLogo(false);
+    setLogoFile(file);
+    const dt = new DataTransfer();
+    dt.items.add(file);
+    if (logoInputRef.current) logoInputRef.current.files = dt.files;
+    setLogoPreview((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return URL.createObjectURL(file);
+    });
+  }
+
+  function handleRemoveLogo() {
+    if (logoFile) {
+      setLogoFile(null);
+      setLogoError(null);
+      if (logoInputRef.current) logoInputRef.current.value = "";
+      setLogoPreview((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return null;
+      });
+    } else if (company?.has_logo) {
+      setRemoveExistingLogo(true);
+    }
+  }
+
+  const hasExistingLogo = !!company?.has_logo && !removeExistingLogo;
+  const logoDropzoneState: DropzoneState = logoError
+    ? { status: "error", message: logoError, hint: "Probá con otro archivo" }
+    : logoFile
+      ? { status: "loaded", name: logoFile.name, meta: `${Math.ceil(logoFile.size / 1024)} KB · listo` }
+      : hasExistingLogo
+        ? { status: "loaded", name: "Logo actual", meta: "Guardado" }
+        : { status: "idle" };
+
   return (
     <>
-      <Btn variant={trigger ?? "primary"} onClick={() => setOpen(true)}>
-        {editing ? "Editar" : "+ Nueva empresa"}
-      </Btn>
+      {editing ? (
+        <IconBtn icon={Icon.edit} label="Editar empresa" onClick={() => setOpen(true)} />
+      ) : (
+        <IconBtn icon={Icon.add} label="Nueva empresa" onClick={() => setOpen(true)} />
+      )}
       <Dialog
         open={open}
         onClose={() => setOpen(false)}
         title={editing ? "Editar empresa" : "Nueva empresa cliente"}
+        footer={
+          <Btn type="submit" form={formId} variant="primary" disabled={pending}>
+            {pending ? "Guardando…" : editing ? "Guardar cambios" : "Crear empresa"}
+          </Btn>
+        }
       >
-        <form action={formAction} className="flex flex-col gap-3">
+        <form id={formId} ref={formRef} action={formAction} className="flex flex-col gap-3">
           {editing && <input type="hidden" name="id" value={company.id} />}
+
+          <label className={LABEL}>
+            Autocompletar desde RIF{" "}
+            <span className="text-text/60">(PDF del comprobante del SENIAT o foto)</span>
+            <div className="flex flex-wrap items-center gap-2">
+              <FileIconButton
+                icon={Icon.upload}
+                label="Subir RIF (PDF o foto)"
+                accept="application/pdf,image/*"
+                disabled={rifParsing}
+                onFile={handleRifFile}
+              />
+              <IconBtn
+                type="button"
+                icon={Icon.camera}
+                label="Escanear RIF con cámara"
+                disabled={rifParsing}
+                onClick={() => setRifCaptureOpen(true)}
+              />
+              {rifParsing && <span className="text-text/60">Leyendo…</span>}
+            </div>
+          </label>
 
           <label className={LABEL}>
             Razón social *
@@ -144,36 +276,30 @@ export function CompanyFormDialog({
             <input name="address" defaultValue={company?.address ?? ""} className={INPUT} />
           </label>
 
-          <label className={LABEL}>
-            Logo{" "}
-            <span className="text-text/60">
-              (PNG/JPG/WEBP/SVG, máx 512 KB — sale en el recibo de pago)
-            </span>
-            <input
-              type="file"
-              name="logo"
-              accept="image/png,image/jpeg,image/webp,image/svg+xml"
-              className="text-xs"
-            />
-          </label>
-          {company?.has_logo && (
-            <div className="-mt-1 flex items-center gap-3">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={`/admin/empresas/${company.id}/logo`}
-                alt="logo actual"
-                className="h-10 w-auto border border-divider bg-surface object-contain p-0.5"
+          <input ref={logoInputRef} type="file" name="logo" className="hidden" />
+          {removeExistingLogo && <input type="hidden" name="remove_logo" value="on" />}
+          <div className="flex items-start gap-3">
+            <div className="flex-1">
+              <FileDropzone
+                label="Logo"
+                accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                hint="PNG · JPG · WEBP · SVG · máx 512 KB"
+                state={logoDropzoneState}
+                onFile={handleLogoFile}
+                onRemove={handleRemoveLogo}
               />
-              <label className="flex items-center gap-2 text-xs text-text/85">
-                <input type="checkbox" name="remove_logo" /> Quitar el logo actual
-              </label>
             </div>
-          )}
+            {(logoPreview || hasExistingLogo) && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={logoPreview ?? `/admin/empresas/${company?.id}/logo`}
+                alt="logo"
+                className="mt-6 h-10 w-auto flex-none border border-divider bg-surface object-contain p-0.5"
+              />
+            )}
+          </div>
 
-          <fieldset className="border border-divider p-2.5 flex flex-col gap-2">
-            <legend className="text-[10px] uppercase tracking-widest text-text/70 px-1">
-              Representante legal (opcional)
-            </legend>
+          <Collapsible title="Representante legal">
             <label className={LABEL}>
               Nombre
               <input
@@ -198,13 +324,10 @@ export function CompanyFormDialog({
                 className={INPUT}
               />
             </label>
-          </fieldset>
+          </Collapsible>
 
-          <fieldset className="border border-divider p-2.5 flex flex-col gap-2">
-            <legend className="text-[10px] uppercase tracking-widest text-text/70 px-1">
-              Umbrales de asistencia (opcional)
-            </legend>
-            <div className="grid grid-cols-2 gap-2">
+          <Collapsible title="Umbrales de asistencia">
+            <div className="flex flex-col sm:grid sm:grid-cols-2 gap-2">
               <label className={LABEL}>
                 Tolerancia tardanza (min)
                 <input
@@ -249,13 +372,18 @@ export function CompanyFormDialog({
                 />
               </label>
             </div>
-          </fieldset>
-
-          <Btn type="submit" variant="primary" disabled={pending}>
-            {pending ? "Guardando…" : editing ? "Guardar cambios" : "Crear empresa"}
-          </Btn>
+          </Collapsible>
         </form>
       </Dialog>
+
+      <DocumentCameraCapture
+        open={rifCaptureOpen}
+        onClose={() => setRifCaptureOpen(false)}
+        onCapture={handleRifFile}
+        guide="document"
+        title="Escanear RIF"
+        instructions="Alineá la hoja del RIF dentro del recuadro, bien iluminada, y capturá."
+      />
     </>
   );
 }

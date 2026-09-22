@@ -1,14 +1,15 @@
 "use client";
 
-import { useActionState, useEffect, useState } from "react";
+import { useActionState, useEffect, useId, useState } from "react";
 import { Dialog } from "@/components/ui/Dialog";
 import { Btn } from "@/components/ui/Btn";
+import { IconBtn } from "@/components/ui/IconBtn";
+import { Icon } from "@/components/ui/icons";
 import { useToast } from "./Toaster";
 import { createShiftAction, updateShiftAction } from "@/app/admin/grupos/actions";
 import { ADMIN_ACTION_INITIAL } from "@/lib/adminActionState";
+import { FIELD_INPUT as INPUT, FIELD_LABEL as LABEL } from "@/components/ui/fieldStyles";
 
-const INPUT = "min-h-9 px-2.5 text-sm bg-surface border border-divider rounded-none w-full";
-const LABEL = "flex flex-col gap-1 text-xs text-text/85";
 const DAYS = [
   [1, "Lun"],
   [2, "Mar"],
@@ -49,6 +50,7 @@ export function ShiftFormDialog({
     ADMIN_ACTION_INITIAL
   );
   const { push } = useToast();
+  const formId = useId();
 
   useEffect(() => {
     if (state.status === "ok") {
@@ -59,18 +61,29 @@ export function ShiftFormDialog({
 
   return (
     <>
-      <Btn variant={editing ? "ghost" : "primary"} onClick={() => setOpen(true)}>
-        {editing ? "Editar" : "+ Turno"}
-      </Btn>
-      <Dialog open={open} onClose={() => setOpen(false)} title={editing ? "Editar turno" : "Nuevo turno"}>
-        <form action={formAction} className="flex flex-col gap-3">
+      {editing ? (
+        <IconBtn icon={Icon.edit} label="Editar turno" onClick={() => setOpen(true)} />
+      ) : (
+        <IconBtn icon={Icon.add} label="Nuevo turno" onClick={() => setOpen(true)} />
+      )}
+      <Dialog
+        open={open}
+        onClose={() => setOpen(false)}
+        title={editing ? "Editar turno" : "Nuevo turno"}
+        footer={
+          <Btn type="submit" form={formId} variant="primary" disabled={pending}>
+            {pending ? "Guardando…" : editing ? "Guardar" : "Crear turno"}
+          </Btn>
+        }
+      >
+        <form id={formId} action={formAction} className="flex flex-col gap-3">
           {editing ? (
             <input type="hidden" name="id" value={shift.id} />
           ) : (
             <input type="hidden" name="employee_group_id" value={groupId} />
           )}
 
-          <div className="grid grid-cols-2 gap-2">
+          <div className="flex flex-col sm:grid sm:grid-cols-2 gap-2">
             <label className={LABEL}>
               Nombre *
               <input name="name" required defaultValue={shift?.name ?? ""} className={INPUT} autoFocus />
@@ -134,10 +147,6 @@ export function ShiftFormDialog({
             <input type="checkbox" name="crosses_midnight" defaultChecked={shift?.crosses_midnight ?? false} />
             El turno cruza la medianoche (termina al día siguiente)
           </label>
-
-          <Btn type="submit" variant="primary" disabled={pending}>
-            {pending ? "Guardando…" : editing ? "Guardar" : "Crear turno"}
-          </Btn>
         </form>
       </Dialog>
     </>

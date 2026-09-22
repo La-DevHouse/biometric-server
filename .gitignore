@@ -32,9 +32,19 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+# ...salvo la plantilla: no tiene secretos y es lo que copia un dev nuevo
+# (README: "cp .env.example .env") — nunca había estado trackeada.
+!.env.example
 
 # vercel
 .vercel
+
+# playwright (e2e/): estado de sesión + artefactos de corridas, no de código
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+e2e/.auth/
 
 # typescript
 *.tsbuildinfo

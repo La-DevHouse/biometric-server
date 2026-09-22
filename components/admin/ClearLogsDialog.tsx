@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { Dialog } from "@/components/ui/Dialog";
 import { Btn } from "@/components/ui/Btn";
+import { IconBtn } from "@/components/ui/IconBtn";
+import { Icon } from "@/components/ui/icons";
 import { OperationProgress, OperationResult } from "./OperationStatus";
 import { useOperation } from "./useOperation";
 import { syncLogsAction, clearLogsAction } from "@/app/admin/actions";
@@ -23,9 +25,7 @@ export function ClearLogsDialog({ devId }: { devId: string }) {
 
   return (
     <>
-      <Btn variant="secondary" onClick={() => setOpen(true)}>
-        Borrar memoria de logs…
-      </Btn>
+      <IconBtn icon={Icon.trash} label="Borrar memoria de logs…" tone="danger" onClick={() => setOpen(true)} />
       <Dialog open={open} onClose={close} closable={!busy} title="Borrar memoria de logs">
         <div className="flex flex-col gap-3">
           <p className="text-sm m-0">

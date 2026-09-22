@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { Dialog } from "@/components/ui/Dialog";
 import { Btn } from "@/components/ui/Btn";
+import { IconBtn } from "@/components/ui/IconBtn";
+import { Icon } from "@/components/ui/icons";
 import { OperationProgress, OperationResult } from "./OperationStatus";
 import { useOperation } from "./useOperation";
 import { viewBiometricsAction } from "@/app/admin/actions";
@@ -26,9 +28,7 @@ export function ViewBiometricsDialog({ devId, userId }: { devId: string; userId:
 
   return (
     <>
-      <Btn variant="ghost" onClick={() => setOpen(true)}>
-        Biométricos
-      </Btn>
+      <IconBtn icon={Icon.view} label={`Biométricos de usuario ${userId}`} onClick={() => setOpen(true)} />
       <Dialog open={open} onClose={close} closable={!busy} title={`Biométricos de usuario ${userId}`}>
         <div className="flex flex-col gap-3">
           {!op && (

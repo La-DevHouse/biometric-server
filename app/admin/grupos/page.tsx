@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { Table, Th, Td, Tr } from "@/components/ui/Table";
+import { MobileList, MobileRow } from "@/components/ui/MobileRow";
 import { Tag } from "@/components/ui/Tag";
 import { LinkBtn } from "@/components/ui/Btn";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -40,40 +41,64 @@ export default async function GruposPage() {
           description="Un grupo de empleados define el horario común (turnos) de un conjunto de gente en una empresa."
         />
       ) : (
-        <Table>
-          <thead>
-            <tr>
-              <Th>Grupo</Th>
-              <Th>Empresa</Th>
-              <Th>Código</Th>
-              <Th>Turnos</Th>
-              <Th>Empleos</Th>
-              <Th>Estado</Th>
-              <Th />
-            </tr>
-          </thead>
-          <tbody>
+        <>
+          <div className="hidden md:block">
+            <Table>
+              <thead>
+                <tr>
+                  <Th>Grupo</Th>
+                  <Th>Empresa</Th>
+                  <Th>Código</Th>
+                  <Th>Turnos</Th>
+                  <Th>Empleos</Th>
+                  <Th>Estado</Th>
+                  <Th />
+                </tr>
+              </thead>
+              <tbody>
+                {groups.map((g) => (
+                  <Tr key={g.id}>
+                    <Td className="font-medium">{g.name}</Td>
+                    <Td>{g.company.name}</Td>
+                    <Td className="font-mono text-xs">{g.code ?? <span className="text-text/60">—</span>}</Td>
+                    <Td>{g._count.shifts}</Td>
+                    <Td>{g._count.employments}</Td>
+                    <Td>
+                      <Tag variant={g.status === "active" ? "accent" : "neutral"}>
+                        {g.status === "active" ? "Activo" : "Inactivo"}
+                      </Tag>
+                    </Td>
+                    <Td>
+                      <LinkBtn href={`/admin/grupos/${g.id}`} variant="ghost">
+                        Detalle →
+                      </LinkBtn>
+                    </Td>
+                  </Tr>
+                ))}
+              </tbody>
+            </Table>
+          </div>
+          <MobileList>
             {groups.map((g) => (
-              <Tr key={g.id}>
-                <Td className="font-medium">{g.name}</Td>
-                <Td>{g.company.name}</Td>
-                <Td className="font-mono text-xs">{g.code ?? <span className="text-text/60">—</span>}</Td>
-                <Td>{g._count.shifts}</Td>
-                <Td>{g._count.employments}</Td>
-                <Td>
+              <MobileRow
+                key={g.id}
+                href={`/admin/grupos/${g.id}`}
+                title={g.name}
+                tags={
                   <Tag variant={g.status === "active" ? "accent" : "neutral"}>
                     {g.status === "active" ? "Activo" : "Inactivo"}
                   </Tag>
-                </Td>
-                <Td>
-                  <LinkBtn href={`/admin/grupos/${g.id}`} variant="ghost">
-                    Detalle →
-                  </LinkBtn>
-                </Td>
-              </Tr>
+                }
+                fields={[
+                  { label: "Empresa", value: g.company.name },
+                  { label: "Código", value: g.code ?? "—" },
+                  { label: "Turnos", value: g._count.shifts },
+                  { label: "Empleos", value: g._count.employments },
+                ]}
+              />
             ))}
-          </tbody>
-        </Table>
+          </MobileList>
+        </>
       )}
     </div>
   );

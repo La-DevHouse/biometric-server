@@ -1,8 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useId, useState } from "react";
 import { Dialog } from "@/components/ui/Dialog";
 import { Btn } from "@/components/ui/Btn";
+import { IconBtn } from "@/components/ui/IconBtn";
+import { Icon } from "@/components/ui/icons";
 import { OperationProgress, OperationResult } from "./OperationStatus";
 import { useOperation } from "./useOperation";
 import { createUserAction } from "@/app/admin/actions";
@@ -10,12 +12,12 @@ import { createUserAction } from "@/app/admin/actions";
 // lib/db.ts (`pg`) al bundle del navegador si se importa como valor desde un
 // componente cliente (verificado en vivo: "Module not found: Can't resolve 'dns'").
 import { PRIVILEGE_SCREEN_LABEL } from "@/lib/operations/kinds";
-
-const INPUT_CLASS = "min-h-9 px-2.5 text-sm bg-surface border border-divider rounded-none w-full";
+import { FIELD_INPUT as INPUT_CLASS } from "@/components/ui/fieldStyles";
 
 export function CreateUserDialog({ devId }: { devId: string }) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
+  const formId = useId();
   const { formAction, startError, startWarning, op, busy, reset } = useOperation(createUserAction);
 
   function close() {
@@ -29,10 +31,20 @@ export function CreateUserDialog({ devId }: { devId: string }) {
 
   return (
     <>
-      <Btn variant="primary" onClick={() => setOpen(true)}>
-        + Crear usuario nuevo
-      </Btn>
-      <Dialog open={open} onClose={close} closable={!busy} title="Crear usuario nuevo">
+      <IconBtn icon={Icon.add} label="Crear usuario nuevo" onClick={() => setOpen(true)} />
+      <Dialog
+        open={open}
+        onClose={close}
+        closable={!busy}
+        title="Crear usuario nuevo"
+        footer={
+          !op && (
+            <Btn type="submit" form={formId} variant="primary" disabled={busy}>
+              {busy ? "Enviando…" : "Crear usuario"}
+            </Btn>
+          )
+        }
+      >
         <div className="flex flex-col gap-3">
           {!op && (
             <>
@@ -46,7 +58,7 @@ export function CreateUserDialog({ devId }: { devId: string }) {
                 esté realmente libre, y esa comprobación es lenta por diseño — es lo que evita
                 arruinar las huellas de alguien que ya existe.
               </p>
-              <form action={formAction} className="flex flex-col gap-3">
+              <form id={formId} action={formAction} className="flex flex-col gap-3">
                 <input type="hidden" name="dev_id" value={devId} />
                 <label className="flex flex-col gap-1 text-xs text-text/85">
                   ID de usuario
@@ -77,9 +89,6 @@ export function CreateUserDialog({ devId }: { devId: string }) {
                   </select>
                 </label>
                 {startError && <p className="text-sm m-0 text-text">{startError}</p>}
-                <Btn type="submit" variant="primary" disabled={busy}>
-                  {busy ? "Enviando…" : "Crear usuario"}
-                </Btn>
               </form>
             </>
           )}

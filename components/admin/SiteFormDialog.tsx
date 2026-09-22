@@ -1,15 +1,15 @@
 "use client";
 
-import { useActionState, useEffect, useState } from "react";
+import { useActionState, useEffect, useId, useState } from "react";
 import { Dialog } from "@/components/ui/Dialog";
 import { Btn } from "@/components/ui/Btn";
+import { IconBtn } from "@/components/ui/IconBtn";
+import { Icon } from "@/components/ui/icons";
 import { useToast } from "./Toaster";
 import { createSiteAction, updateSiteAction } from "@/app/admin/empresas/actions";
 import { ADMIN_ACTION_INITIAL } from "@/lib/adminActionState";
 import { COMMON_TIMEZONES, DEFAULT_TZ } from "@/lib/time";
-
-const INPUT = "min-h-9 px-2.5 text-sm bg-surface border border-divider rounded-none w-full";
-const LABEL = "flex flex-col gap-1 text-xs text-text/85";
+import { FIELD_INPUT as INPUT, FIELD_LABEL as LABEL } from "@/components/ui/fieldStyles";
 
 export interface SiteFormValues {
   id: number;
@@ -32,6 +32,7 @@ export function SiteFormDialog({
     ADMIN_ACTION_INITIAL
   );
   const { push } = useToast();
+  const formId = useId();
 
   useEffect(() => {
     if (state.status === "ok") {
@@ -44,11 +45,22 @@ export function SiteFormDialog({
 
   return (
     <>
-      <Btn variant={editing ? "ghost" : "secondary"} onClick={() => setOpen(true)}>
-        {editing ? "Editar" : "+ Sede"}
-      </Btn>
-      <Dialog open={open} onClose={() => setOpen(false)} title={editing ? "Editar sede" : "Nueva sede"}>
-        <form action={formAction} className="flex flex-col gap-3">
+      {editing ? (
+        <IconBtn icon={Icon.edit} label="Editar sede" onClick={() => setOpen(true)} />
+      ) : (
+        <IconBtn icon={Icon.add} label="Nueva sede" onClick={() => setOpen(true)} />
+      )}
+      <Dialog
+        open={open}
+        onClose={() => setOpen(false)}
+        title={editing ? "Editar sede" : "Nueva sede"}
+        footer={
+          <Btn type="submit" form={formId} variant="primary" disabled={pending}>
+            {pending ? "Guardando…" : editing ? "Guardar" : "Crear sede"}
+          </Btn>
+        }
+      >
+        <form id={formId} action={formAction} className="flex flex-col gap-3">
           {editing ? (
             <input type="hidden" name="id" value={site.id} />
           ) : (
@@ -75,9 +87,6 @@ export function SiteFormDialog({
               ))}
             </select>
           </label>
-          <Btn type="submit" variant="primary" disabled={pending}>
-            {pending ? "Guardando…" : editing ? "Guardar" : "Crear sede"}
-          </Btn>
         </form>
       </Dialog>
     </>

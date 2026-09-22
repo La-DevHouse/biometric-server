@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { Dialog } from "@/components/ui/Dialog";
 import { Btn } from "@/components/ui/Btn";
+import { IconBtn } from "@/components/ui/IconBtn";
+import { Icon } from "@/components/ui/icons";
 import { OperationProgress, OperationResult } from "./OperationStatus";
 import { useOperation } from "./useOperation";
 import { deleteUserAction } from "@/app/admin/actions";
@@ -28,9 +30,7 @@ export function DeleteUserDialog({
 
   return (
     <>
-      <Btn variant="ghost" onClick={() => setOpen(true)}>
-        Eliminar
-      </Btn>
+      <IconBtn icon={Icon.trash} label={`Eliminar usuario ${userId}`} tone="danger" onClick={() => setOpen(true)} />
       <Dialog open={open} onClose={close} closable={!busy} title={`Eliminar usuario ${userId}`}>
         <div className="flex flex-col gap-3">
           {!op && (

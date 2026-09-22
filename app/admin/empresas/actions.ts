@@ -8,6 +8,9 @@ import type { AdminActionState } from "@/lib/adminActionState";
 import { joinDoc } from "@/lib/documento";
 import { DEFAULT_TZ, isValidTimeZone } from "@/lib/time";
 import { fanOutEmployeeToGroup } from "@/lib/enrollment";
+import { extractPdfText } from "@/lib/pdfText";
+import { parseRifText, type RifExtractedFields } from "@/lib/rifParser";
+import { extractRifPhoto } from "@/lib/documentVision";
 
 const ABSENCE_RULES = ["no_check_in", "no_marks", "under_hours"] as const;
 type AbsenceRule = (typeof ABSENCE_RULES)[number];
@@ -387,4 +390,69 @@ export async function resyncGroupEnrollmentsAction(
       warnings ? ` · ${warnings} aviso(s)` : ""
     }.`,
   };
+}
+
+// --------------------------------------------------------------------------
+// Autocompletar desde el RIF en PDF (docs/09 §3.10 / §7.1 ítem 16, AI 24)
+// --------------------------------------------------------------------------
+
+/**
+ * Lee un PDF del comprobante de RIF (SENIAT) y devuelve los campos para
+ * precargar el form de empresa. No crea ni modifica nada — el usuario revisa
+ * y confirma con "Crear empresa"/"Guardar cambios" como siempre. Parser
+ * determinístico (lib/rifParser.ts), sin IA: el PDF trae texto real.
+ */
+export async function parseRifPdfAction(
+  fd: FormData
+): Promise<{ ok: true; fields: RifExtractedFields } | { ok: false; error: string }> {
+  await requireUser();
+
+  const file = fd.get("rif_pdf");
+  if (!(file instanceof File)) return { ok: false, error: "No se recibió el archivo." };
+  if (file.type !== "application/pdf")
+    return { ok: false, error: "El archivo debe ser un PDF (el comprobante del SENIAT)." };
+  if (file.size > 5 * 1024 * 1024) return { ok: false, error: "El PDF no puede superar 5 MB." };
+
+  let text: string;
+  try {
+    text = await extractPdfText(Buffer.from(await file.arrayBuffer()));
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? `No se pudo leer el PDF: ${e.message}` : "No se pudo leer el PDF." };
+  }
+
+  const parsed = parseRifText(text);
+  if ("error" in parsed) return { ok: false, error: parsed.error };
+  return { ok: true, fields: parsed.fields };
+}
+
+/**
+ * Igual que parseRifPdfAction pero para una FOTO del RIF (no el PDF) — usa
+ * Gemini (lib/documentVision.ts) en vez del parser determinístico, porque una
+ * foto no tiene capa de texto. Alternativa cuando no se tiene el PDF a mano.
+ */
+export async function extractRifPhotoAction(
+  fd: FormData
+): Promise<{ ok: true; fields: RifExtractedFields } | { ok: false; error: string }> {
+  await requireUser();
+
+  const file = fd.get("photo");
+  if (!(file instanceof File)) return { ok: false, error: "No se recibió la foto." };
+  if (!file.type.startsWith("image/")) return { ok: false, error: "El archivo debe ser una imagen." };
+  if (file.size > 8 * 1024 * 1024) return { ok: false, error: "La imagen no puede superar 8 MB." };
+
+  try {
+    const buf = Buffer.from(await file.arrayBuffer());
+    const fields = await extractRifPhoto(buf, file.type);
+    return {
+      ok: true,
+      fields: {
+        taxIdPrefix: fields.taxIdPrefix,
+        taxIdNumber: fields.taxIdNumber,
+        businessName: fields.businessName,
+        address: fields.address,
+      },
+    };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "No se pudo leer el RIF." };
+  }
 }

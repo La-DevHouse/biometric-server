@@ -3,7 +3,9 @@ import { requireUser } from "@/lib/auth";
 import { allAsync, initDb } from "@/lib/db";
 import { AttendanceFilters } from "@/components/admin/AttendanceFilters";
 import { Table, Th, Td, Tr } from "@/components/ui/Table";
+import { MobileList, MobileRow } from "@/components/ui/MobileRow";
 import { DisabledBtn } from "@/components/ui/Btn";
+import { Icon } from "@/components/ui/icons";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { OpButton } from "@/components/admin/OpButton";
 import { ClearLogsDialog } from "@/components/admin/ClearLogsDialog";
@@ -109,10 +111,8 @@ export default async function AsistenciaPage({
 
   return (
     <div className="flex flex-col gap-4 max-w-[1200px]">
-      <div className="flex items-end justify-between gap-3 flex-wrap">
-        <Suspense
-          fallback={<div className="min-h-9 w-full max-w-md bg-surface border border-divider" />}
-        >
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <Suspense fallback={<div className="min-h-9 w-9 bg-surface border border-divider" />}>
           <AttendanceFilters
             devices={devices.map((d) => ({ dev_id: d.dev_id, label: d.fk_name || d.dev_id }))}
             users={users.map((u) => ({
@@ -125,18 +125,23 @@ export default async function AsistenciaPage({
         <div className="flex gap-2">
           {filters.dev ? (
             <>
-              <OpButton action={syncLogsAction} hidden={{ dev_id: filters.dev }} title="Sincronizar historial completo">
-                Sincronizar historial completo
+              <OpButton
+                action={syncLogsAction}
+                hidden={{ dev_id: filters.dev }}
+                title="Sincronizar historial completo"
+                variant="icon"
+              >
+                {Icon.sync}
               </OpButton>
               <ClearLogsDialog devId={filters.dev} />
             </>
           ) : (
             <>
-              <DisabledBtn variant="secondary" title={PICK_DEVICE}>
-                Sincronizar historial completo
+              <DisabledBtn variant="icon" title={PICK_DEVICE}>
+                {Icon.sync}
               </DisabledBtn>
-              <DisabledBtn variant="secondary" title={PICK_DEVICE}>
-                Borrar memoria del equipo…
+              <DisabledBtn variant="icon" title={PICK_DEVICE}>
+                {Icon.trash}
               </DisabledBtn>
             </>
           )}
@@ -150,28 +155,44 @@ export default async function AsistenciaPage({
         />
       ) : (
         <>
-          <Table>
-            <thead>
-              <tr>
-                <Th>Fecha y hora</Th>
-                <Th>Dispositivo</Th>
-                <Th>Usuario</Th>
-                <Th>Empresa</Th>
-                <Th>Sede</Th>
-              </tr>
-            </thead>
-            <tbody>
-              {logs.map((log) => (
-                <Tr key={log.id}>
-                  <Td className="font-mono">{formatIoTime(log.io_time)}</Td>
-                  <Td>{log.device_name}</Td>
-                  <Td>{log.display_name}</Td>
-                  <Td>{log.company_name ?? <span className="text-text/70">—</span>}</Td>
-                  <Td>{log.site_name ?? <span className="text-text/70">—</span>}</Td>
-                </Tr>
-              ))}
-            </tbody>
-          </Table>
+          <div className="hidden md:block">
+            <Table>
+              <thead>
+                <tr>
+                  <Th>Fecha y hora</Th>
+                  <Th>Dispositivo</Th>
+                  <Th>Usuario</Th>
+                  <Th>Empresa</Th>
+                  <Th>Sede</Th>
+                </tr>
+              </thead>
+              <tbody>
+                {logs.map((log) => (
+                  <Tr key={log.id}>
+                    <Td className="font-mono">{formatIoTime(log.io_time)}</Td>
+                    <Td>{log.device_name}</Td>
+                    <Td>{log.display_name}</Td>
+                    <Td>{log.company_name ?? <span className="text-text/70">—</span>}</Td>
+                    <Td>{log.site_name ?? <span className="text-text/70">—</span>}</Td>
+                  </Tr>
+                ))}
+              </tbody>
+            </Table>
+          </div>
+          <MobileList>
+            {logs.map((log) => (
+              <MobileRow
+                key={log.id}
+                title={log.display_name}
+                tags={<span className="text-xs text-text/60 font-mono">{formatIoTime(log.io_time)}</span>}
+                fields={[
+                  { label: "Dispositivo", value: log.device_name },
+                  { label: "Empresa", value: log.company_name ?? "—" },
+                  { label: "Sede", value: log.site_name ?? "—" },
+                ]}
+              />
+            ))}
+          </MobileList>
           <p className="text-xs text-text/70">
             {logs.length} marcación{logs.length === 1 ? "" : "es"}
             {truncated ? ` (mostrando las ${RESULT_LIMIT} más recientes)` : ""} · datos locales, al

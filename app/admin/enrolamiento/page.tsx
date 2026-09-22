@@ -4,6 +4,7 @@ import { allAsync, initDb, prisma } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { DeviceSelect } from "@/components/ui/DeviceSelect";
 import { Table, Th, Td, Tr } from "@/components/ui/Table";
+import { MobileList, MobileRow } from "@/components/ui/MobileRow";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { AssignEnrollmentDialog } from "@/components/admin/AssignEnrollmentDialog";
 import { UnlinkEnrollmentButton } from "@/components/admin/UnlinkEnrollmentButton";
@@ -126,37 +127,80 @@ export default async function EnrolamientoPage({
           description="Sincronizá la lista de usuarios del equipo (pantalla Usuarios) para ver los slots a enrolar."
         />
       ) : (
-        <Table>
-          <thead>
-            <tr>
-              <Th>Slot</Th>
-              <Th>Nombre en el equipo</Th>
-              <Th>Empleado vinculado</Th>
-              <Th />
-            </tr>
-          </thead>
-          <tbody>
+        <>
+          <div className="hidden md:block">
+            <Table>
+              <thead>
+                <tr>
+                  <Th>Slot</Th>
+                  <Th>Nombre en el equipo</Th>
+                  <Th>Empleado vinculado</Th>
+                  <Th />
+                </tr>
+              </thead>
+              <tbody>
+                {slots.map((s) => {
+                  const en = activeBySlot.get(s.user_id);
+                  return (
+                    <Tr key={s.user_id}>
+                      <Td className="font-mono">{s.user_id}</Td>
+                      <Td>{s.user_name || <span className="text-text/60">—</span>}</Td>
+                      <Td>
+                        {en ? (
+                          <Link
+                            href={`/admin/empleados/${en.employee.id}`}
+                            className="text-accent no-underline hover:underline"
+                          >
+                            {en.employee.last_name}, {en.employee.first_name}
+                            <span className="text-text/60"> · {en.employee.national_id}</span>
+                          </Link>
+                        ) : (
+                          <span className="text-text/60">Sin vincular</span>
+                        )}
+                      </Td>
+                      <Td>
+                        {en ? (
+                          <UnlinkEnrollmentButton id={en.id} />
+                        ) : (
+                          <AssignEnrollmentDialog
+                            devId={effectiveDevId}
+                            deviceUserId={s.user_id}
+                            deviceUserName={s.user_name}
+                            candidates={candidates}
+                          />
+                        )}
+                      </Td>
+                    </Tr>
+                  );
+                })}
+              </tbody>
+            </Table>
+          </div>
+          <MobileList>
             {slots.map((s) => {
               const en = activeBySlot.get(s.user_id);
               return (
-                <Tr key={s.user_id}>
-                  <Td className="font-mono">{s.user_id}</Td>
-                  <Td>{s.user_name || <span className="text-text/60">—</span>}</Td>
-                  <Td>
-                    {en ? (
-                      <Link
-                        href={`/admin/empleados/${en.employee.id}`}
-                        className="text-accent no-underline hover:underline"
-                      >
-                        {en.employee.last_name}, {en.employee.first_name}
-                        <span className="text-text/60"> · {en.employee.national_id}</span>
-                      </Link>
-                    ) : (
-                      <span className="text-text/60">Sin vincular</span>
-                    )}
-                  </Td>
-                  <Td>
-                    {en ? (
+                <MobileRow
+                  key={s.user_id}
+                  title={s.user_name || "—"}
+                  fields={[
+                    { label: "Slot", value: s.user_id },
+                    {
+                      label: "Empleado vinculado",
+                      value: en ? (
+                        <Link
+                          href={`/admin/empleados/${en.employee.id}`}
+                          className="text-accent no-underline hover:underline"
+                        >
+                          {en.employee.last_name}, {en.employee.first_name}
+                        </Link>
+                      ) : (
+                        "Sin vincular"
+                      ),
+                    },
+                  ]}
+                  actions={
+                    en ? (
                       <UnlinkEnrollmentButton id={en.id} />
                     ) : (
                       <AssignEnrollmentDialog
@@ -165,13 +209,13 @@ export default async function EnrolamientoPage({
                         deviceUserName={s.user_name}
                         candidates={candidates}
                       />
-                    )}
-                  </Td>
-                </Tr>
+                    )
+                  }
+                />
               );
             })}
-          </tbody>
-        </Table>
+          </MobileList>
+        </>
       )}
 
       {orphanEnrollments.length > 0 && (
@@ -183,33 +227,52 @@ export default async function EnrolamientoPage({
             La persona sigue vinculada a un ID que el equipo ya no reporta (se borró del equipo o aún
             no se sincronizó). Revisá y desvinculá si corresponde.
           </p>
-          <Table>
-            <thead>
-              <tr>
-                <Th>Slot</Th>
-                <Th>Empleado</Th>
-                <Th />
-              </tr>
-            </thead>
-            <tbody>
-              {orphanEnrollments.map((e) => (
-                <Tr key={e.id}>
-                  <Td className="font-mono">{e.device_user_id}</Td>
-                  <Td>
-                    <Link
-                      href={`/admin/empleados/${e.employee.id}`}
-                      className="text-accent no-underline hover:underline"
-                    >
-                      {e.employee.last_name}, {e.employee.first_name}
-                    </Link>
-                  </Td>
-                  <Td>
-                    <UnlinkEnrollmentButton id={e.id} />
-                  </Td>
-                </Tr>
-              ))}
-            </tbody>
-          </Table>
+          <div className="hidden md:block">
+            <Table>
+              <thead>
+                <tr>
+                  <Th>Slot</Th>
+                  <Th>Empleado</Th>
+                  <Th />
+                </tr>
+              </thead>
+              <tbody>
+                {orphanEnrollments.map((e) => (
+                  <Tr key={e.id}>
+                    <Td className="font-mono">{e.device_user_id}</Td>
+                    <Td>
+                      <Link
+                        href={`/admin/empleados/${e.employee.id}`}
+                        className="text-accent no-underline hover:underline"
+                      >
+                        {e.employee.last_name}, {e.employee.first_name}
+                      </Link>
+                    </Td>
+                    <Td>
+                      <UnlinkEnrollmentButton id={e.id} />
+                    </Td>
+                  </Tr>
+                ))}
+              </tbody>
+            </Table>
+          </div>
+          <MobileList>
+            {orphanEnrollments.map((e) => (
+              <MobileRow
+                key={e.id}
+                title={
+                  <Link
+                    href={`/admin/empleados/${e.employee.id}`}
+                    className="text-accent no-underline hover:underline"
+                  >
+                    {e.employee.last_name}, {e.employee.first_name}
+                  </Link>
+                }
+                fields={[{ label: "Slot", value: e.device_user_id }]}
+                actions={<UnlinkEnrollmentButton id={e.id} />}
+              />
+            ))}
+          </MobileList>
         </section>
       )}
 

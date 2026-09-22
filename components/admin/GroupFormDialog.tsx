@@ -1,14 +1,15 @@
 "use client";
 
-import { useActionState, useEffect, useState } from "react";
+import { useActionState, useEffect, useId, useState } from "react";
 import { Dialog } from "@/components/ui/Dialog";
 import { Btn } from "@/components/ui/Btn";
+import { IconBtn } from "@/components/ui/IconBtn";
+import { Icon } from "@/components/ui/icons";
+import { Collapsible } from "@/components/ui/Collapsible";
 import { useToast } from "./Toaster";
 import { createGroupAction, updateGroupAction } from "@/app/admin/grupos/actions";
 import { ADMIN_ACTION_INITIAL } from "@/lib/adminActionState";
-
-const INPUT = "min-h-9 px-2.5 text-sm bg-surface border border-divider rounded-none w-full";
-const LABEL = "flex flex-col gap-1 text-xs text-text/85";
+import { FIELD_INPUT as INPUT, FIELD_LABEL as LABEL } from "@/components/ui/fieldStyles";
 
 export interface GroupValues {
   id: number;
@@ -35,6 +36,7 @@ export function GroupFormDialog({
     ADMIN_ACTION_INITIAL
   );
   const { push } = useToast();
+  const formId = useId();
 
   useEffect(() => {
     if (state.status === "ok") {
@@ -45,11 +47,22 @@ export function GroupFormDialog({
 
   return (
     <>
-      <Btn variant={editing ? "ghost" : "primary"} onClick={() => setOpen(true)}>
-        {editing ? "Editar" : "+ Nuevo grupo"}
-      </Btn>
-      <Dialog open={open} onClose={() => setOpen(false)} title={editing ? "Editar grupo" : "Nuevo grupo de empleados"}>
-        <form action={formAction} className="flex flex-col gap-3">
+      {editing ? (
+        <IconBtn icon={Icon.edit} label="Editar grupo" onClick={() => setOpen(true)} />
+      ) : (
+        <IconBtn icon={Icon.add} label="Nuevo grupo" onClick={() => setOpen(true)} />
+      )}
+      <Dialog
+        open={open}
+        onClose={() => setOpen(false)}
+        title={editing ? "Editar grupo" : "Nuevo grupo de empleados"}
+        footer={
+          <Btn type="submit" form={formId} variant="primary" disabled={pending}>
+            {pending ? "Guardando…" : editing ? "Guardar" : "Crear grupo"}
+          </Btn>
+        }
+      >
+        <form id={formId} action={formAction} className="flex flex-col gap-3">
           {editing && <input type="hidden" name="id" value={group.id} />}
 
           <label className={LABEL}>
@@ -83,11 +96,8 @@ export function GroupFormDialog({
             <input name="code" defaultValue={group?.code ?? ""} className={INPUT} />
           </label>
 
-          <fieldset className="border border-divider p-2.5 flex flex-col gap-2">
-            <legend className="text-[10px] uppercase tracking-widest text-text/70 px-1">
-              Umbrales de asistencia (vacío = hereda de la empresa)
-            </legend>
-            <div className="grid grid-cols-2 gap-2">
+          <Collapsible title="Umbrales de asistencia (vacío = hereda de la empresa)">
+            <div className="flex flex-col sm:grid sm:grid-cols-2 gap-2">
               <label className={LABEL}>
                 Tolerancia tardanza (min)
                 <input name="late_tolerance_min" type="number" min={0} defaultValue={group?.late_tolerance_min ?? ""} className={INPUT} />
@@ -110,11 +120,7 @@ export function GroupFormDialog({
                 <input name="absence_min_hours" type="number" min={0} defaultValue={group?.absence_min_hours ?? ""} className={INPUT} />
               </label>
             </div>
-          </fieldset>
-
-          <Btn type="submit" variant="primary" disabled={pending}>
-            {pending ? "Guardando…" : editing ? "Guardar" : "Crear grupo"}
-          </Btn>
+          </Collapsible>
         </form>
       </Dialog>
     </>

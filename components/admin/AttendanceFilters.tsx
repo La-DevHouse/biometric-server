@@ -2,6 +2,8 @@
 
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { useTransition } from "react";
+import { FiltersDialog } from "@/components/ui/FiltersDialog";
+import { FIELD_LABEL as LABEL } from "@/components/ui/fieldStyles";
 
 export interface DeviceOption {
   dev_id: string;
@@ -15,7 +17,7 @@ export interface UserOption {
 }
 
 const INPUT_CLASS =
-  "min-h-9 px-2.5 text-sm bg-surface border border-divider rounded-none disabled:opacity-60";
+  "min-h-9 px-2.5 text-sm bg-surface border border-divider rounded-none disabled:opacity-60 w-full";
 
 /**
  * user_id is only unique WITHIN a device (two devices can both have a
@@ -39,6 +41,7 @@ export function AttendanceFilters({
   const user = searchParams.get("user") ?? "";
   const from = searchParams.get("from") ?? "";
   const to = searchParams.get("to") ?? "";
+  const activeCount = [dev, user, from, to].filter(Boolean).length;
 
   const usersForDevice = dev ? users.filter((u) => u.dev_id === dev) : [];
 
@@ -54,8 +57,8 @@ export function AttendanceFilters({
   }
 
   return (
-    <div className="flex items-end gap-3 flex-wrap">
-      <label className="flex flex-col gap-1 text-xs text-text/85">
+    <FiltersDialog activeCount={activeCount} onClear={() => startTransition(() => router.push(pathname))}>
+      <label className={LABEL}>
         Dispositivo
         <select
           className={INPUT_CLASS}
@@ -72,7 +75,7 @@ export function AttendanceFilters({
         </select>
       </label>
 
-      <label className="flex flex-col gap-1 text-xs text-text/85">
+      <label className={LABEL}>
         Usuario
         <select
           className={INPUT_CLASS}
@@ -90,7 +93,7 @@ export function AttendanceFilters({
         </select>
       </label>
 
-      <label className="flex flex-col gap-1 text-xs text-text/85">
+      <label className={LABEL}>
         Desde
         <input
           type="date"
@@ -101,7 +104,7 @@ export function AttendanceFilters({
         />
       </label>
 
-      <label className="flex flex-col gap-1 text-xs text-text/85">
+      <label className={LABEL}>
         Hasta
         <input
           type="date"
@@ -111,6 +114,6 @@ export function AttendanceFilters({
           onChange={(e) => update({ to: e.target.value })}
         />
       </label>
-    </div>
+    </FiltersDialog>
   );
 }

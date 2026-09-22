@@ -114,7 +114,7 @@ export default async function DiagnosticoPage({
       </div>
 
       <div className="flex flex-col gap-2">
-        <h4 className="font-heading text-lg m-0">Cola de comandos</h4>
+        <h4 className="font-heading text-xl font-semibold tracking-tight m-0">Cola de comandos</h4>
         {commands.length === 0 ? (
           <EmptyState title="Sin comandos" description="Todavía no se encoló ningún comando." />
         ) : (
@@ -165,7 +165,7 @@ export default async function DiagnosticoPage({
       </div>
 
       <div className="flex flex-col gap-2">
-        <h4 className="font-heading text-lg m-0">Tráfico crudo</h4>
+        <h4 className="font-heading text-xl font-semibold tracking-tight m-0">Tráfico crudo</h4>
         {traffic.length === 0 ? (
           <EmptyState title="Sin tráfico" description="Todavía no se registró tráfico HTTP." />
         ) : (

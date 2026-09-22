@@ -7,8 +7,7 @@ import { useMultiOperation } from "./useOperation";
 import { addEmployeeToDeviceAction } from "@/app/admin/actions";
 // Directo de kinds.ts, no del barrel @/lib/operations — ver ChangePrivilegeDialog.tsx.
 import { PRIVILEGE_SCREEN_LABEL } from "@/lib/operations/kinds";
-
-const INPUT = "min-h-9 px-2.5 text-sm bg-surface border border-divider rounded-none w-full";
+import { FIELD_INPUT as INPUT } from "@/components/ui/fieldStyles";
 
 export interface DeviceCandidateOption {
   devId: string;

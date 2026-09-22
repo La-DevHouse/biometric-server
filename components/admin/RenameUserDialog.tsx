@@ -3,11 +3,12 @@
 import { useState } from "react";
 import { Dialog } from "@/components/ui/Dialog";
 import { Btn } from "@/components/ui/Btn";
+import { IconBtn } from "@/components/ui/IconBtn";
+import { Icon } from "@/components/ui/icons";
 import { OperationProgress, OperationResult } from "./OperationStatus";
 import { useOperation } from "./useOperation";
 import { renameUserAction } from "@/app/admin/actions";
-
-const INPUT_CLASS = "min-h-9 px-2.5 text-sm bg-surface border border-divider rounded-none w-full";
+import { FIELD_INPUT as INPUT_CLASS } from "@/components/ui/fieldStyles";
 
 export function RenameUserDialog({
   devId,
@@ -32,9 +33,7 @@ export function RenameUserDialog({
 
   return (
     <>
-      <Btn variant="ghost" onClick={() => setOpen(true)}>
-        Renombrar
-      </Btn>
+      <IconBtn icon={Icon.edit} label={`Renombrar usuario ${userId}`} onClick={() => setOpen(true)} />
       <Dialog open={open} onClose={close} closable={!busy} title={`Renombrar usuario ${userId}`}>
         <div className="flex flex-col gap-3">
           {!op && (

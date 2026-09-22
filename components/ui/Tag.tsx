@@ -3,12 +3,13 @@ import type { ReactNode } from "react";
 
 type TagVariant = "accent" | "accent2" | "neutral" | "outline";
 
-// Same border-radius:0 override as Card/Btn — see Card.tsx's note.
+// Mono + uppercase + borde propio por estado, en vez del pill sólido sin
+// borde de antes.
 const VARIANT: Record<TagVariant, string> = {
-  accent: "bg-accent-100 text-accent-800",
-  accent2: "bg-accent2-100 text-accent2-800",
-  neutral: "bg-neutral-100 text-neutral-800",
-  outline: "border border-accent text-accent",
+  accent: "border border-accent text-accent-700 bg-accent-100",
+  accent2: "border border-accent2 text-accent2-700 bg-accent2-100",
+  neutral: "border border-neutral-500 text-neutral-800 bg-surface",
+  outline: "border border-dashed border-neutral-500 text-neutral-700 bg-transparent",
 };
 
 export function Tag({
@@ -23,7 +24,7 @@ export function Tag({
   return (
     <span
       className={cx(
-        "inline-flex items-center text-[11px] tracking-[0.02em] px-[10px] py-[3px] rounded-none",
+        "inline-flex items-center font-mono text-2xs uppercase tracking-[0.12em] px-[7px] py-[3px] rounded-none",
         VARIANT[variant],
         className
       )}

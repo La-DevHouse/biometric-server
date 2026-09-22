@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { Dialog } from "@/components/ui/Dialog";
 import { Btn } from "@/components/ui/Btn";
+import { IconBtn } from "@/components/ui/IconBtn";
+import { Icon } from "@/components/ui/icons";
 import { OperationProgress, OperationResult } from "./OperationStatus";
 import { useOperation } from "./useOperation";
 import { captureFingerprintAction } from "@/app/admin/actions";
@@ -37,9 +39,7 @@ export function CaptureFingerprintDialog({
 
   return (
     <>
-      <Btn variant="ghost" onClick={() => setOpen(true)}>
-        Capturar huella
-      </Btn>
+      <IconBtn icon={Icon.capture} label={`Capturar huella desde ${deviceLabel}`} onClick={() => setOpen(true)} />
       <Dialog open={open} onClose={close} closable={!busy} title={`Capturar huella desde ${deviceLabel}`}>
         <div className="flex flex-col gap-3">
           {!op && (

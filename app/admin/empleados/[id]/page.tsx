@@ -65,6 +65,7 @@ export default async function EmpleadoDetailPage({
     first_name: employee.first_name,
     last_name: employee.last_name,
     birth_date: employee.birth_date ? fmtDate(employee.birth_date) : null,
+    has_cedula_photo: employee.cedula_photo != null,
   };
   const activeEmployment = employee.employments.find((e) => e.status === "active");
   const activeEnrollments = employee.enrollments.filter((e) => e.status === "active");
@@ -76,7 +77,7 @@ export default async function EmpleadoDetailPage({
           ← Empleados
         </Link>
         <div className="mt-1 flex items-center gap-3">
-          <h2 className="m-0 text-2xl">
+          <h2 className="font-heading text-2xl font-semibold tracking-tight m-0">
             {employee.first_name} {employee.last_name}
           </h2>
           {activeEmployment ? <Tag variant="accent">Activo</Tag> : <Tag variant="neutral">Pool</Tag>}
@@ -87,6 +88,21 @@ export default async function EmpleadoDetailPage({
         <Field label="Documento" value={employee.national_id} mono />
         <Field label="RIF" value={employee.tax_id ?? "—"} mono />
         <Field label="Fecha de nacimiento" value={fmtDate(employee.birth_date)} />
+        <Field
+          label="Cédula (foto)"
+          value={
+            employee.cedula_photo != null ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={`/admin/empleados/${employee.id}/cedula`}
+                alt="cédula escaneada"
+                className="h-10 w-auto border border-divider bg-surface object-contain p-0.5"
+              />
+            ) : (
+              "—"
+            )
+          }
+        />
         <Field
           label="Huella"
           value={
@@ -299,8 +315,8 @@ function Field({
   mono?: boolean;
 }) {
   return (
-    <div className="flex gap-3">
-      <span className="w-48 flex-none text-text/70">{label}</span>
+    <div className="flex flex-col gap-0.5 sm:flex-row sm:gap-3">
+      <span className="sm:w-48 sm:flex-none text-text/70">{label}</span>
       <span className={mono ? "font-mono" : undefined}>{value}</span>
     </div>
   );

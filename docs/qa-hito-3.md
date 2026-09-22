@@ -7,10 +7,28 @@ Se completa a medida que se construye cada pieza del CRUD. Lo verificado en loca
 antes de pushear va marcado como _(local ✓)_ — igual conviene repasarlo en vivo
 porque prod tiene otro Postgres, otra red y datos reales.
 
-> **Nota (2026-09-08):** los casos 2.1.2, 2.1.4, 2.2.4 y 6.1.3 prueban la
-> jerarquía de empresas padre/hijas — esa función se revirtió (ver
-> `08-data-model.md` → "Enmienda 2026-09-08"), así que ya no aplican. Se dejan
-> tal cual como registro histórico, no como checklist vigente.
+> **Nota (2026-09-21):** la jerarquía de empresas padre/hijas (casos 2.1.2,
+> 2.1.4, 2.2.4, 6.1.3) se había quitado el 2026-09-08 y luego se **restauró**
+> el 2026-09-10 tras Reunión 3 — el cliente confirmó que la necesita
+> (`docs/09-reunion-3.md` §3.1). Esos casos **vuelven a aplicar**; la nota
+> vieja que decía lo contrario estaba desactualizada. Además de esa
+> restauración, después de Reunión 3 se agregaron: modelos de negocio
+> (§3.5.1), logo + representante legal (§3.11), compartir empleados con
+> fan-out automático (§3.3), filtros de empleado por grupo/sede + huella
+> (§3.12/§3.8), diseño responsive, y autocompletado de RIF/cédula por
+> PDF/foto (§3.10) — cada uno tiene su sección nueva más abajo.
+
+> **Suite automatizada (2026-09-21):** `npm run e2e:admin` (Playwright, en
+> `e2e/`) cubre en CI/local, contra Postgres real, el smoke happy-path de:
+> jerarquía de empresas + RIF + modelo de negocio (§2.1/§2.5), modelos de
+> negocio y puestos M:N (§3.0/§3.2), registro y búsqueda de empleados
+> (§5.1/§5.2), y el responsive (drawer mobile, tabla con scroll horizontal,
+> diálogo de una columna — §8). **No cubre** los flujos de escaneo de
+> cédula/RIF por foto (§2.7/§5.1b) — requieren `GEMINI_API_KEY` real y
+> cuestan por llamada; esos se validan con `npm run test-vision` (llamada
+> real sin UI) y a mano, como ya indican esas secciones. Esta suite no
+> reemplaza la pasada manual completa antes de un release — es para no
+> tener que repetir el smoke básico a mano en cada cambio chico.
 
 ---
 
@@ -93,11 +111,60 @@ Esperado: filas `company.create` / `company.update` / `company.deactivate` / `si
 
 - [ ] auditoría registra las acciones
 
+### 2.5 Modelo de negocio, logo y representante legal
+
+Requiere al menos un modelo de negocio cargado (sección 3.0 más abajo).
+
+| # | Paso | Esperado |
+| --- | --- | --- |
+| 2.5.1 | Editar una empresa → elegir un "Modelo de negocio" del desplegable → Guardar | En el detalle, fila "Modelo de negocio" muestra el elegido |
+| 2.5.2 | Dejar "Modelo de negocio" en "— hereda del grupo —" en una empresa **hija** cuyo grupo sí tiene modelo | Al crear un contrato para esa empresa (sección 5.2), el selector de Puesto filtra por el modelo del **grupo**, no de la hija |
+| 2.5.3 | Subir un logo (PNG/JPG, < 512 KB) → Guardar | En el detalle aparece la miniatura del logo; la URL `/admin/empresas/<id>/logo` sirve la imagen |
+| 2.5.4 | Volver a editar → tildar "Quitar el logo actual" → Guardar | El logo desaparece del detalle |
+| 2.5.5 | Completar nombre + cédula + teléfono del representante legal → Guardar | Fila "Representante legal" del detalle muestra los tres datos juntos |
+
+- [ ] 2.5 ok
+
+### 2.6 Compartir empleados / fan-out de enrolamiento
+
+Requiere un grupo con al menos una empresa hija, cada una con un dispositivo asignado (sección 6.0).
+
+| # | Paso | Esperado |
+| --- | --- | --- |
+| 2.6.1 | En el grupo, confirmar que "Compartir empleados con todas las empresas del grupo" está tildado (default) | ✓ |
+| 2.6.2 | Registrar un empleo nuevo para una persona en **cualquier** empresa del grupo | El mensaje de éxito dice "Propagando a N equipo(s) del grupo" (N = cantidad de dispositivos de todas las empresas del grupo) |
+| 2.6.3 | Revisar `/admin/diagnostico` o el estado de operaciones del/los dispositivo(s) | Aparecen operaciones `ADD_EMPLOYEE_TO_DEVICE` encoladas para esa persona en los equipos del grupo (no solo en el de la empresa elegida) |
+| 2.6.4 | En el detalle de la empresa **raíz** del grupo → botón "Re-sincronizar grupo" | Toast con el resumen ("N persona(s) revisadas · M enrolamiento(s) encolado(s)") |
+| 2.6.5 | Destildar "Compartir empleados" en el grupo → repetir 2.6.2 | El mensaje de éxito **no** menciona propagación (fan-out desactivado) |
+
+- [ ] 2.6 ok
+
+### 2.7 Autocompletar desde RIF (PDF o foto)
+
+| # | Paso | Esperado |
+| --- | --- | --- |
+| 2.7.1 | "+ Nueva empresa" → subir un RIF real en PDF (comprobante del SENIAT) | Toast "RIF leído…"; se completan Razón social, RIF (prefijo+número) y Dirección; "Es un grupo" queda destildado |
+| 2.7.2 | Subir un PDF que no es un RIF (cualquier otro) | Error claro ("No se reconoció el formato…"), no rompe el form |
+| 2.7.3 | "📷 Escanear RIF" → cámara o (sin cámara disponible) el input de archivo de respaldo → foto de un RIF | Mismo autocompletado que 2.7.1, vía Gemini — revisar que **GEMINI_API_KEY** esté seteada, si no da error claro |
+
+- [ ] 2.7 ok
+
 ---
 
-## 3. Departamentos y Puestos  _(local ✓)_
+## 3. Departamentos, Puestos y Modelos de negocio  _(local ✓)_
 
-Ruta: **Administración → Categorías**. Una página con dos tablas.
+Ruta: **Administración → Categorías**. Una página con tres tablas.
+
+### 3.0 Modelos de negocio
+
+| # | Paso | Esperado |
+| --- | --- | --- |
+| 3.0.1 | "+ Modelo de negocio" → nombre `Farmacia`, código `FARM` → Crear | Aparece en la tabla, con 0 empresas y 0 puestos |
+| 3.0.2 | "+ Modelo de negocio" → nombre `Restaurante` → Crear | Aparece también |
+| 3.0.3 | "Editar" un modelo → cambiar el nombre → Guardar | Se actualiza |
+| 3.0.4 | "Desactivar" → "Reactivar" | Cambia de estado; uno **inactivo** no aparece en el desplegable de "Modelo de negocio" del form de empresa |
+
+- [ ] 3.0 ok
 
 ### 3.1 Departamentos
 
@@ -117,10 +184,14 @@ Ruta: **Administración → Categorías**. Una página con dos tablas.
 | 3.2.3 | "Editar" un puesto → cambiarle el departamento → Guardar | Se refleja |
 | 3.2.4 | Desactivar el departamento `DOCENTES` | El puesto `Coordinador` **sigue** asociado a `DOCENTES` (desactivar ≠ borrar) |
 | 3.2.5 | "Desactivar" / "Reactivar" un puesto | Cambia de estado |
+| 3.2.6 | "+ Puesto" → nombre `Cocinero`, tildar `Restaurante` y `Farmacia` → Crear | Columna "Modelos" muestra `2` |
+| 3.2.7 | "+ Puesto" → nombre `Administrativo`, **sin** tildar ningún modelo → Crear | Columna "Modelos" muestra "Genérico" |
+| 3.2.8 | Al crear un contrato (sección 5.2) para una empresa con modelo `Restaurante` | El selector de Puesto ofrece `Cocinero` (por el tilde) y `Administrativo` (genérico), pero **no** un puesto tildado solo para otro modelo distinto |
 
+- [ ] 3.0 ok
 - [ ] 3.1 ok
 - [ ] 3.2 ok
-- [ ] `audit_log` registra `department.*` / `position.*` con tu `actor_app_user_id`
+- [ ] `audit_log` registra `business_model.*` / `department.*` / `position.*` con tu `actor_app_user_id`
 
 ---
 
@@ -170,6 +241,20 @@ Ruta: **Administración → Empleados**. Necesita al menos una empresa.
 | 5.1.3 | "+ Registrar persona" con un doc que ya existe | Error "Ya existe una persona con el documento …" |
 | 5.1.4 | En el detalle → "Editar datos" → cambiar nombre → Guardar | Se actualiza |
 
+### 5.1b Escanear cédula (foto)
+
+Necesita **GEMINI_API_KEY** seteada (si no, 5.1b.1 da error claro y no rompe el resto del form).
+
+| # | Paso | Esperado |
+| --- | --- | --- |
+| 5.1b.1 | "+ Registrar persona" → "📷 Escanear cédula" → cámara (guía tipo tarjeta en pantalla) o, sin cámara disponible, el input de archivo de respaldo → foto de una cédula real | Toast "Cédula leída…"; se completan Documento (prefijo+número), Nombre, Apellido y Fecha de nacimiento |
+| 5.1b.2 | Guardar sin editar nada | Se crea la persona con esos datos |
+| 5.1b.3 | Entrar al detalle de esa persona | Fila "Cédula (foto)" muestra la miniatura de la foto escaneada; la URL `/admin/empleados/<id>/cedula` sirve la imagen |
+| 5.1b.4 | Editar la persona → escanear una foto distinta → Guardar | La miniatura del detalle cambia a la nueva foto |
+| 5.1b.5 | Foto borrosa/no es una cédula | Error claro de Gemini ("no se pudo leer…"), la foto **igual** queda adjunta al form (se puede corregir los campos a mano y guardar) |
+
+- [ ] 5.1b ok
+
 ### 5.2 Empleos — alta / baja
 
 | # | Paso | Esperado |
@@ -178,6 +263,9 @@ Ruta: **Administración → Empleados**. Necesita al menos una empresa.
 | 5.2.2 | En "+ Nuevo empleo", elegir empresa → los selects de **Sede** y **Grupo** solo muestran los de esa empresa | ✓ |
 | 5.2.3 | Fila de empleo activo → "Dar de baja" → fecha de baja → Confirmar | El empleo pasa a **Cerrado** con esa fecha; si era el único activo, la persona vuelve a **Pool** |
 | 5.2.4 | "Dar de baja" con fecha anterior al inicio del empleo | Error "La fecha de baja no puede ser anterior al inicio." |
+| 5.2.5 | En "+ Nuevo empleo", elegir empresa → el selector de **Puesto** solo ofrece los puestos de su modelo de negocio + los genéricos (ver 3.2.8) | ✓ |
+| 5.2.6 | En Puesto, elegir "— otro: crear puesto nuevo —" → escribir un nombre → Registrar | Se crea el puesto nuevo (aparece luego en Categorías, tildado al modelo de negocio de esa empresa) y el contrato queda con ese puesto |
+| 5.2.7 | Elegir un "Tipo de nómina" (Quincenal/Semanal) al crear el empleo | La tabla de empleos de la persona muestra la columna "Nómina" con ese valor |
 
 ### 5.3 Traslado
 
@@ -193,7 +281,10 @@ Ruta: **Administración → Empleados**. Necesita al menos una empresa.
 | --- | --- | --- |
 | 5.4.1 | Filtro **Estado = Pool** | Solo personas sin ningún empleo activo |
 | 5.4.2 | Filtro **Empresa = X** | Solo personas con empleo activo en X |
-| 5.4.3 | **Buscar** por apellido o por documento | Filtra por coincidencia (case-insensitive en nombre) |
+| 5.4.3 | Filtro **Grupo = G** (un grupo con empresas hijas) | Personas con empleo activo en la empresa raíz **o en cualquiera de sus hijas** |
+| 5.4.4 | Filtro **Sede = S** | Solo personas con empleo activo en esa sede puntual |
+| 5.4.5 | **Buscar** por apellido o por documento | Filtra por coincidencia (case-insensitive en nombre) |
+| 5.4.6 | Columna **Huella** de la lista | Muestra "Sí" (con la cantidad) o "No" según `employee_fingerprint`, sin necesidad de abrir el detalle |
 
 - [ ] 5.1–5.4 ok
 - [ ] `audit_log` registra `employee.create` / `employment.create` / `employment.end` / `employee.transfer`
@@ -299,6 +390,26 @@ al panel (≠ "Usuarios de equipo", que son los enrolados en el biométrico).
 
 - [ ] 7.1–7.4 ok
 - [ ] `audit_log` registra `app_user.create` / `app_user.update` / `app_user.reset_password` / `app_user.deactivate` / `app_user.change_password` — y **ningún** registro contiene contraseñas
+
+---
+
+## 8. Responsive / mobile  _(local ✓)_
+
+Probar con el navegador angosto (~390px de ancho — DevTools → device toolbar,
+o un teléfono real) en un par de pantallas del panel.
+
+| # | Paso | Esperado |
+| --- | --- | --- |
+| 8.1 | Abrir `/admin` en ~390px | El sidebar **no** se ve; aparece un botón ☰ en el header |
+| 8.2 | Tocar ☰ | Se abre un panel lateral (drawer) con el menú completo, con fondo oscuro detrás (backdrop) |
+| 8.3 | Tocar un ítem del menú (ej. "Empleados") | Navega **y** el drawer se cierra solo |
+| 8.4 | Tocar el backdrop (fuera del drawer) | El drawer se cierra sin navegar |
+| 8.5 | Ir a una tabla con varias columnas (Empresas, Empleados) en ~390px | La tabla **no** rompe el ancho de la página — se puede hacer scroll horizontal dentro de la tabla misma |
+| 8.6 | Abrir cualquier diálogo ("+ Nueva empresa", "+ Nuevo empleo") en ~390px | El diálogo tiene margen a los lados (no toca el borde de la pantalla); los campos que en desktop van en 2 columnas se apilan en 1 |
+| 8.7 | Abrir un diálogo con muchos campos (ej. "Nueva empresa cliente" completo) | Si no entra en la pantalla, el diálogo scrollea internamente y el botón de guardar sigue siendo alcanzable |
+| 8.8 | Comparar el tamaño de letra general (labels, tablas, botones) con lo que había antes de Reunión 3 | Notablemente más grande — pedido explícito de Grupo ALCO |
+
+- [ ] 8 ok
 
 ---
 

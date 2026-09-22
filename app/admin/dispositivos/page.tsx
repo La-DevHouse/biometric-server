@@ -3,6 +3,7 @@ import { requireUser } from "@/lib/auth";
 import { isDeviceOnline } from "@/lib/deviceStatus";
 import { formatRelativeTime } from "@/lib/formatRelativeTime";
 import { Table, Th, Td, Tr } from "@/components/ui/Table";
+import { MobileList, MobileRow } from "@/components/ui/MobileRow";
 import { Tag } from "@/components/ui/Tag";
 import { LinkBtn } from "@/components/ui/Btn";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -45,40 +46,64 @@ export default async function DispositivosPage() {
   }
 
   return (
-    <Table>
-      <thead>
-        <tr>
-          <Th>Estado</Th>
-          <Th>Nombre</Th>
-          <Th>Serial</Th>
-          <Th>Última conexión</Th>
-          <Th>Pendientes</Th>
-          <Th />
-        </tr>
-      </thead>
-      <tbody>
+    <>
+      <div className="hidden md:block">
+        <Table>
+          <thead>
+            <tr>
+              <Th>Estado</Th>
+              <Th>Nombre</Th>
+              <Th>Serial</Th>
+              <Th>Última conexión</Th>
+              <Th>Pendientes</Th>
+              <Th />
+            </tr>
+          </thead>
+          <tbody>
+            {devices.map((d) => {
+              const online = isDeviceOnline(d.last_seen_at);
+              return (
+                <Tr key={d.dev_id}>
+                  <Td>
+                    <Tag variant={online ? "accent" : "neutral"}>
+                      {online ? "En línea" : "Desconectado"}
+                    </Tag>
+                  </Td>
+                  <Td>{d.fk_name || <span className="text-text/70">Sin nombre</span>}</Td>
+                  <Td className="font-mono">{d.dev_id}</Td>
+                  <Td>{formatRelativeTime(d.last_seen_at)}</Td>
+                  <Td>{d.pending > 0 ? d.pending : <span className="text-text/70">—</span>}</Td>
+                  <Td>
+                    <LinkBtn href={`/admin/dispositivos/${d.dev_id}`} variant="ghost">
+                      Detalle →
+                    </LinkBtn>
+                  </Td>
+                </Tr>
+              );
+            })}
+          </tbody>
+        </Table>
+      </div>
+      <MobileList>
         {devices.map((d) => {
           const online = isDeviceOnline(d.last_seen_at);
           return (
-            <Tr key={d.dev_id}>
-              <Td>
-                <Tag variant={online ? "accent" : "neutral"}>
-                  {online ? "En línea" : "Desconectado"}
-                </Tag>
-              </Td>
-              <Td>{d.fk_name || <span className="text-text/70">Sin nombre</span>}</Td>
-              <Td className="font-mono">{d.dev_id}</Td>
-              <Td>{formatRelativeTime(d.last_seen_at)}</Td>
-              <Td>{d.pending > 0 ? d.pending : <span className="text-text/70">—</span>}</Td>
-              <Td>
-                <LinkBtn href={`/admin/dispositivos/${d.dev_id}`} variant="ghost">
-                  Detalle →
-                </LinkBtn>
-              </Td>
-            </Tr>
+            <MobileRow
+              key={d.dev_id}
+              href={`/admin/dispositivos/${d.dev_id}`}
+              title={d.fk_name || "Sin nombre"}
+              tags={
+                <Tag variant={online ? "accent" : "neutral"}>{online ? "En línea" : "Desconectado"}</Tag>
+              }
+              fields={[
+                { label: "Serial", value: d.dev_id },
+                { label: "Última conexión", value: formatRelativeTime(d.last_seen_at) },
+                { label: "Pendientes", value: d.pending > 0 ? d.pending : "—" },
+              ]}
+            />
           );
         })}
-      </tbody>
-    </Table>
+      </MobileList>
+    </>
   );
 }

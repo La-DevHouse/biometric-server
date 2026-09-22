@@ -4,8 +4,7 @@ import { useActionState, useState } from "react";
 import { queueCommandAction, type QueueCommandState } from "@/app/admin/actions";
 import { COMMAND_TEMPLATES } from "@/lib/commandTemplates";
 import { Btn } from "@/components/ui/Btn";
-
-const INPUT_CLASS = "min-h-9 px-2.5 text-sm bg-surface border border-divider rounded-none w-full";
+import { FIELD_INPUT as INPUT_CLASS } from "@/components/ui/fieldStyles";
 
 const INITIAL_STATE: QueueCommandState = { status: "idle" };
 

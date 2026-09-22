@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { Table, Th, Td, Tr } from "@/components/ui/Table";
+import { MobileList, MobileRow } from "@/components/ui/MobileRow";
 import { Tag } from "@/components/ui/Tag";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { GroupFormDialog, type GroupValues } from "@/components/admin/GroupFormDialog";
@@ -68,7 +69,7 @@ export default async function GrupoDetailPage({
           ← Grupos y turnos
         </Link>
         <div className="mt-1 flex items-center gap-3">
-          <h2 className="m-0 text-2xl">{group.name}</h2>
+          <h2 className="font-heading text-2xl font-semibold tracking-tight m-0">{group.name}</h2>
           <Tag variant={group.status === "active" ? "accent" : "neutral"}>
             {group.status === "active" ? "Activo" : "Inactivo"}
           </Tag>
@@ -82,20 +83,20 @@ export default async function GrupoDetailPage({
       </div>
 
       <section className="flex flex-col gap-2 border border-divider p-4 text-sm">
-        <div className="flex gap-3">
-          <span className="w-56 flex-none text-text/70">Empleos en el grupo</span>
+        <div className="flex flex-col gap-0.5 sm:flex-row sm:gap-3">
+          <span className="sm:w-56 sm:flex-none text-text/70">Empleos en el grupo</span>
           <span>{group._count.employments}</span>
         </div>
-        <div className="flex gap-3">
-          <span className="w-56 flex-none text-text/70">Tolerancia tardanza</span>
+        <div className="flex flex-col gap-0.5 sm:flex-row sm:gap-3">
+          <span className="sm:w-56 sm:flex-none text-text/70">Tolerancia tardanza</span>
           <span>{eff(group.late_tolerance_min, group.company.late_tolerance_min)} min</span>
         </div>
-        <div className="flex gap-3">
-          <span className="w-56 flex-none text-text/70">Tolerancia salida anticipada</span>
+        <div className="flex flex-col gap-0.5 sm:flex-row sm:gap-3">
+          <span className="sm:w-56 sm:flex-none text-text/70">Tolerancia salida anticipada</span>
           <span>{eff(group.early_leave_tolerance_min, group.company.early_leave_tolerance_min)} min</span>
         </div>
-        <div className="flex gap-3">
-          <span className="w-56 flex-none text-text/70">Regla de ausencia</span>
+        <div className="flex flex-col gap-0.5 sm:flex-row sm:gap-3">
+          <span className="sm:w-56 sm:flex-none text-text/70">Regla de ausencia</span>
           <span>{group.absence_rule ?? group.company.absence_rule ?? "—"}</span>
         </div>
         <div className="mt-1 flex gap-2">
@@ -112,71 +113,123 @@ export default async function GrupoDetailPage({
         {group.shifts.length === 0 ? (
           <EmptyState title="Sin turnos" description="Agregá al menos un turno con su horario y días de trabajo." />
         ) : (
-          <Table>
-            <thead>
-              <tr>
-                <Th>Nombre</Th>
-                <Th>Horario</Th>
-                <Th>Descanso</Th>
-                <Th>Días</Th>
-                <Th>Vigencia</Th>
-                <Th />
-              </tr>
-            </thead>
-            <tbody>
-              {group.shifts.map((s) => {
-                const shiftForm: ShiftValues = {
-                  id: s.id,
-                  code: s.code,
-                  name: s.name,
-                  start_time: s.start_time,
-                  end_time: s.end_time,
-                  break_start: s.break_start,
-                  break_end: s.break_end,
-                  hours: s.hours != null ? String(s.hours) : null,
-                  variable_in_out: s.variable_in_out,
-                  crosses_midnight: s.crosses_midnight,
-                  workdays: s.workdays,
-                  effective_from: fmtDate(s.effective_from),
-                  effective_to: s.effective_to ? fmtDate(s.effective_to) : null,
-                };
-                return (
-                  <Tr key={s.id}>
-                    <Td>
-                      {s.name}
-                      {s.code && <span className="ml-1 font-mono text-xs text-text/60">{s.code}</span>}
-                      {s.crosses_midnight && (
-                        <Tag variant="neutral" className="ml-2">
-                          +1 día
-                        </Tag>
-                      )}
-                    </Td>
-                    <Td className="font-mono text-xs">
-                      {s.start_time}–{s.end_time}
-                      {s.variable_in_out && <span className="text-text/60"> (var.)</span>}
-                    </Td>
-                    <Td className="font-mono text-xs">
-                      {s.break_start && s.break_end ? `${s.break_start}–${s.break_end}` : "—"}
-                    </Td>
-                    <Td className="font-mono text-xs">{fmtWorkdays(s.workdays)}</Td>
-                    <Td className="text-xs">
-                      {fmtDate(s.effective_from)}
-                      {" → "}
-                      {s.effective_to ? fmtDate(s.effective_to) : "∞"}
-                    </Td>
-                    <Td>
-                      <span className="inline-flex items-center gap-1">
-                        <ShiftFormDialog groupId={group.id} shift={shiftForm} />
-                        <DeleteButton id={s.id} label="turno" action={deleteShiftAction} />
-                      </span>
-                    </Td>
-                  </Tr>
-                );
-              })}
-            </tbody>
-          </Table>
+          <>
+            <div className="hidden md:block">
+              <Table>
+                <thead>
+                  <tr>
+                    <Th>Nombre</Th>
+                    <Th>Horario</Th>
+                    <Th>Descanso</Th>
+                    <Th>Días</Th>
+                    <Th>Vigencia</Th>
+                    <Th />
+                  </tr>
+                </thead>
+                <tbody>
+                  {group.shifts.map((s) => {
+                    const shiftForm: ShiftValues = shiftFormValues(s);
+                    return (
+                      <Tr key={s.id}>
+                        <Td>
+                          {s.name}
+                          {s.code && <span className="ml-1 font-mono text-xs text-text/60">{s.code}</span>}
+                          {s.crosses_midnight && (
+                            <Tag variant="neutral" className="ml-2">
+                              +1 día
+                            </Tag>
+                          )}
+                        </Td>
+                        <Td className="font-mono text-xs">
+                          {s.start_time}–{s.end_time}
+                          {s.variable_in_out && <span className="text-text/60"> (var.)</span>}
+                        </Td>
+                        <Td className="font-mono text-xs">
+                          {s.break_start && s.break_end ? `${s.break_start}–${s.break_end}` : "—"}
+                        </Td>
+                        <Td className="font-mono text-xs">{fmtWorkdays(s.workdays)}</Td>
+                        <Td className="text-xs">
+                          {fmtDate(s.effective_from)}
+                          {" → "}
+                          {s.effective_to ? fmtDate(s.effective_to) : "∞"}
+                        </Td>
+                        <Td>
+                          <span className="inline-flex items-center gap-1">
+                            <ShiftFormDialog groupId={group.id} shift={shiftForm} />
+                            <DeleteButton id={s.id} label="turno" action={deleteShiftAction} />
+                          </span>
+                        </Td>
+                      </Tr>
+                    );
+                  })}
+                </tbody>
+              </Table>
+            </div>
+            <MobileList>
+              {group.shifts.map((s) => (
+                <MobileRow
+                  key={s.id}
+                  title={s.name}
+                  tags={s.crosses_midnight && <Tag variant="neutral">+1 día</Tag>}
+                  fields={[
+                    {
+                      label: "Horario",
+                      value: `${s.start_time}–${s.end_time}${s.variable_in_out ? " (var.)" : ""}`,
+                    },
+                    {
+                      label: "Descanso",
+                      value: s.break_start && s.break_end ? `${s.break_start}–${s.break_end}` : "—",
+                    },
+                    { label: "Días", value: fmtWorkdays(s.workdays) },
+                    {
+                      label: "Vigencia",
+                      value: `${fmtDate(s.effective_from)} → ${s.effective_to ? fmtDate(s.effective_to) : "∞"}`,
+                    },
+                  ]}
+                  actions={
+                    <>
+                      <ShiftFormDialog groupId={group.id} shift={shiftFormValues(s)} />
+                      <DeleteButton id={s.id} label="turno" action={deleteShiftAction} />
+                    </>
+                  }
+                />
+              ))}
+            </MobileList>
+          </>
         )}
       </section>
     </div>
   );
+}
+
+function shiftFormValues(s: {
+  id: number;
+  code: string | null;
+  name: string;
+  start_time: string;
+  end_time: string;
+  break_start: string | null;
+  break_end: string | null;
+  hours: unknown;
+  variable_in_out: boolean;
+  crosses_midnight: boolean;
+  workdays: number[];
+  effective_from: Date;
+  effective_to: Date | null;
+}): ShiftValues {
+  return {
+    id: s.id,
+    code: s.code,
+    name: s.name,
+    start_time: s.start_time,
+    end_time: s.end_time,
+    break_start: s.break_start,
+    break_end: s.break_end,
+    hours: s.hours != null ? String(s.hours) : null,
+    variable_in_out: s.variable_in_out,
+    crosses_midnight: s.crosses_midnight,
+    workdays: s.workdays,
+    effective_from: fmtDate(s.effective_from),
+    effective_to: s.effective_to ? fmtDate(s.effective_to) : null,
+  };
 }

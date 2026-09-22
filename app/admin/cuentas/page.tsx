@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { Table, Th, Td, Tr } from "@/components/ui/Table";
+import { MobileList, MobileRow } from "@/components/ui/MobileRow";
 import { Tag } from "@/components/ui/Tag";
 import { AccountFormDialog } from "@/components/admin/AccountFormDialog";
 import { ResetPasswordDialog } from "@/components/admin/ResetPasswordDialog";
@@ -46,48 +47,85 @@ export default async function CuentasPage() {
         </div>
       </div>
 
-      <Table>
-        <thead>
-          <tr>
-            <Th>Nombre</Th>
-            <Th>Email</Th>
-            <Th>Estado</Th>
-            <Th>Último ingreso</Th>
-            <Th>Sesiones</Th>
-            <Th />
-          </tr>
-        </thead>
-        <tbody>
-          {accounts.map((a) => (
-            <Tr key={a.id}>
-              <Td className="font-medium">
+      <div className="hidden md:block">
+        <Table>
+          <thead>
+            <tr>
+              <Th>Nombre</Th>
+              <Th>Email</Th>
+              <Th>Estado</Th>
+              <Th>Último ingreso</Th>
+              <Th>Sesiones</Th>
+              <Th />
+            </tr>
+          </thead>
+          <tbody>
+            {accounts.map((a) => (
+              <Tr key={a.id}>
+                <Td className="font-medium">
+                  {a.name}
+                  {a.id === me.id && <span className="text-text/60"> · vos</span>}
+                </Td>
+                <Td className="font-mono text-xs">{a.email}</Td>
+                <Td>
+                  <Tag variant={a.status === "active" ? "accent" : "neutral"}>
+                    {a.status === "active" ? "Activa" : "Inactiva"}
+                  </Tag>
+                </Td>
+                <Td className="text-xs">{fmtWhen(a.last_login_at)}</Td>
+                <Td className="text-xs">{a._count.sessions}</Td>
+                <Td>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <AccountFormDialog account={{ id: a.id, name: a.name, email: a.email }} />
+                    <ResetPasswordDialog id={a.id} name={a.name} />
+                    <RecordStatusButton
+                      id={a.id}
+                      active={a.status === "active"}
+                      label="cuenta"
+                      action={setAccountStatusAction}
+                    />
+                  </div>
+                </Td>
+              </Tr>
+            ))}
+          </tbody>
+        </Table>
+      </div>
+      <MobileList>
+        {accounts.map((a) => (
+          <MobileRow
+            key={a.id}
+            title={
+              <>
                 {a.name}
-                {a.id === me.id && <span className="text-text/60"> · vos</span>}
-              </Td>
-              <Td className="font-mono text-xs">{a.email}</Td>
-              <Td>
-                <Tag variant={a.status === "active" ? "accent" : "neutral"}>
-                  {a.status === "active" ? "Activa" : "Inactiva"}
-                </Tag>
-              </Td>
-              <Td className="text-xs">{fmtWhen(a.last_login_at)}</Td>
-              <Td className="text-xs">{a._count.sessions}</Td>
-              <Td>
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <AccountFormDialog account={{ id: a.id, name: a.name, email: a.email }} />
-                  <ResetPasswordDialog id={a.id} name={a.name} />
-                  <RecordStatusButton
-                    id={a.id}
-                    active={a.status === "active"}
-                    label="cuenta"
-                    action={setAccountStatusAction}
-                  />
-                </div>
-              </Td>
-            </Tr>
-          ))}
-        </tbody>
-      </Table>
+                {a.id === me.id && <span className="text-text/60 font-normal"> · vos</span>}
+              </>
+            }
+            tags={
+              <Tag variant={a.status === "active" ? "accent" : "neutral"}>
+                {a.status === "active" ? "Activa" : "Inactiva"}
+              </Tag>
+            }
+            fields={[
+              { label: "Email", value: a.email },
+              { label: "Último ingreso", value: fmtWhen(a.last_login_at) },
+              { label: "Sesiones", value: a._count.sessions },
+            ]}
+            actions={
+              <>
+                <AccountFormDialog account={{ id: a.id, name: a.name, email: a.email }} />
+                <ResetPasswordDialog id={a.id} name={a.name} />
+                <RecordStatusButton
+                  id={a.id}
+                  active={a.status === "active"}
+                  label="cuenta"
+                  action={setAccountStatusAction}
+                />
+              </>
+            }
+          />
+        ))}
+      </MobileList>
 
       <p className="m-0 max-w-lg text-xs text-text/70">
         Al resetear una contraseña o desactivar una cuenta se cierran sus sesiones abiertas. No podés

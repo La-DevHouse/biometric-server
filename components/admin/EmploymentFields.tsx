@@ -2,9 +2,7 @@
 
 import { useState } from "react";
 import type { EmploymentLookups } from "@/lib/lookups";
-
-const INPUT = "min-h-9 px-2.5 text-sm bg-surface border border-divider rounded-none w-full";
-const LABEL = "flex flex-col gap-1 text-xs text-text/85";
+import { FIELD_INPUT as INPUT, FIELD_LABEL as LABEL } from "@/components/ui/fieldStyles";
 
 export interface EmploymentDefaults {
   company_id?: number | null;
@@ -48,7 +46,7 @@ export function EmploymentFields({
   );
 
   return (
-    <div className="grid grid-cols-2 gap-2">
+    <div className="flex flex-col sm:grid sm:grid-cols-2 gap-2">
       <label className={LABEL}>
         Empresa *
         <select
@@ -141,7 +139,7 @@ export function EmploymentFields({
         <label className={`${LABEL} col-span-2`}>
           Nombre del puesto nuevo *
           <input name="new_position_name" className={INPUT} placeholder="ej. Cajero, Mesonero…" />
-          <span className="text-[11px] text-text/60">
+          <span className="text-xs text-text/60">
             Se crea en el catálogo{effectiveBm != null ? ", asociado al modelo de negocio de la empresa" : " como genérico"}.
           </span>
         </label>

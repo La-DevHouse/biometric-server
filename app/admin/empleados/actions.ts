@@ -8,6 +8,7 @@ import { writeAudit } from "@/lib/audit";
 import type { AdminActionState } from "@/lib/adminActionState";
 import { joinDoc } from "@/lib/documento";
 import { fanOutEmployeeToGroup, fanOutNote } from "@/lib/enrollment";
+import { extractCedula, type CedulaExtractedFields } from "@/lib/documentVision";
 
 function str(fd: FormData, k: string) {
   return String(fd.get(k) ?? "").trim();
@@ -61,6 +62,52 @@ function personData(fd: FormData): { data: PersonData } | { error: string } {
   };
 }
 
+/**
+ * Foto de la cédula del form. `undefined` = no se adjuntó nada (no tocar lo
+ * que ya hubiera); a diferencia del logo de empresa, acá no hay checkbox de
+ * "quitar" — la foto se conserva siempre que se cargue una vez (docs/09 §3.10,
+ * decisión explícita del cliente: se guarda luego de extraer los datos).
+ */
+async function cedulaPhotoFromForm(fd: FormData): Promise<Uint8Array<ArrayBuffer> | undefined> {
+  const file = fd.get("cedula_photo");
+  if (!(file instanceof File) || file.size === 0) return undefined;
+  if (file.size > 8 * 1024 * 1024) throw new Error("La foto de la cédula no puede superar 8 MB.");
+  return new Uint8Array(Buffer.from(await file.arrayBuffer()));
+}
+
+/** Reemplaza el blob de la foto por un resumen para no volcarlo al audit_log. */
+function auditView<T extends { cedula_photo?: Uint8Array<ArrayBufferLike> | null }>(row: T) {
+  return { ...row, cedula_photo: row.cedula_photo ? `[${row.cedula_photo.byteLength} bytes]` : null };
+}
+
+// --------------------------------------------------------------------------
+// Escaneo de cédula por foto (docs/09 §3.10 / §7.1 ítem 17, AI 25)
+// --------------------------------------------------------------------------
+
+/**
+ * Lee una foto de cédula con Gemini (lib/documentVision.ts) y devuelve los
+ * campos para precargar el form. No crea ni guarda nada — eso lo hace el
+ * submit normal de crear/editar persona, que además persiste la foto misma.
+ */
+export async function extractCedulaAction(
+  fd: FormData
+): Promise<{ ok: true; fields: CedulaExtractedFields } | { ok: false; error: string }> {
+  await requireUser();
+
+  const file = fd.get("photo");
+  if (!(file instanceof File)) return { ok: false, error: "No se recibió la foto." };
+  if (!file.type.startsWith("image/")) return { ok: false, error: "El archivo debe ser una imagen." };
+  if (file.size > 8 * 1024 * 1024) return { ok: false, error: "La imagen no puede superar 8 MB." };
+
+  try {
+    const buf = Buffer.from(await file.arrayBuffer());
+    const fields = await extractCedula(buf, file.type);
+    return { ok: true, fields };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "No se pudo leer la cédula." };
+  }
+}
+
 export async function createEmployeeAction(
   _prev: AdminActionState,
   fd: FormData
@@ -72,9 +119,16 @@ export async function createEmployeeAction(
   if (!d.first_name || !d.last_name)
     return { status: "error", error: "Nombre y apellido son obligatorios." };
 
+  let cedulaPhoto: Uint8Array<ArrayBuffer> | undefined;
   try {
-    const created = await prisma.employee.create({ data: d });
-    await writeAudit({ actorId: user.id, action: "employee.create", entityType: "employee", entityId: created.id, after: created });
+    cedulaPhoto = await cedulaPhotoFromForm(fd);
+  } catch (e) {
+    return { status: "error", error: e instanceof Error ? e.message : String(e) };
+  }
+
+  try {
+    const created = await prisma.employee.create({ data: { ...d, cedula_photo: cedulaPhoto ?? null } });
+    await writeAudit({ actorId: user.id, action: "employee.create", entityType: "employee", entityId: created.id, after: auditView(created) });
     revalidatePath("/admin/empleados");
     return { status: "ok", message: `${d.first_name} ${d.last_name} registrado/a.` };
   } catch (e) {
@@ -100,9 +154,19 @@ export async function updateEmployeeAction(
   if (!d.first_name || !d.last_name)
     return { status: "error", error: "Nombre y apellido son obligatorios." };
 
+  let cedulaPhoto: Uint8Array<ArrayBuffer> | undefined;
   try {
-    const updated = await prisma.employee.update({ where: { id }, data: d });
-    await writeAudit({ actorId: user.id, action: "employee.update", entityType: "employee", entityId: id, before, after: updated });
+    cedulaPhoto = await cedulaPhotoFromForm(fd);
+  } catch (e) {
+    return { status: "error", error: e instanceof Error ? e.message : String(e) };
+  }
+
+  try {
+    const updated = await prisma.employee.update({
+      where: { id },
+      data: cedulaPhoto === undefined ? d : { ...d, cedula_photo: cedulaPhoto },
+    });
+    await writeAudit({ actorId: user.id, action: "employee.update", entityType: "employee", entityId: id, before: auditView(before), after: auditView(updated) });
     revalidatePath("/admin/empleados");
     revalidatePath(`/admin/empleados/${id}`);
     return { status: "ok", message: "Datos actualizados." };
