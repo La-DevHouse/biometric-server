@@ -12,6 +12,7 @@ import { DocumentField } from "./DocumentField";
 import { DocumentCameraCapture } from "./DocumentCameraCapture";
 import { FileIconButton } from "./FileIconButton";
 import { splitDoc } from "@/lib/documento";
+import { describeActionError } from "@/lib/actionErrors";
 import {
   createCompanyAction,
   updateCompanyAction,
@@ -103,18 +104,26 @@ export function CompanyFormDialog({
   // foto, así que reusa la misma rama.
   async function handleRifFile(file: File) {
     setRifParsing(true);
-    const fd = new FormData();
-    const isPdf = file.type === "application/pdf";
-    fd.set(isPdf ? "rif_pdf" : "photo", file);
-    const res = isPdf ? await parseRifPdfAction(fd) : await extractRifPhotoAction(fd);
-    setRifParsing(false);
+    try {
+      const fd = new FormData();
+      const isPdf = file.type === "application/pdf";
+      fd.set(isPdf ? "rif_pdf" : "photo", file);
+      const res = isPdf ? await parseRifPdfAction(fd) : await extractRifPhotoAction(fd);
 
-    if (!res.ok) {
-      push("error", res.error);
-      return;
+      if (!res.ok) {
+        push("error", res.error);
+        return;
+      }
+      applyRifFields(res.fields);
+      push("ok", "RIF leído — revisá los datos antes de guardar.");
+    } catch (err) {
+      // Un 413 (body-size-limit del Server Action) u otro rechazo de red
+      // llega como excepción, no como { ok: false } — sin este catch queda
+      // silencioso y el spinner de "Leyendo…" no se apaga nunca.
+      push("error", describeActionError(err));
+    } finally {
+      setRifParsing(false);
     }
-    applyRifFields(res.fields);
-    push("ok", "RIF leído — revisá los datos antes de guardar.");
   }
 
   const LOGO_ACCEPT = ["image/png", "image/jpeg", "image/webp", "image/svg+xml"];

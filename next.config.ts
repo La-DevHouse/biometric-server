@@ -8,6 +8,14 @@ const nextConfig: NextConfig = {
   // resolver sus propios archivos con require() normal. Fix documentado por
   // la librería para Next.js/Vercel/serverless.
   serverExternalPackages: ["pdf-parse", "@napi-rs/canvas"],
+  // Default de Next es 1MB — lo comprimido del lado del cliente (ver
+  // DocumentCameraCapture.tsx) queda bien debajo, pero un PDF de RIF
+  // escaneado (sin tope de tamaño propio) puede pasarlo fácil.
+  experimental: {
+    serverActions: {
+      bodySizeLimit: "8mb",
+    },
+  },
   async redirects() {
     return [
       { source: "/admin/logs", destination: "/admin/asistencia", permanent: true },

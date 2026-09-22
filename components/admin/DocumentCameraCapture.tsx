@@ -13,6 +13,31 @@ const GUIDE_ASPECT: Record<GuideShape, number> = {
   document: 0.72,
 };
 
+// La cámara de un iPhone da video/fotos en resoluciones enormes (fácil pasa
+// 3000px de lado) — sin tope, el JPEG resultante supera el límite de 1MB de
+// los Server Actions (ver lib/actionErrors.ts, next.config.ts). 1600px de
+// lado largo sobra para leer texto de un documento.
+const MAX_DIMENSION = 1600;
+const JPEG_QUALITY = 0.82;
+
+/** Reescala (nunca agranda) una imagen ya elegida — la ruta de fallback del
+ * input de archivo no pasa por el <canvas> del recorte en vivo, así que
+ * necesita su propio paso de compresión antes de mandarse. */
+async function downscaleImage(file: File): Promise<File> {
+  const bitmap = await createImageBitmap(file);
+  const scale = Math.min(1, MAX_DIMENSION / Math.max(bitmap.width, bitmap.height));
+  const w = Math.round(bitmap.width * scale);
+  const h = Math.round(bitmap.height * scale);
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  canvas.getContext("2d")?.drawImage(bitmap, 0, 0, w, h);
+  bitmap.close();
+  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", JPEG_QUALITY));
+  if (!blob) return file;
+  return new File([blob], "captura.jpg", { type: "image/jpeg" });
+}
+
 /**
  * Captura por cámara con un recuadro guía semitransparente (estilo "blueprint"
  * del resto del panel — ver globals.css) que induce a poner el documento
@@ -89,10 +114,14 @@ export function DocumentCameraCapture({
     const sx = (vw - cropW) / 2;
     const sy = (vh - cropH) / 2;
 
+    const scale = Math.min(1, MAX_DIMENSION / Math.max(cropW, cropH));
+    const outW = Math.round(cropW * scale);
+    const outH = Math.round(cropH * scale);
+
     const canvas = document.createElement("canvas");
-    canvas.width = cropW;
-    canvas.height = cropH;
-    canvas.getContext("2d")?.drawImage(video, sx, sy, cropW, cropH, 0, 0, cropW, cropH);
+    canvas.width = outW;
+    canvas.height = outH;
+    canvas.getContext("2d")?.drawImage(video, sx, sy, cropW, cropH, 0, 0, outW, outH);
     canvas.toBlob(
       (blob) => {
         if (!blob) return;
@@ -100,16 +129,19 @@ export function DocumentCameraCapture({
         onClose();
       },
       "image/jpeg",
-      0.9
+      JPEG_QUALITY
     );
   }
 
-  function handleFallbackFile(e: React.ChangeEvent<HTMLInputElement>) {
+  async function handleFallbackFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
-    if (file) {
-      onCapture(file);
-      onClose();
-    }
+    if (!file) return;
+    // La foto nativa del iPhone (esta ruta no pasa por el <canvas> de arriba)
+    // puede venir en varios MB — si el reescalado falla por lo que sea, se
+    // manda igual el original en vez de bloquear a la persona acá.
+    const resized = await downscaleImage(file).catch(() => file);
+    onCapture(resized);
+    onClose();
   }
 
   return (

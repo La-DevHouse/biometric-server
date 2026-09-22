@@ -10,6 +10,7 @@ import { DocumentField } from "./DocumentField";
 import { DocumentCameraCapture } from "./DocumentCameraCapture";
 import { FileIconButton } from "./FileIconButton";
 import { splitDoc } from "@/lib/documento";
+import { describeActionError } from "@/lib/actionErrors";
 import { createEmployeeAction, updateEmployeeAction, extractCedulaAction } from "@/app/admin/empleados/actions";
 import { ADMIN_ACTION_INITIAL } from "@/lib/adminActionState";
 import { FIELD_INPUT as INPUT, FIELD_LABEL as LABEL } from "@/components/ui/fieldStyles";
@@ -70,22 +71,29 @@ export function EmployeeFormDialog({ employee }: { employee?: EmployeeValues }) 
     if (!form) return;
 
     setCedulaParsing(true);
-    const fd = new FormData();
-    fd.set("photo", file);
-    const res = await extractCedulaAction(fd);
-    setCedulaParsing(false);
+    try {
+      const fd = new FormData();
+      fd.set("photo", file);
+      const res = await extractCedulaAction(fd);
 
-    if (!res.ok) {
-      push("error", res.error);
-      return; // la foto queda igual guardada para el envío, aunque no se haya podido leer
+      if (!res.ok) {
+        push("error", res.error);
+        return; // la foto queda igual guardada para el envío, aunque no se haya podido leer
+      }
+      const { prefix, number, firstName, lastName, birthDate } = res.fields;
+      (form.elements.namedItem("doc_prefix") as HTMLSelectElement).value = prefix;
+      (form.elements.namedItem("doc_number") as HTMLInputElement).value = number;
+      (form.elements.namedItem("first_name") as HTMLInputElement).value = firstName;
+      (form.elements.namedItem("last_name") as HTMLInputElement).value = lastName;
+      if (birthDate) (form.elements.namedItem("birth_date") as HTMLInputElement).value = birthDate;
+      push("ok", "Cédula leída — revisá los datos antes de guardar.");
+    } catch (err) {
+      // Ver comentario equivalente en CompanyFormDialog.handleRifFile: un 413
+      // u otro rechazo de red llega como excepción, no como { ok: false }.
+      push("error", describeActionError(err));
+    } finally {
+      setCedulaParsing(false);
     }
-    const { prefix, number, firstName, lastName, birthDate } = res.fields;
-    (form.elements.namedItem("doc_prefix") as HTMLSelectElement).value = prefix;
-    (form.elements.namedItem("doc_number") as HTMLInputElement).value = number;
-    (form.elements.namedItem("first_name") as HTMLInputElement).value = firstName;
-    (form.elements.namedItem("last_name") as HTMLInputElement).value = lastName;
-    if (birthDate) (form.elements.namedItem("birth_date") as HTMLInputElement).value = birthDate;
-    push("ok", "Cédula leída — revisá los datos antes de guardar.");
   }
 
   return (
