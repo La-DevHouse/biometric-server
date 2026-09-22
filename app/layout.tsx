@@ -1,17 +1,27 @@
 import type { Metadata } from "next";
-import { Archivo, JetBrains_Mono } from "next/font/google";
+import localFont from "next/font/local";
 import "./globals.css";
 
-const archivo = Archivo({
+// Vendorizadas (fonts/*.woff2) en vez de next/font/google: el contenedor de
+// build de Coolify (BuildKit efímero, sin caché entre corridas) no siempre
+// tiene salida a fonts.gstatic.com, y next/font/google necesita bajar el
+// archivo en build time, no solo en runtime — un fallo de red ahí tumba el
+// deploy entero. Archivos variables (un solo .woff2 cubre todo el rango de
+// peso), subset latin únicamente — igual que el `subsets: ["latin"]` que
+// tenían antes. Regenerar: ver comentario en cada archivo de fuente si se
+// necesita otro subset o familia.
+const archivo = localFont({
+  src: "./fonts/Archivo-Variable.woff2",
   variable: "--font-archivo",
-  weight: ["400", "500", "600", "700"],
-  subsets: ["latin"],
+  weight: "400 700",
+  display: "swap",
 });
 
-const jetbrainsMono = JetBrains_Mono({
+const jetbrainsMono = localFont({
+  src: "./fonts/JetBrainsMono-Variable.woff2",
   variable: "--font-jetbrains-mono",
-  weight: ["400", "500", "600"],
-  subsets: ["latin"],
+  weight: "400 600",
+  display: "swap",
 });
 
 export const metadata: Metadata = {
