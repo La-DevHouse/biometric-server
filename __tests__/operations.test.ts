@@ -23,6 +23,7 @@ const ops = require("../lib/operations") as typeof import("../lib/operations");
 const advance = require("../lib/operations/advance") as typeof import("../lib/operations/advance");
 const persist = require("../lib/operations/persist") as typeof import("../lib/operations/persist");
 const kinds = require("../lib/operations/kinds") as typeof import("../lib/operations/kinds");
+const enrollment = require("../lib/enrollment") as typeof import("../lib/enrollment");
 
 const DEV_A = "TEST_DEV_A";
 
@@ -629,6 +630,64 @@ test("CAPTURE_FINGERPRINT - no fingerprints registered on the device ends in err
   assert.equal(row, undefined, "nothing should be persisted when the finger wasn't found");
 });
 
+// --- fanOutCapturedFingerprint: propagates a freshly-captured fingerprint to
+// any other active enrollment the person already has (typically bare
+// accounts left by the group hire fan-out, lib/enrollment.ts) ---
+
+test("fanOutCapturedFingerprint - pushes to every other active enrollment, not the source device", async () => {
+  await freshDomainDb();
+  const employeeId = await makeEmployee("V30000001");
+  await makeEnrollment(employeeId, DEV_A, "7");
+  await makeEnrollment(employeeId, DEV_B, "12");
+  await db.runAsync(
+    `INSERT INTO employee_fingerprint (employee_id, finger_index, template, source_dev_id, updated_at)
+     VALUES (?, 0, ?, ?, now())`,
+    [employeeId, fakeTemplate(7), DEV_A]
+  );
+
+  const result = await enrollment.fanOutCapturedFingerprint(employeeId, DEV_A, [0]);
+  assert.equal(result.applied, true);
+  assert.equal(result.started, 1);
+  assert.deepEqual(result.notes, []);
+
+  const op = await db.getAsync<{ kind: string; dev_id: string; user_id: string }>(
+    `SELECT kind, dev_id, user_id FROM operations WHERE kind = 'PUSH_FINGERPRINT' ORDER BY id DESC LIMIT 1`
+  );
+  assert.equal(op?.dev_id, DEV_B, "pushes to the sibling enrollment, never back to the source device");
+  assert.equal(op?.user_id, "12");
+});
+
+test("fanOutCapturedFingerprint - no other enrollments: does nothing", async () => {
+  await freshDomainDb();
+  const employeeId = await makeEmployee("V30000002");
+  await makeEnrollment(employeeId, DEV_A, "7");
+  await db.runAsync(
+    `INSERT INTO employee_fingerprint (employee_id, finger_index, template, source_dev_id, updated_at)
+     VALUES (?, 0, ?, ?, now())`,
+    [employeeId, fakeTemplate(7), DEV_A]
+  );
+
+  const result = await enrollment.fanOutCapturedFingerprint(employeeId, DEV_A, [0]);
+  assert.equal(result.applied, false);
+  assert.equal(result.started, 0);
+});
+
+test("fanOutCapturedFingerprint - a failing target is reported as a note, not thrown", async () => {
+  await freshDomainDb();
+  const employeeId = await makeEmployee("V30000003");
+  await makeEnrollment(employeeId, DEV_A, "7");
+  // DEV_B enrollment deliberately missing a captured fingerprint row to push —
+  // startPushFingerprint refuses with a clear error, which must be caught and
+  // accumulated instead of blowing up the whole fan-out.
+  await makeEnrollment(employeeId, DEV_B, "12");
+
+  const result = await enrollment.fanOutCapturedFingerprint(employeeId, DEV_A, [3]);
+  assert.equal(result.applied, true);
+  assert.equal(result.started, 0);
+  assert.equal(result.notes.length, 1);
+  assert.match(result.notes[0], /DEV_B/);
+});
+
 test("startPushFingerprint - refuses when the employee has no captured fingerprint for that finger", async () => {
   await freshDomainDb();
   const employeeId = await makeEmployee("V10000003");
@@ -747,21 +806,23 @@ test("startAddEmployeeToDevice - a second call while one is in flight returns th
   assert.equal(first.id, second.id);
 });
 
-test("ADD_EMPLOYEE_TO_DEVICE - free id on first try: creates, verifies, links, done without fingerprints", async () => {
+test("ADD_EMPLOYEE_TO_DEVICE - uses the employee's cédula (digits only) as the device id", async () => {
   await freshDomainDb();
   const employeeId = await makeEmployee("V20000003");
 
   const { id: opId } = await ops.startAddEmployeeToDevice(DEV_B, { employeeId, userName: "Nueva" });
 
-  // Probe: GET_USER_INFO fails/empty — candidate id (1, no local users yet) is free.
+  // Probe: GET_USER_INFO fails/empty — the cédula-derived id is free.
   let cmd = await currentCommand(opId);
   assert.equal(cmd.cmd_code, "GET_USER_INFO");
+  assert.equal(JSON.parse(cmd.cmd_param ?? "{}").user_id, "20000003", "id must be the cédula, not a sequential number");
   await completeCurrentStep(opId, { ok: false, returnCode: "Error" });
 
   let op = await ops.getOperation(opId);
   assert.equal(op?.stage, "waiting");
   cmd = await currentCommand(opId);
   assert.equal(cmd.cmd_code, "SET_USER_INFO");
+  assert.equal(JSON.parse(cmd.cmd_param ?? "{}").user_id, "20000003");
 
   // Apply: not trusted on its own — verifies next, same as CREATE_USER.
   await completeCurrentStep(opId, { ok: true, resultJson: null });
@@ -773,7 +834,7 @@ test("ADD_EMPLOYEE_TO_DEVICE - free id on first try: creates, verifies, links, d
   // Verify: the device now confirms the new user.
   await completeCurrentStep(opId, {
     ok: true,
-    resultJson: { user_id: "1", user_name: "Nueva", user_privilege: "USER" },
+    resultJson: { user_id: "20000003", user_name: "Nueva", user_privilege: "USER" },
   });
   op = await ops.getOperation(opId);
   assert.equal(op?.stage, "done");
@@ -783,70 +844,31 @@ test("ADD_EMPLOYEE_TO_DEVICE - free id on first try: creates, verifies, links, d
     `SELECT device_user_id, status FROM employee_device_enrollment WHERE employee_id = ? AND dev_id = ?`,
     [employeeId, DEV_B]
   );
-  assert.equal(enrollment?.device_user_id, "1");
+  assert.equal(enrollment?.device_user_id, "20000003");
   assert.equal(enrollment?.status, "active");
 });
 
-test("ADD_EMPLOYEE_TO_DEVICE - retries the candidate id on collision, then succeeds", async () => {
+test("ADD_EMPLOYEE_TO_DEVICE - the cédula is already taken by someone else on the device: fails immediately, no retry", async () => {
   await freshDomainDb();
   const employeeId = await makeEmployee("V20000004");
 
   const { id: opId } = await ops.startAddEmployeeToDevice(DEV_B, { employeeId, userName: "Nueva" });
 
-  // Probe on candidate 1: taken.
+  // Probe: the cédula-derived id is already assigned to a different, real person.
   await completeCurrentStep(opId, {
     ok: true,
-    resultJson: { user_id: "1", user_name: "Ocupado", user_privilege: "USER" },
+    resultJson: { user_id: "20000004", user_name: "Otra Persona", user_privilege: "USER" },
   });
-  let op = await ops.getOperation(opId);
-  assert.equal(op?.stage, "waiting");
-  let cmd = await currentCommand(opId);
-  assert.equal(cmd.cmd_code, "GET_USER_INFO");
-  assert.equal(JSON.parse(cmd.cmd_param ?? "{}").user_id, "2", "must retry with the next candidate id");
-
-  // Probe on candidate 2: free.
-  await completeCurrentStep(opId, { ok: false, returnCode: "Error" });
-  cmd = await currentCommand(opId);
-  assert.equal(cmd.cmd_code, "SET_USER_INFO");
-  assert.equal(JSON.parse(cmd.cmd_param ?? "{}").user_id, "2");
-
-  await completeCurrentStep(opId, { ok: true, resultJson: null });
-  await completeCurrentStep(opId, {
-    ok: true,
-    resultJson: { user_id: "2", user_name: "Nueva", user_privilege: "USER" },
-  });
-
-  op = await ops.getOperation(opId);
-  assert.equal(op?.stage, "done");
-  const enrollment = await db.getAsync<{ device_user_id: string }>(
-    `SELECT device_user_id FROM employee_device_enrollment WHERE employee_id = ? AND dev_id = ?`,
-    [employeeId, DEV_B]
-  );
-  assert.equal(enrollment?.device_user_id, "2");
-});
-
-test("ADD_EMPLOYEE_TO_DEVICE - gives up after MAX_ID_ASSIGNMENT_ATTEMPTS collisions", async () => {
-  await freshDomainDb();
-  const employeeId = await makeEmployee("V20000005");
-
-  const { id: opId } = await ops.startAddEmployeeToDevice(DEV_B, { employeeId, userName: "Nueva" });
-
-  for (let i = 0; i < kinds.MAX_ID_ASSIGNMENT_ATTEMPTS; i++) {
-    await completeCurrentStep(opId, {
-      ok: true,
-      resultJson: { user_id: String(i + 1), user_name: "Ocupado", user_privilege: "USER" },
-    });
-  }
 
   const op = await ops.getOperation(opId);
   assert.equal(op?.stage, "error");
-  assert.match(op!.note ?? "", /No se pudo asignar un ID automáticamente/);
+  assert.match(op!.note ?? "", /ya está en uso en este equipo por "Otra Persona"/);
 
   const enrollment = await db.getAsync(
     `SELECT 1 FROM employee_device_enrollment WHERE employee_id = ? AND dev_id = ?`,
     [employeeId, DEV_B]
   );
-  assert.equal(enrollment, undefined, "must never link an enrollment when no id could be confirmed free");
+  assert.equal(enrollment, undefined, "must never link an enrollment when the cédula id was already taken by someone else");
 });
 
 test("ADD_EMPLOYEE_TO_DEVICE - copies already-captured fingerprints, tolerating one that fails to verify", async () => {
@@ -874,7 +896,7 @@ test("ADD_EMPLOYEE_TO_DEVICE - copies already-captured fingerprints, tolerating 
   // round trip waiting on user input.
   await completeCurrentStep(opId, {
     ok: true,
-    resultJson: { user_id: "1", user_name: "Nueva", user_privilege: "USER" },
+    resultJson: { user_id: "20000006", user_name: "Nueva", user_privilege: "USER" },
   });
   let op = await ops.getOperation(opId);
   assert.equal(op?.stage, "waiting");
@@ -884,19 +906,23 @@ test("ADD_EMPLOYEE_TO_DEVICE - copies already-captured fingerprints, tolerating 
     `SELECT cmd_binary FROM commands WHERE trans_id = ?`,
     [cmd.trans_id]
   );
-  assert.equal(firstBinary!.cmd_binary.readUInt32LE(608), 1, "user_id at offset 608 patched to the new candidate");
+  assert.equal(
+    firstBinary!.cmd_binary.readUInt32LE(608),
+    20000006,
+    "user_id at offset 608 patched to the employee's cédula"
+  );
 
   // Apply finger 0, then verify it landed.
   await completeCurrentStep(opId, { ok: true, resultJson: null });
   await completeCurrentStep(opId, {
     ok: true,
     resultJson: {
-      user_id: "1",
+      user_id: "20000006",
       user_name: "Nueva",
       user_privilege: "USER",
       enroll_data_array: [{ backup_number: 0, enroll_data: "BIN_1" }],
     },
-    binaries: [fakeTemplate(1)],
+    binaries: [fakeTemplate(20000006)],
   });
 
   // Chain moves on to finger 1 on its own.
@@ -909,7 +935,7 @@ test("ADD_EMPLOYEE_TO_DEVICE - copies already-captured fingerprints, tolerating 
   await completeCurrentStep(opId, { ok: true, resultJson: null });
   await completeCurrentStep(opId, {
     ok: true,
-    resultJson: { user_id: "1", user_name: "Nueva", user_privilege: "USER", enroll_data_array: [] },
+    resultJson: { user_id: "20000006", user_name: "Nueva", user_privilege: "USER", enroll_data_array: [] },
   });
 
   op = await ops.getOperation(opId);

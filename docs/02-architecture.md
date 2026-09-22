@@ -153,37 +153,56 @@ el modelo de dominio ya firmado (`08-data-model.md`) en vez de pedir el
 - Tests: `__tests__/operations.test.ts` (captura, huella no encontrada,
   destino sin enrolamiento, parche del `user_id` embebido, verify-mismatch).
 
-**`ADD_EMPLOYEE_TO_DEVICE` (2026-09-07)** cierra ese hueco: alta de un empleado
-en un equipo donde todavía no existe, en un solo paso desde su ficha, con la
-regla de negocio explícita del cliente — **nunca automático**: vincular a una
-empresa no agrega sola a ningún equipo, cada equipo se elige a mano (o varios a
-la vez, selección múltiple).
+**`ADD_EMPLOYEE_TO_DEVICE` (2026-09-07, revisado 2026-09-22)** da de alta a un
+empleado en un equipo donde todavía no existe, en un solo paso.
 
-- `lib/lookups.ts` → `loadDeviceCandidatesForEmployee(employeeId)`: equipos de
-  la empresa del empleo activo de la persona. Excluye equipos donde ya hay un
-  enrolamiento activo. (Hasta el 2026-09-08 esto ampliaba a padre+hermanas si
-  la empresa tenía `shared_employees` — se revirtió junto con toda la
-  jerarquía de empresas, ver `08-data-model.md` → "Enmienda 2026-09-08"; en la
-  práctica ningún cliente real necesitaba varias razones sociales compartiendo
-  empleados, y `site` ya cubre el caso real de varias ubicaciones.)
-- Asignación de `device_user_id`: `MAX(user_id::int)+1` entre los usuarios
-  numéricos ya sincronizados localmente de ese equipo como candidato inicial
-  (barato, evita ID fijo repetido entre equipos), con la sonda real
-  (`GET_USER_INFO`, igual que `CREATE_USER`) como única confirmación de que
-  está libre — reintenta con el siguiente entero hasta
-  `MAX_ID_ASSIGNMENT_ATTEMPTS` (5) veces ante colisión.
-- Esa sonda explota el mismo hallazgo de hardware real que `DELETE_USER`
-  (`05-commands-catalog.md` → `GET_USER_INFO`): un ID que existe responde en
-  segundos, uno libre nunca responde. El panel espera `PROBE_TIMEOUT_MS` (30s,
-  `lib/operations/advance.ts`) una vez entregado el comando antes de dar el
-  candidato por libre y seguir — corregido el 2026-09-08 tras una prueba en
-  vivo que reveló que el sondeo se quedaba esperando el timeout genérico de 3
-  minutos y terminaba en error incluso cuando el ID sí estaba libre.
+> **Nota (2026-09-22):** la jerarquía de empresas (grupo → empresa → sede) y
+> `shared_employees` que este documento daba por eliminadas (2026-09-08) **se
+> restauraron** — decisión cerrada en la Reunión 3 con el cliente
+> (`09-reunion-3-resumen.md` D1/D3): sí hay clientes reales con varias
+> razones sociales bajo un mismo grupo que necesitan compartir empleados. La
+> regla de "nunca automático" de este párrafo también se revirtió: **compartir
+> empleados al grupo ahora es automático** (D3, "no seleccionable en el flujo
+> normal") — ver el fan-out más abajo. `ADD_EMPLOYEE_TO_DEVICE` sigue siendo
+> el mecanismo de bajo nivel; lo que cambió es quién lo dispara y con qué ID.
+
+- **Fan-out automático al grupo (`lib/enrollment.ts` →
+  `fanOutEmployeeToGroup`)**: al crear o transferir un `employment`
+  (`app/admin/empleados/actions.ts`), si la empresa (o su grupo padre) tiene
+  `shared_employees` activo, se encola `ADD_EMPLOYEE_TO_DEVICE` para esa
+  persona en **todos** los equipos del grupo donde no tenga ya un
+  enrolamiento activo — no fatal, los fallos por equipo se acumulan y se
+  reportan.
+- **Alta manual (`AddEmployeeToDeviceDialog`, "+ Agregar a equipo")**: ahora
+  es específicamente para la excepción que el fan-out no cubre — un equipo de
+  otra empresa/grupo. `lib/lookups.ts` → `loadDeviceCandidatesForEmployee`
+  por eso muestra equipos de **cualquier** empresa (no solo la del empleo
+  activo), excluyendo los que ya tienen enrolamiento.
+- **`device_user_id` = cédula del empleado, sin prefijo** (Reunión 3 D4: "el
+  ID del biométrico es la cédula, en todos los equipos" — es la llave de la
+  futura migración por cédula↔cédula contra el Excel de Adempiere). Reemplaza
+  el `MAX(user_id::int)+1` autoincremental de antes. Una colisión (el número
+  ya está en uso en el equipo por *otra* identidad) ya **no se reintenta con
+  el siguiente entero** — eso rompería la invariante ID=cédula — la operación
+  termina en `error` de inmediato pidiendo revisión humana de ese usuario en
+  el equipo.
+- La sonda (`GET_USER_INFO` sobre la cédula candidata) explota el mismo
+  hallazgo de hardware real que `DELETE_USER` (`05-commands-catalog.md` →
+  `GET_USER_INFO`): un ID que existe responde en segundos, uno libre nunca
+  responde. El panel espera `PROBE_TIMEOUT_MS` (30s, `lib/operations/advance.ts`)
+  una vez entregado el comando antes de dar la cédula por libre y seguir.
 - Una vez creado y vinculado (`employee_device_enrollment`), si la persona ya
   tiene huellas en `employee_fingerprint`, se copian todas de una sola vez con
   la misma receta de `PUSH_FINGERPRINT` (parche del offset 608 + verify
   posterior) — sin pasos manuales extra. Un fallo en una huella individual no
   aborta las demás (mismo criterio que `SYNC_USERS`).
+- **Fan-out de captura (`lib/enrollment.ts` → `fanOutCapturedFingerprint`,
+  2026-09-22)**: cierra el hueco que dejaba el fan-out de alta — crea cuentas
+  en todo el grupo, pero ninguna tiene huella hasta que alguien la registra
+  físicamente en un equipo. Al terminar `CAPTURE_FINGERPRINT` con éxito,
+  `lib/handlers/protocol-handlers.ts` dispara esto solo: empuja la huella
+  recién capturada a cualquier otro enrolamiento activo de la misma persona
+  (típicamente las cuentas vacías del fan-out de alta), sin pasos manuales.
 - El privilegio pedido se aplica **al final**, después de copiar huellas, no
   al crear. Hallazgo de hardware real (2026-09-08,
   `05-commands-catalog.md` → `SET_USER_PRIVILEGE`): un privilegio elevado

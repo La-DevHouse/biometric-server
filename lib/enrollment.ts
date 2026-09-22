@@ -4,7 +4,7 @@
 // operación ADD_EMPLOYEE_TO_DEVICE por equipo. No es fatal: los fallos por
 // equipo se acumulan y se reportan, no bloquean el alta del contrato.
 import { prisma } from "@/lib/db";
-import { startAddEmployeeToDevice } from "@/lib/operations";
+import { startAddEmployeeToDevice, startPushFingerprint } from "@/lib/operations";
 
 export interface GroupFanOutResult {
   applied: boolean; // false si el grupo no comparte empleados
@@ -84,6 +84,42 @@ export async function fanOutEmployeeToGroup(
       result.started++;
     } catch (e) {
       result.notes.push(`${d.dev_id}: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+  return result;
+}
+
+/**
+ * Tras capturar una huella (CAPTURE_FINGERPRINT), la empuja sola a cualquier
+ * otro enrolamiento activo de la misma persona que no sea el equipo de
+ * origen — típicamente cuentas vacías que dejó el fan-out de alta al grupo
+ * (arriba: crea el usuario en todos los equipos, pero nadie tiene huella
+ * hasta que alguien la registra físicamente en uno y se captura). Sin esto,
+ * había que copiarla a mano equipo por equipo. No fatal: los fallos por
+ * equipo se acumulan y se reportan, igual que el fan-out de alta.
+ */
+export async function fanOutCapturedFingerprint(
+  employeeId: number,
+  sourceDevId: string,
+  fingerIndexes: number[]
+): Promise<GroupFanOutResult> {
+  if (fingerIndexes.length === 0) return NOOP;
+
+  const siblings = await prisma.employee_device_enrollment.findMany({
+    where: { employee_id: employeeId, status: "active", dev_id: { not: sourceDevId } },
+    select: { dev_id: true },
+  });
+  if (siblings.length === 0) return NOOP;
+
+  const result: GroupFanOutResult = { applied: true, started: 0, skipped: 0, notes: [] };
+  for (const sib of siblings) {
+    for (const fingerIndex of fingerIndexes) {
+      try {
+        await startPushFingerprint(employeeId, fingerIndex, sib.dev_id);
+        result.started++;
+      } catch (e) {
+        result.notes.push(`${sib.dev_id} (dedo ${fingerIndex}): ${e instanceof Error ? e.message : String(e)}`);
+      }
     }
   }
   return result;

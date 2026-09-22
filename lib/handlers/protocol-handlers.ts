@@ -17,7 +17,8 @@ import {
 import { logRawTraffic } from "./index";
 import { upsertUserFromInfo, upsertDeviceStatus } from "@/lib/operations/persist";
 import { advanceOperationForCommand, sweepStaleOperations } from "@/lib/operations/advance";
-import { finishOperation } from "@/lib/operations/queue";
+import { finishOperation, getOperationRow } from "@/lib/operations/queue";
+import { fanOutCapturedFingerprint } from "@/lib/enrollment";
 
 const NO_CMD_STRATEGY = process.env.NO_CMD_STRATEGY || "ok_empty";
 
@@ -288,6 +289,24 @@ export async function handleSendCmdResult(
       } catch (inner) {
         console.error("[operations] no se pudo ni registrar el fallo:", inner);
       }
+    }
+
+    // Si esto acaba de completar una captura de huella, empujarla sola a
+    // cualquier otro equipo donde la persona ya tenga cuenta (fan-out de
+    // captura — ver lib/enrollment.ts). Aparte del try/catch de arriba: un
+    // fallo acá no debe tocar el resultado ya guardado de CAPTURE_FINGERPRINT.
+    try {
+      const op = await getOperationRow(command.op_id);
+      if (op?.kind === "CAPTURE_FINGERPRINT" && op.stage === "done") {
+        const plan = op.plan_json ? JSON.parse(op.plan_json) : {};
+        const params = op.params_json ? JSON.parse(op.params_json) : {};
+        const fingerIndexes: number[] = Array.isArray(plan.capturedFingers) ? plan.capturedFingers : [];
+        if (params.employeeId && fingerIndexes.length > 0) {
+          await fanOutCapturedFingerprint(params.employeeId, op.dev_id, fingerIndexes);
+        }
+      }
+    } catch (err) {
+      console.error("[operations] fallo al propagar huella capturada:", command.op_id, err);
     }
   }
 

@@ -85,12 +85,6 @@ export const OPERATION_LABELS: Record<OperationKind, string> = {
   ADD_EMPLOYEE_TO_DEVICE: "Agregar empleado al equipo",
 };
 
-// Cuántos IDs numéricos consecutivos se prueban como máximo antes de rendirse
-// y pedir uno manual — cada intento sobre un ID YA ocupado responde rápido
-// (verificado contra hardware real), así que este tope no implica N × 3
-// minutos en la práctica, solo en el peor caso patológico.
-export const MAX_ID_ASSIGNMENT_ATTEMPTS = 5;
-
 // 0-9 = dedos (verificado: WS535BW1_BSCS_v1.5.31 solo entrega la forma limpia
 // de 612 bytes por GET_USER_INFO para este rango; 10/11/12 = password/tarjeta/
 // rostro, fuera de alcance de la migración de huellas por ahora — ver

@@ -59,24 +59,23 @@ export interface DeviceCandidate {
 }
 
 /**
- * Equipos candidatos para "agregar empleado a dispositivo": los de la(s)
- * empresa(s) de sus empleos activos — decisión explícita: nunca automático
- * más allá de mostrar la lista. Excluye equipos donde la persona ya tiene
- * un enrolamiento activo.
+ * Equipos candidatos para "agregar empleado a dispositivo" (uso manual). El
+ * fan-out automático al grupo (lib/enrollment.ts) ya cubre el caso normal —
+ * este selector es para la excepción: un equipo de otra empresa o de otro
+ * grupo (Reunión 3, docs/09 D3: "no seleccionable en el flujo normal", o sea
+ * el flujo manual es justo para lo que el fan-out no alcanza). Por eso
+ * muestra equipos de **cualquier** empresa, no solo la(s) del empleo activo
+ * de la persona. Excluye equipos donde ya tiene un enrolamiento activo.
  */
 export async function loadDeviceCandidatesForEmployee(employeeId: number): Promise<DeviceCandidate[]> {
-  const employments = await prisma.employment.findMany({
-    where: { employee_id: employeeId, status: "active" },
-    select: { company_id: true },
-  });
-
-  const companyIds = new Set(employments.map((em) => em.company_id));
-  if (companyIds.size === 0) return [];
-
   const [devices, activeEnrollments] = await Promise.all([
     prisma.devices.findMany({
-      where: { company_id: { in: [...companyIds] } },
-      select: { dev_id: true, fk_name: true, company: { select: { name: true } } },
+      select: {
+        dev_id: true,
+        fk_name: true,
+        company: { select: { name: true } },
+        site: { select: { name: true } },
+      },
       orderBy: { dev_id: "asc" },
     }),
     prisma.employee_device_enrollment.findMany({
@@ -88,8 +87,11 @@ export async function loadDeviceCandidatesForEmployee(employeeId: number): Promi
   const alreadyLinked = new Set(activeEnrollments.map((e) => e.dev_id));
   return devices
     .filter((d) => !alreadyLinked.has(d.dev_id))
-    .map((d) => ({
-      devId: d.dev_id,
-      label: `${d.fk_name || d.dev_id}${d.company ? ` — ${d.company.name}` : ""}`,
-    }));
+    .map((d) => {
+      const place = [d.company?.name, d.site?.name].filter(Boolean).join(" — ");
+      return {
+        devId: d.dev_id,
+        label: `${d.fk_name || d.dev_id}${place ? ` — ${place}` : ""}`,
+      };
+    });
 }

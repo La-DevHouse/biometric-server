@@ -15,11 +15,14 @@ export interface DeviceCandidateOption {
 }
 
 /**
- * Alta de un empleado en uno o varios equipos a la vez — nunca automática:
- * cada envío es una elección manual explícita de equipos, aunque sean
- * varios. Dispara una operación ADD_EMPLOYEE_TO_DEVICE por equipo elegido;
- * el ID de usuario se asigna solo (con reintento ante colisión) y, si la
- * persona ya tiene huellas capturadas, se copian de una vez.
+ * Alta manual en uno o varios equipos a la vez — para el caso excepcional
+ * que el fan-out automático al grupo no cubre (Reunión 3, docs/09 D3: al
+ * activar un contrato ya se enrola sola en todos los equipos del grupo con
+ * "empleados compartidos"; esto es para un equipo de OTRA empresa/grupo).
+ * Por eso `candidates` incluye equipos de cualquier empresa, no solo la
+ * propia. Dispara una operación ADD_EMPLOYEE_TO_DEVICE por equipo elegido;
+ * el ID de usuario es la cédula del empleado, y si ya tiene huellas
+ * capturadas se copian de una vez.
  */
 export function AddEmployeeToDeviceDialog({
   employeeId,
@@ -48,9 +51,10 @@ export function AddEmployeeToDeviceDialog({
       <Dialog open={open} onClose={close} closable={!busy} title="Agregar empleado a equipo(s)">
         <div className="flex flex-col gap-3">
           <p className="m-0 text-xs text-text/70">
-            Solo se muestran los equipos de la empresa (y su grupo, si tiene empleados
-            compartidos activo) donde esta persona todavía no está vinculada. Elegí uno o varios
-            — nunca se agrega solo a todos.
+            Los equipos del grupo de esta persona ya se enrolan solos al darle un contrato — usá
+            esto solo para un equipo de otra empresa. Se muestran todos los equipos donde todavía
+            no está vinculada, de cualquier empresa. Elegí uno o varios — nunca se agrega solo a
+            todos.
           </p>
           {ops.length === 0 && (
             <form action={formAction} className="flex flex-col gap-3">
@@ -78,7 +82,7 @@ export function AddEmployeeToDeviceDialog({
                 <legend className="p-0 mb-1">Equipos *</legend>
                 {candidates.length === 0 ? (
                   <span className="text-text/70">
-                    No hay equipos disponibles — o ya está vinculada en todos los de su empresa/grupo.
+                    No hay equipos disponibles — ya está vinculada en todos los equipos registrados.
                   </span>
                 ) : (
                   <div className="flex flex-col gap-1.5 max-h-[8rem] overflow-y-auto">

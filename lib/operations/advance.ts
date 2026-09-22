@@ -7,7 +7,7 @@
 
 import { decodeUserIdList, decodeLogData, resolveBinaryRef } from "@/lib/protocol";
 import { runAsync, allAsync, getAsync, prisma, NOW_MS } from "@/lib/db";
-import { TERMINAL_STAGES, OperationKind, MAX_ID_ASSIGNMENT_ATTEMPTS, MAX_FINGERPRINT_INDEX } from "./kinds";
+import { TERMINAL_STAGES, OperationKind, MAX_FINGERPRINT_INDEX } from "./kinds";
 import { getOperationRow, setStage, finishOperation, queueCommandForOperation, OperationRow } from "./queue";
 import { insertAttendanceLogs, upsertUserFromInfo, UserInfoResult } from "./persist";
 
@@ -60,7 +60,6 @@ interface PushFingerprintParams {
 interface AddEmployeeToDevicePlan {
   phase: "probe" | "create" | "verify_create" | "push" | "verify_push" | "apply_privilege" | "verify_privilege";
   candidateId: number;
-  attempt: number;
   userName: string;
   privilege: string;
   pendingFingers: number[];
@@ -495,6 +494,17 @@ async function advanceCaptureFingerprint(op: OperationRow, input: AdvanceInput):
     captured.length === 1
       ? `1 huella capturada (slot ${captured[0]}) desde este equipo.`
       : `${captured.length} huellas capturadas (slots ${captured.join(", ")}) desde este equipo.`;
+  // Se guarda qué dedos se capturaron en el propio plan (CAPTURE_FINGERPRINT
+  // no lo usaba hasta ahora) para que protocol-handlers.ts pueda, tras leer
+  // "done", empujar la huella sola a cualquier otro enrolamiento activo de la
+  // misma persona que todavía no la tenga — típicamente cuentas vacías que
+  // dejó el fan-out de alta al grupo (lib/enrollment.ts). No se hace acá
+  // porque requeriría importar lib/operations/index.ts desde advance.ts, lo
+  // que crea un ciclo (index.ts ya importa de acá).
+  await runAsync(`UPDATE operations SET plan_json = ? WHERE id = ?`, [
+    JSON.stringify({ capturedFingers: captured }),
+    op.id,
+  ]);
   await finishOperation(op.id, "done", failed.length > 0 ? `${note} ${failed.length} fallaron.` : note);
 }
 
@@ -565,7 +575,6 @@ async function advanceAddEmployeeToDevice(op: OperationRow, input: AdvanceInput)
     : {
         phase: "probe",
         candidateId: 1,
-        attempt: 1,
         userName: "",
         privilege: "USER",
         pendingFingers: [],
@@ -577,25 +586,23 @@ async function advanceAddEmployeeToDevice(op: OperationRow, input: AdvanceInput)
     : { employeeId: 0 };
 
   if (plan.phase === "probe") {
+    // El candidato es la cédula del empleado (decisión Reunión 3, docs/09 §3.6:
+    // "el ID del biométrico es la cédula, en todos los equipos" — es la llave
+    // de la futura migración por cédula↔cédula). A diferencia del ID numérico
+    // autoincremental de antes, una colisión acá NO se resuelve probando el
+    // siguiente número — eso rompería la invariante "ID = cédula". Una
+    // colisión real significa que ese número ya está ocupado por otra
+    // identidad en el equipo (dato viejo, o un admin de sede creó un usuario a
+    // mano) y requiere revisión humana, no un reintento automático.
     const existingName = input.ok ? input.resultJson?.user_name : null;
     if (existingName) {
-      if (plan.attempt >= MAX_ID_ASSIGNMENT_ATTEMPTS) {
-        await finishOperation(
-          op.id,
-          "error",
-          `No se pudo asignar un ID automáticamente tras ${plan.attempt} intentos (el último, ${plan.candidateId}, ` +
-            `ya está en uso por "${existingName}"). Reintentá la operación — el próximo intento partirá de un ID más alto.`
-        );
-        return;
-      }
-      const nextCandidate = plan.candidateId + 1;
-      const nextPlan: AddEmployeeToDevicePlan = {
-        ...plan,
-        candidateId: nextCandidate,
-        attempt: plan.attempt + 1,
-      };
-      await setStage(op.id, "waiting", { plan: nextPlan });
-      await queueCommandForOperation(op.id, op.dev_id, "GET_USER_INFO", { user_id: String(nextCandidate) });
+      await finishOperation(
+        op.id,
+        "error",
+        `El ID ${plan.candidateId} (cédula) ya está en uso en este equipo por "${existingName}" — no es esta ` +
+          "persona. No se puede asignar automáticamente porque el ID debe ser la cédula; revisá ese usuario " +
+          "directamente en el equipo antes de reintentar."
+      );
       return;
     }
     const nextPlan: AddEmployeeToDevicePlan = { ...plan, phase: "create" };

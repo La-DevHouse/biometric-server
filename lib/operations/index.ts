@@ -471,12 +471,23 @@ export async function startPushFingerprint(
 
 // ---------------------------------------------------------------------------
 // Alta de empleado en un equipo nuevo — ver docs/02-architecture.md
-// ("Agregar empleado al equipo"). Nunca automático: cada equipo se elige a
-// mano (o en lote, varios a la vez), nunca se propaga solo al vincular a una
-// empresa. El ID de usuario se asigna solo, con reintento ante colisión (ver
-// advanceAddEmployeeToDevice); si la persona ya tiene huellas capturadas
-// (employee_fingerprint) se copian de una vez, sin pasos manuales extra.
+// ("Agregar empleado al equipo"). El fan-out automático al grupo (lib/enrollment.ts)
+// llama a esto solo; el uso manual ("+ Agregar a equipo") es para el caso
+// excepcional fuera del grupo (Reunión 3, docs/09 D3). El ID de usuario es la
+// cédula del empleado, sin prefijo (Reunión 3 D4: "el ID del biométrico es la
+// cédula, en todos los equipos" — llave de la migración) — una colisión con
+// esa cédula en el equipo es un conflicto real, no algo que se resuelva
+// probando otro número (ver advanceAddEmployeeToDevice). Si la persona ya
+// tiene huellas capturadas (employee_fingerprint) se copian de una vez, sin
+// pasos manuales extra.
 // ---------------------------------------------------------------------------
+
+/** Cédula sin prefijo de nacionalidad, para usar como device_user_id — decisión
+ * Reunión 3 (docs/09 §3.6): el ID del biométrico es la cédula, en todos los
+ * equipos, sin el prefijo V/E/J/G que sí lleva `employee.national_id`. */
+function cedulaDigits(nationalId: string): string {
+  return nationalId.replace(/\D/g, "");
+}
 
 export interface AddEmployeeToDeviceInput {
   employeeId: number;
@@ -510,16 +521,16 @@ export async function startAddEmployeeToDevice(
   const existing = await findActiveOperation("ADD_EMPLOYEE_TO_DEVICE", devId, opUserKey);
   if (existing) return { id: existing };
 
-  // Candidato inicial: MAX(user_id)+1 entre los usuarios numéricos ya
-  // sincronizados localmente de este equipo. Es solo un punto de partida
-  // barato — el paso "probe" (GET_USER_INFO contra el equipo real, con
-  // reintento) es lo único que de verdad protege contra colisión, igual que
-  // ya hace CREATE_USER.
-  const maxRow = await getAsync<{ max_id: number | null }>(
-    `SELECT MAX(user_id::int) AS max_id FROM users WHERE dev_id = ? AND user_id ~ '^[0-9]+$'`,
-    [devId]
-  );
-  const candidateId = (maxRow?.max_id ?? 0) + 1;
+  const cedula = cedulaDigits(employee.national_id);
+  if (!cedula) {
+    throw new Error(
+      `La cédula del empleado ("${employee.national_id}") no tiene dígitos utilizables como ID de equipo.`
+    );
+  }
+  const candidateId = Number(cedula);
+  if (!Number.isSafeInteger(candidateId)) {
+    throw new Error(`La cédula del empleado ("${employee.national_id}") es demasiado larga para usarse como ID.`);
+  }
 
   const truncatedName = truncateUserName(userName);
   const privilege: Privilege = input.privilege ?? "USER";
@@ -544,7 +555,7 @@ export async function startAddEmployeeToDevice(
     offlineWarning(dev)
   );
 
-  const label = `${OPERATION_LABELS.ADD_EMPLOYEE_TO_DEVICE} "${truncatedName}" (candidato ${candidateId})`;
+  const label = `${OPERATION_LABELS.ADD_EMPLOYEE_TO_DEVICE} "${truncatedName}" (cédula ${candidateId})`;
   const id = await createOperation({
     kind: "ADD_EMPLOYEE_TO_DEVICE",
     label,
