@@ -90,11 +90,12 @@ const CEDULA_SCHEMA = {
   required: ["prefix", "number", "firstName", "lastName"],
 };
 
-const RIF_PROMPT = `Esta es una foto (no un PDF) del comprobante de RIF (Registro Único de
-Información Fiscal) emitido por el SENIAT de Venezuela. Tiene un encabezado
-"REGISTRO ÚNICO DE INFORMACIÓN FISCAL (RIF)", luego una línea con el
-prefijo+número del RIF (ej. "V267500432" o "J111222334") seguida del nombre o
-razón social, luego un campo "DOMICILIO FISCAL" con la dirección.
+const RIF_PROMPT = `Este es el comprobante de RIF (Registro Único de Información Fiscal)
+emitido por el SENIAT de Venezuela — puede ser una foto o un PDF (incluido uno
+escaneado, sin texto seleccionable). Tiene un encabezado "REGISTRO ÚNICO DE
+INFORMACIÓN FISCAL (RIF)", el prefijo+número del RIF (ej. "V267500432" o
+"J111222334", a veces bajo la etiqueta "RIF:"), el nombre o razón social, y un
+campo "DOMICILIO FISCAL" (con o sin dos puntos) con la dirección.
 
 Extraé exactamente estos datos:
 - taxIdPrefix: una letra de V, E, J, G, P.

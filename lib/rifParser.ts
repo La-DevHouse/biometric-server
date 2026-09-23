@@ -9,6 +9,11 @@
 //   (Este contribuyente no posee firmas personales)
 //   FECHA DE INSCRIPCIÓN: 28/10/2016
 // El mismo layout aplica a RIF de empresa (prefijo J/G en vez de V/E).
+//
+// "RIF Digital v2.0" (formato nuevo, verificado 2026-09-22): mismo prefijo+
+// número pegado (ej. J508624688), pero "DOMICILIO FISCAL:" lleva dos puntos y
+// hay un header "DATOS DE REGISTRO Y VIGENCIA" entre el domicilio y la fecha
+// de inscripción — ambos contemplados abajo sin romper el formato viejo.
 
 export interface RifExtractedFields {
   taxIdPrefix: string; // V | E | J | G | P
@@ -19,12 +24,13 @@ export interface RifExtractedFields {
 
 const RIF_PREFIXES = new Set(["V", "E", "J", "G", "P"]);
 
-// Prefijo+número, luego la razón social hasta "DOMICILIO FISCAL", luego el
+// Prefijo+número, luego la razón social hasta "DOMICILIO FISCAL[:]", luego el
 // domicilio hasta "FECHA DE INSCRIPCIÓN" — saltando el paréntesis opcional
-// "(Este contribuyente no posee firmas personales)" que aparece en algunos
-// comprobantes de persona natural.
+// "(Este contribuyente no posee firmas personales)" (formato viejo, persona
+// natural) y el header opcional "DATOS DE REGISTRO Y VIGENCIA" (formato
+// nuevo, RIF Digital v2.0).
 const RIF_PATTERN =
-  /\b([VEJGP])[\s.-]?(\d{8,10})\b\s+(.+?)\s+DOMICILIO FISCAL\s+(.+?)\s*(?:\(Este contribuyente[^)]*\)\s*)?FECHA DE INSCRIPCI[OÓ]N/i;
+  /\b([VEJGP])[\s.-]?(\d{8,10})\b\s+(.+?)\s+DOMICILIO FISCAL:?\s+(.+?)\s*(?:\(Este contribuyente[^)]*\)\s*)?(?:DATOS DE REGISTRO Y VIGENCIA\s*)?FECHA DE INSCRIPCI[OÓ]N/i;
 
 export function parseRifText(rawText: string): { fields: RifExtractedFields } | { error: string } {
   const norm = rawText.replace(/\s+/g, " ").trim();

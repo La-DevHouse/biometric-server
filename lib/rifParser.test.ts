@@ -63,6 +63,36 @@ test("parseRifText - empresa, sin la nota de firmas personales", () => {
   }
 });
 
+// "RIF Digital v2.0" (verificado 2026-09-22): "DOMICILIO FISCAL:" con dos
+// puntos y un header "DATOS DE REGISTRO Y VIGENCIA" antes de la fecha.
+const COMPANY_RIF_V2 = `
+REGISTRO ÚNICO DE INFORMACIÓN FISCAL (RIF)
+IDENTIFICACIÓN DEL CONTRIBUYENTE
+RIF: J111222333
+COMERCIAL DEMO DOS, C.A
+DOMICILIO FISCAL:
+AV BOLIVAR EDIF DEMO PISO 2 LOCAL 5
+VALENCIA ZONA POSTAL 2001
+DATOS DE REGISTRO Y VIGENCIA
+FECHA DE INSCRIPCIÓN 01/02/2020
+ÚLTIMA ACTUALIZACIÓN 15/03/2026
+N° COMPROBANTE: 202603X0000000000001
+GERENCIA REGIONAL DE TRIBUTOS INTERNOS REGIÓN CENTRAL
+1111222333-CVT
+FIRMA AUTORIZADA / SISTEMA
+`;
+
+test("parseRifText - RIF Digital v2.0 (DOMICILIO FISCAL con dos puntos + header nuevo)", () => {
+  const result = parseRifText(COMPANY_RIF_V2);
+  assert.ok("fields" in result, "esperaba parsear sin error");
+  if ("fields" in result) {
+    assert.equal(result.fields.taxIdPrefix, "J");
+    assert.equal(result.fields.taxIdNumber, "111222333");
+    assert.equal(result.fields.businessName, "COMERCIAL DEMO DOS, C.A");
+    assert.equal(result.fields.address, "AV BOLIVAR EDIF DEMO PISO 2 LOCAL 5 VALENCIA ZONA POSTAL 2001");
+  }
+});
+
 test("parseRifText - texto vacío", () => {
   const result = parseRifText("   ");
   assert.ok("error" in result);

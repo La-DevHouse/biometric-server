@@ -100,8 +100,10 @@ export function CompanyFormDialog({
 
   // Un solo punto de entrada para "subir archivo" — PDF (comprobante del
   // SENIAT) o foto van al mismo botón, y se enrutan según el MIME type al
-  // parser determinístico (PDF) o a Gemini (foto). La cámara siempre da una
-  // foto, así que reusa la misma rama.
+  // parser determinístico (PDF) o a Gemini (foto). Si el PDF es escaneado (o
+  // el layout no matchea), parseRifPdfAction reintenta con Gemini del lado
+  // del servidor sin que el usuario tenga que resubir nada. La cámara
+  // siempre da una foto, así que reusa la misma rama.
   async function handleRifFile(file: File) {
     setRifParsing(true);
     try {

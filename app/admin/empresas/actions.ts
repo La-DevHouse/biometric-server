@@ -399,8 +399,11 @@ export async function resyncGroupEnrollmentsAction(
 /**
  * Lee un PDF del comprobante de RIF (SENIAT) y devuelve los campos para
  * precargar el form de empresa. No crea ni modifica nada — el usuario revisa
- * y confirma con "Crear empresa"/"Guardar cambios" como siempre. Parser
- * determinístico (lib/rifParser.ts), sin IA: el PDF trae texto real.
+ * y confirma con "Crear empresa"/"Guardar cambios" como siempre. Primero
+ * intenta el parser determinístico (lib/rifParser.ts, sin IA, para el caso
+ * normal de PDF con texto real). Si eso falla — PDF escaneado sin capa de
+ * texto, o un layout que el regex todavía no reconoce — reintenta con Gemini
+ * (lib/documentVision.ts), que acepta el PDF directamente como documento.
  */
 export async function parseRifPdfAction(
   fd: FormData
@@ -413,16 +416,26 @@ export async function parseRifPdfAction(
     return { ok: false, error: "El archivo debe ser un PDF (el comprobante del SENIAT)." };
   if (file.size > 5 * 1024 * 1024) return { ok: false, error: "El PDF no puede superar 5 MB." };
 
-  let text: string;
+  const buf = Buffer.from(await file.arrayBuffer());
+
+  let text = "";
   try {
-    text = await extractPdfText(Buffer.from(await file.arrayBuffer()));
-  } catch (e) {
-    return { ok: false, error: e instanceof Error ? `No se pudo leer el PDF: ${e.message}` : "No se pudo leer el PDF." };
+    text = await extractPdfText(buf);
+  } catch {
+    // Puede ser un PDF escaneado (pdf-parse no encuentra texto) — seguimos
+    // al fallback de Gemini en vez de cortar acá.
   }
 
   const parsed = parseRifText(text);
-  if ("error" in parsed) return { ok: false, error: parsed.error };
-  return { ok: true, fields: parsed.fields };
+  if ("fields" in parsed) return { ok: true, fields: parsed.fields };
+
+  try {
+    const fields = await extractRifPhoto(buf, "application/pdf");
+    return { ok: true, fields };
+  } catch (e) {
+    const visionError = e instanceof Error ? e.message : "fallo desconocido";
+    return { ok: false, error: `${parsed.error} (fallback con IA también falló: ${visionError})` };
+  }
 }
 
 /**
