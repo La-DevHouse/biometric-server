@@ -5,7 +5,6 @@ import { Dialog } from "@/components/ui/Dialog";
 import { Btn } from "@/components/ui/Btn";
 import { IconBtn } from "@/components/ui/IconBtn";
 import { Icon } from "@/components/ui/icons";
-import { OperationProgress, OperationResult } from "./OperationStatus";
 import { useOperation } from "./useOperation";
 import { createUserAction } from "@/app/admin/actions";
 // Directo de kinds.ts, no del barrel @/lib/operations — ese barrel arrastra
@@ -18,12 +17,11 @@ export function CreateUserDialog({ devId }: { devId: string }) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const formId = useId();
-  const { formAction, startError, startWarning, op, busy, reset } = useOperation(createUserAction);
+  const { formAction, startError, busy } = useOperation(createUserAction, { onStarted: close });
 
   function close() {
     setOpen(false);
     setName("");
-    reset();
   }
 
   const truncated = name.trim().slice(0, 8);
@@ -38,67 +36,54 @@ export function CreateUserDialog({ devId }: { devId: string }) {
         closable={!busy}
         title="Crear usuario nuevo"
         footer={
-          !op && (
-            <Btn type="submit" form={formId} variant="primary" disabled={busy}>
-              {busy ? "Enviando…" : "Crear usuario"}
-            </Btn>
-          )
+          <Btn type="submit" form={formId} variant="primary" disabled={busy}>
+            {busy ? "Enviando…" : "Crear usuario"}
+          </Btn>
         }
       >
         <div className="flex flex-col gap-3">
-          {!op && (
-            <>
+          <p className="text-xs text-text/70 m-0">
+            Solo para gente que todavía no existe en el equipo — registra su ID, nombre y
+            privilegio. La huella se agrega después, físicamente en el dispositivo; si el ID ya
+            existe, esto se niega a tocarlo (no sobreescribe ni &quot;resetea&quot; a nadie).
+          </p>
+          <p className="text-xs text-text/70 m-0">
+            Antes de crear, se confirma con el equipo que el ID esté realmente libre — es lo que
+            evita arruinar las huellas de alguien que ya existe. Corre en segundo plano: el avance
+            aparece en el panel “Procesando”.
+          </p>
+          <form id={formId} action={formAction} className="flex flex-col gap-3">
+            <input type="hidden" name="dev_id" value={devId} />
+            <label className="flex flex-col gap-1 text-xs text-text/85">
+              ID de usuario
+              <input type="text" name="user_id" required className={INPUT_CLASS} autoFocus />
+            </label>
+            <label className="flex flex-col gap-1 text-xs text-text/85">
+              Nombre
+              <input
+                type="text"
+                name="user_name"
+                required
+                className={INPUT_CLASS}
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+              />
+            </label>
+            {willTruncate && (
               <p className="text-xs text-text/70 m-0">
-                Solo para gente que todavía no existe en el equipo — registra su ID, nombre y
-                privilegio. La huella se agrega después, físicamente en el dispositivo; si el ID ya
-                existe, esto se niega a tocarlo (no sobreescribe ni &quot;resetea&quot; a nadie).
+                El dispositivo trunca los nombres a 8 caracteres: se guardará como{" "}
+                <span className="font-mono text-text">&quot;{truncated}&quot;</span>.
               </p>
-              <p className="text-xs text-text/70 m-0">
-                Puede tardar hasta 30 segundos: antes de crear, se confirma con el equipo que el ID
-                esté realmente libre, y esa comprobación es lenta por diseño — es lo que evita
-                arruinar las huellas de alguien que ya existe.
-              </p>
-              <form id={formId} action={formAction} className="flex flex-col gap-3">
-                <input type="hidden" name="dev_id" value={devId} />
-                <label className="flex flex-col gap-1 text-xs text-text/85">
-                  ID de usuario
-                  <input type="text" name="user_id" required className={INPUT_CLASS} autoFocus />
-                </label>
-                <label className="flex flex-col gap-1 text-xs text-text/85">
-                  Nombre
-                  <input
-                    type="text"
-                    name="user_name"
-                    required
-                    className={INPUT_CLASS}
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                  />
-                </label>
-                {willTruncate && (
-                  <p className="text-xs text-text/70 m-0">
-                    El dispositivo trunca los nombres a 8 caracteres: se guardará como{" "}
-                    <span className="font-mono text-text">&quot;{truncated}&quot;</span>.
-                  </p>
-                )}
-                <label className="flex flex-col gap-1 text-xs text-text/85">
-                  Privilegio inicial
-                  <select name="user_privilege" className={INPUT_CLASS} defaultValue="USER">
-                    <option value="USER">{PRIVILEGE_SCREEN_LABEL.USER}</option>
-                    <option value="MANAGER">{PRIVILEGE_SCREEN_LABEL.MANAGER}</option>
-                  </select>
-                </label>
-                {startError && <p className="text-sm m-0 text-text">{startError}</p>}
-              </form>
-            </>
-          )}
-          {op && !op.isTerminal && (
-            <div className="flex flex-col gap-2">
-              {startWarning && <p className="text-xs text-text/70 m-0">{startWarning}</p>}
-              <OperationProgress op={op} />
-            </div>
-          )}
-          {op?.isTerminal && <OperationResult op={op} onClose={close} />}
+            )}
+            <label className="flex flex-col gap-1 text-xs text-text/85">
+              Privilegio inicial
+              <select name="user_privilege" className={INPUT_CLASS} defaultValue="USER">
+                <option value="USER">{PRIVILEGE_SCREEN_LABEL.USER}</option>
+                <option value="MANAGER">{PRIVILEGE_SCREEN_LABEL.MANAGER}</option>
+              </select>
+            </label>
+            {startError && <p className="text-sm m-0 text-text">{startError}</p>}
+          </form>
         </div>
       </Dialog>
     </>

@@ -5,7 +5,6 @@ import { Dialog } from "@/components/ui/Dialog";
 import { Btn } from "@/components/ui/Btn";
 import { IconBtn } from "@/components/ui/IconBtn";
 import { Icon } from "@/components/ui/icons";
-import { OperationProgress, OperationResult } from "./OperationStatus";
 import { useOperation } from "./useOperation";
 import { captureFingerprintAction } from "@/app/admin/actions";
 
@@ -32,11 +31,10 @@ export function CaptureFingerprintDialog({
   deviceLabel: string;
 }) {
   const [open, setOpen] = useState(false);
-  const { formAction, startError, op, busy, reset } = useOperation(captureFingerprintAction);
+  const { formAction, startError, busy } = useOperation(captureFingerprintAction, { onStarted: close });
 
   function close() {
     setOpen(false);
-    reset();
   }
 
   return (
@@ -44,26 +42,22 @@ export function CaptureFingerprintDialog({
       <IconBtn icon={Icon.capture} label={`Capturar huella desde ${deviceLabel}`} onClick={() => setOpen(true)} />
       <Dialog open={open} onClose={close} closable={!busy} title={`Capturar huella desde ${deviceLabel}`}>
         <div className="flex flex-col gap-3">
-          {!op && (
-            <>
-              <p className="m-0 text-xs text-text/70">
-                Lee todas las huellas que esta persona tiene registradas en este equipo y las
-                guarda como referencia. Si ya tiene cuenta en otros equipos, se las copia sola —
-                no hace falta repetirlo a mano.
-              </p>
-              <form action={formAction} className="flex flex-col gap-3">
-                <input type="hidden" name="employee_id" value={employeeId} />
-                <input type="hidden" name="dev_id" value={devId} />
-                <input type="hidden" name="device_user_id" value={deviceUserId} />
-                {startError && <p className="text-sm m-0 text-text">{startError}</p>}
-                <Btn type="submit" variant="primary" disabled={busy}>
-                  {busy ? "Consultando…" : "Capturar"}
-                </Btn>
-              </form>
-            </>
-          )}
-          {op && !op.isTerminal && <OperationProgress op={op} />}
-          {op?.isTerminal && <OperationResult op={op} onClose={close} />}
+          <>
+            <p className="m-0 text-xs text-text/70">
+              Lee todas las huellas que esta persona tiene registradas en este equipo y las
+              guarda como referencia. Si ya tiene cuenta en otros equipos, se las copia sola —
+              no hace falta repetirlo a mano.
+            </p>
+            <form action={formAction} className="flex flex-col gap-3">
+              <input type="hidden" name="employee_id" value={employeeId} />
+              <input type="hidden" name="dev_id" value={devId} />
+              <input type="hidden" name="device_user_id" value={deviceUserId} />
+              {startError && <p className="text-sm m-0 text-text">{startError}</p>}
+              <Btn type="submit" variant="primary" disabled={busy}>
+                {busy ? "Consultando…" : "Capturar"}
+              </Btn>
+            </form>
+          </>
         </div>
       </Dialog>
     </>

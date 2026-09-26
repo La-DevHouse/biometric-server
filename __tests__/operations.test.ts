@@ -82,6 +82,24 @@ async function completeCurrentStep(
   });
 }
 
+/**
+ * A GET_USER_ID_LIST result listing `ids` (the device's framing: 8-byte
+ * records, first 4 bytes = user_id LE). Since O9 (docs/10 §8) a probe that
+ * gets no answer cross-checks this list before creating anything.
+ */
+function idListResult(ids: number[]) {
+  return {
+    ok: true,
+    resultJson: { user_id_count: ids.length, one_user_id_size: 8, user_id_array: "BIN_1" },
+    binaries: [Buffer.concat(ids.map((n) => Buffer.concat([numLE(n), Buffer.from([1, 1, 8, 0])])))],
+  };
+}
+
+/** GET_DEVICE_STATUS result with the given total_user_count (strings, like the device). */
+function statusResult(totalUsers: number) {
+  return { ok: true, resultJson: { total_user_count: String(totalUsers), fp_count: "0" } };
+}
+
 // --- Attendance dedup idempotence ---
 
 test("insertAttendanceLogs - same batch inserted twice: N then 0", async () => {
@@ -315,12 +333,16 @@ test("CREATE_USER - a free id proceeds to SET_USER_INFO, verifies, then finishes
   await freshDb();
   const { id: opId } = await ops.startCreateUser(DEV_A, { userId: "9", userName: "nueva" });
 
-  // Probe: GET_USER_INFO fails/empty — the id is free.
+  // Probe: GET_USER_INFO fails/empty — not enough on its own (O9)...
   await completeCurrentStep(opId, { ok: false, returnCode: "Error" });
+  let cmd = await currentCommand(opId);
+  assert.equal(cmd.cmd_code, "GET_USER_ID_LIST", "a silent probe must be cross-checked before creating");
+  // ...the id is not among the users with fingerprints — free to create.
+  await completeCurrentStep(opId, idListResult([1, 2]));
 
   let op = await ops.getOperation(opId);
   assert.equal(op?.stage, "waiting");
-  let cmd = await currentCommand(opId);
+  cmd = await currentCommand(opId);
   assert.equal(cmd.cmd_code, "SET_USER_INFO");
 
   // Apply: SET_USER_INFO reports OK. Not trusted on its own — see below.
@@ -350,7 +372,8 @@ test("CREATE_USER - device reports OK but the user was never actually created en
   await freshDb();
   const { id: opId } = await ops.startCreateUser(DEV_A, { userId: "9", userName: "nueva" });
 
-  await completeCurrentStep(opId, { ok: false, returnCode: "Error" }); // probe: free
+  await completeCurrentStep(opId, { ok: false, returnCode: "Error" }); // probe: no answer
+  await completeCurrentStep(opId, idListResult([])); // cross-check: not listed → free
   await completeCurrentStep(opId, { ok: true, resultJson: null }); // SET_USER_INFO "succeeds"
 
   // Verify: GET_USER_INFO still finds nothing.
@@ -377,7 +400,8 @@ test("CREATE_USER - MANAGER without a fingerprint ends in mismatch with a clear 
     privilege: "MANAGER",
   });
 
-  await completeCurrentStep(opId, { ok: false, returnCode: "Error" }); // probe: free
+  await completeCurrentStep(opId, { ok: false, returnCode: "Error" }); // probe: no answer
+  await completeCurrentStep(opId, idListResult([])); // cross-check: not listed → free
   await completeCurrentStep(opId, { ok: true, resultJson: null }); // create apply
 
   // Verify create: the device only ever reports USER for a fingerprint-less
@@ -423,7 +447,8 @@ test("CREATE_USER - MANAGER that verifies (fingerprint already on file) ends in 
     privilege: "MANAGER",
   });
 
-  await completeCurrentStep(opId, { ok: false, returnCode: "Error" }); // probe: free
+  await completeCurrentStep(opId, { ok: false, returnCode: "Error" }); // probe: no answer
+  await completeCurrentStep(opId, idListResult([])); // cross-check: not listed → free
   await completeCurrentStep(opId, { ok: true, resultJson: null }); // create apply
   await completeCurrentStep(opId, {
     ok: true,
@@ -441,25 +466,41 @@ test("CREATE_USER - MANAGER that verifies (fingerprint already on file) ends in 
   assert.match(op!.note ?? "", /privilegio "MANAGER" \(verificado en el dispositivo\)/);
 });
 
-// --- DELETE_USER: apply's return code is untrustworthy, verify decides ---
+// --- DELETE_USER: apply's return code is untrustworthy; the user count decides ---
+//
+// Neither DELETE_USER's return code nor GET_USER_INFO can verify a deletion:
+// the former lies in both directions, and the latter also hangs,
+// intermittently, for ids that DO exist (docs/10 §8 O9 — it reported a
+// failed deletion as "verified" on 2023081133, 2026-09-26). The operation
+// brackets the delete with GET_DEVICE_STATUS: total_user_count must drop by 1.
 
-test("DELETE_USER - device reports Error but the user is actually gone ends in done", async () => {
-  await freshDb();
+async function seedUser9() {
   await db.runAsync(
     `INSERT INTO users (dev_id, user_id, user_name, user_privilege) VALUES (?, '9', 'zed', 'USER')`,
     [DEV_A]
   );
+}
 
+test("DELETE_USER - device reports Error but the count drops by one ends in done", async () => {
+  await freshDb();
+  await seedUser9();
   const { id: opId } = await ops.startDeleteUser(DEV_A, "9");
 
+  let cmd = await currentCommand(opId);
+  assert.equal(cmd.cmd_code, "GET_DEVICE_STATUS", "must read the baseline count before deleting");
+  await completeCurrentStep(opId, statusResult(6));
+
+  cmd = await currentCommand(opId);
+  assert.equal(cmd.cmd_code, "DELETE_USER");
   // Apply: verified against real hardware that DELETE_USER can report
   // cmd_return_code "Error" for a deletion that actually succeeded.
   await completeCurrentStep(opId, { ok: false, returnCode: "Error" });
   let op = await ops.getOperation(opId);
   assert.equal(op?.stage, "verifying");
+  cmd = await currentCommand(opId);
+  assert.equal(cmd.cmd_code, "GET_DEVICE_STATUS");
 
-  // Verify: GET_USER_INFO comes back empty — the id is free, deletion worked.
-  await completeCurrentStep(opId, { ok: false, returnCode: "Error" });
+  await completeCurrentStep(opId, statusResult(5));
   op = await ops.getOperation(opId);
   assert.equal(op?.stage, "done");
   assert.match(op!.note ?? "", /verificado/);
@@ -468,30 +509,77 @@ test("DELETE_USER - device reports Error but the user is actually gone ends in d
   assert.equal(row, undefined, "the local cache row must be cleaned up on a verified deletion");
 });
 
-test("DELETE_USER - device reports OK but the user still exists ends in mismatch", async () => {
+test("DELETE_USER - device reports Error and the count does not change ends in mismatch (the 30000001 case)", async () => {
   await freshDb();
-  await db.runAsync(
-    `INSERT INTO users (dev_id, user_id, user_name, user_privilege) VALUES (?, '9', 'zed', 'USER')`,
-    [DEV_A]
-  );
-
+  await seedUser9();
   const { id: opId } = await ops.startDeleteUser(DEV_A, "9");
 
-  await completeCurrentStep(opId, { ok: true, resultJson: null });
-  let op = await ops.getOperation(opId);
-  assert.equal(op?.stage, "verifying");
+  await completeCurrentStep(opId, statusResult(7));
+  await completeCurrentStep(opId, { ok: false, returnCode: "Error" });
+  await completeCurrentStep(opId, statusResult(7));
 
-  // Verify: GET_USER_INFO still finds the user — the deletion didn't apply.
-  await completeCurrentStep(opId, {
-    ok: true,
-    resultJson: { user_id: "9", user_name: "zed", user_privilege: "USER" },
-  });
-  op = await ops.getOperation(opId);
+  const op = await ops.getOperation(opId);
   assert.equal(op?.stage, "mismatch");
   assert.match(op!.note ?? "", /sigue existiendo/);
 
   const row = await db.getAsync(`SELECT 1 FROM users WHERE dev_id = ? AND user_id = '9'`, [DEV_A]);
   assert.ok(row, "the local cache must not be touched when deletion did not verify");
+});
+
+test("DELETE_USER - a count that moves by more than one is not claimed as done", async () => {
+  await freshDb();
+  await seedUser9();
+  const { id: opId } = await ops.startDeleteUser(DEV_A, "9");
+
+  await completeCurrentStep(opId, statusResult(7));
+  await completeCurrentStep(opId, { ok: true, resultJson: null });
+  await completeCurrentStep(opId, statusResult(5));
+
+  const op = await ops.getOperation(opId);
+  assert.equal(op?.stage, "mismatch");
+  assert.match(op!.note ?? "", /de 7 a 5/);
+});
+
+test("DELETE_USER - an unreadable baseline aborts before anything destructive is sent", async () => {
+  await freshDb();
+  await seedUser9();
+  const { id: opId } = await ops.startDeleteUser(DEV_A, "9");
+
+  await completeCurrentStep(opId, { ok: false, returnCode: "Error" });
+
+  const op = await ops.getOperation(opId);
+  assert.equal(op?.stage, "error");
+  const commands = await ops.getOperationCommands(opId);
+  assert.ok(!commands.some((c) => c.cmd_code === "DELETE_USER"), "DELETE_USER must never be sent without a baseline");
+});
+
+// --- Probe cross-check (O9): a silent GET_USER_INFO is not "free" by itself ---
+
+test("CREATE_USER - silent probe but the id IS listed (has fingerprints): refuses, never sends SET_USER_INFO", async () => {
+  await freshDb();
+  const { id: opId } = await ops.startCreateUser(DEV_A, { userId: "9", userName: "nueva" });
+
+  await completeCurrentStep(opId, { ok: false, returnCode: "TIMEOUT" }); // probe hangs on an existing id
+  await completeCurrentStep(opId, idListResult([2, 9]));
+
+  const op = await ops.getOperation(opId);
+  assert.equal(op?.stage, "error");
+  assert.match(op!.note ?? "", /ya existe en el equipo con huellas/);
+  const commands = await ops.getOperationCommands(opId);
+  assert.ok(!commands.some((c) => c.cmd_code === "SET_USER_INFO"), "must never create over a user with fingerprints");
+});
+
+test("CREATE_USER - silent probe and the id list cannot be read: refuses rather than guessing", async () => {
+  await freshDb();
+  const { id: opId } = await ops.startCreateUser(DEV_A, { userId: "9", userName: "nueva" });
+
+  await completeCurrentStep(opId, { ok: false, returnCode: "TIMEOUT" });
+  await completeCurrentStep(opId, { ok: false, returnCode: "Error" });
+
+  const op = await ops.getOperation(opId);
+  assert.equal(op?.stage, "error");
+  const commands = await ops.getOperationCommands(opId);
+  assert.ok(!commands.some((c) => c.cmd_code === "SET_USER_INFO"));
 });
 
 // --- Fingerprint migration: CAPTURE_FINGERPRINT / PUSH_FINGERPRINT ---
@@ -817,6 +905,7 @@ test("ADD_EMPLOYEE_TO_DEVICE - uses the employee's cédula (digits only) as the 
   assert.equal(cmd.cmd_code, "GET_USER_INFO");
   assert.equal(JSON.parse(cmd.cmd_param ?? "{}").user_id, "20000003", "id must be the cédula, not a sequential number");
   await completeCurrentStep(opId, { ok: false, returnCode: "Error" });
+  await completeCurrentStep(opId, idListResult([1])); // cross-check: not listed → free
 
   let op = await ops.getOperation(opId);
   assert.equal(op?.stage, "waiting");
@@ -888,7 +977,8 @@ test("ADD_EMPLOYEE_TO_DEVICE - copies already-captured fingerprints, tolerating 
   const { id: opId, warning } = await ops.startAddEmployeeToDevice(DEV_B, { employeeId, userName: "Nueva" });
   assert.match(warning ?? "", /2 huella\(s\) capturada\(s\)/);
 
-  await completeCurrentStep(opId, { ok: false, returnCode: "Error" }); // probe: free
+  await completeCurrentStep(opId, { ok: false, returnCode: "Error" }); // probe: no answer
+  await completeCurrentStep(opId, idListResult([])); // cross-check: not listed → free
   await completeCurrentStep(opId, { ok: true, resultJson: null }); // create apply
 
   // Verify create: since there are pending fingers, this same step must
@@ -962,7 +1052,8 @@ test("ADD_EMPLOYEE_TO_DEVICE - MANAGER without any fingerprint ends in mismatch 
     privilege: "MANAGER",
   });
 
-  await completeCurrentStep(opId, { ok: false, returnCode: "Error" }); // probe: free
+  await completeCurrentStep(opId, { ok: false, returnCode: "Error" }); // probe: no answer
+  await completeCurrentStep(opId, idListResult([])); // cross-check: not listed → free
   await completeCurrentStep(opId, { ok: true, resultJson: null }); // create apply
 
   // Verify create: the device only ever reports USER for a fingerprint-less
@@ -1012,7 +1103,8 @@ test("ADD_EMPLOYEE_TO_DEVICE - MANAGER with a fingerprint pushed in the same cha
     privilege: "MANAGER",
   });
 
-  await completeCurrentStep(opId, { ok: false, returnCode: "Error" }); // probe: free
+  await completeCurrentStep(opId, { ok: false, returnCode: "Error" }); // probe: no answer
+  await completeCurrentStep(opId, idListResult([])); // cross-check: not listed → free
   await completeCurrentStep(opId, { ok: true, resultJson: null }); // create apply
   await completeCurrentStep(opId, {
     ok: true,
@@ -1206,18 +1298,15 @@ test("sweepStaleOperations - a resurrected stale command cannot reopen the expir
   assert.equal(op?.stage, "error", "a resurrected result must not undo the timeout");
 });
 
-test("sweepStaleOperations - a DELETE_USER verify that never answers resolves as done, not error", async () => {
+test("sweepStaleOperations - a DELETE_USER verify that never answers resolves as mismatch, never done", async () => {
   await freshDb();
-  // Verified against real hardware: a GET_USER_INFO verify read for an id
-  // that was actually just deleted hangs with no response at all — that's
-  // DELETE_USER's own success path, not a failure, so it must not sit out
-  // the full stale-sweep window nor come back as a generic "error".
-  await db.runAsync(
-    `INSERT INTO users (dev_id, user_id, user_name) VALUES (?, '9', 'Lenta')`,
-    [DEV_A]
-  );
+  // Silence used to count as DELETE_USER's success path. It must not: on
+  // real hardware GET_USER_INFO also hangs for ids that still exist (O9),
+  // and an unanswered verify proves nothing either way.
+  await db.runAsync(`INSERT INTO users (dev_id, user_id, user_name) VALUES (?, '9', 'Lenta')`, [DEV_A]);
   const { id: opId } = await ops.startDeleteUser(DEV_A, "9");
-  await completeCurrentStep(opId, { ok: false, returnCode: "Error" }); // apply: device "fails" (unreliable)
+  await completeCurrentStep(opId, statusResult(6)); // baseline
+  await completeCurrentStep(opId, { ok: false, returnCode: "Error" }); // apply (unreliable)
 
   let op = await ops.getOperation(opId);
   assert.equal(op?.stage, "verifying");
@@ -1227,13 +1316,12 @@ test("sweepStaleOperations - a DELETE_USER verify that never answers resolves as
   assert.ok(expired >= 1);
 
   op = await ops.getOperation(opId);
-  assert.equal(op?.stage, "done", "a verify timeout means the id is gone — the deletion worked");
-
+  assert.equal(op?.stage, "mismatch", "an unanswered verify can't confirm the deletion");
   const row = await db.getAsync(`SELECT 1 FROM users WHERE dev_id = ? AND user_id = '9'`, [DEV_A]);
-  assert.equal(row, undefined, "the local cache must be cleaned up");
+  assert.ok(row, "the local cache must stay until a deletion is actually confirmed");
 });
 
-test("sweepStaleOperations - a CREATE_USER probe that never answers resolves as free, not error", async () => {
+test("sweepStaleOperations - a CREATE_USER probe that never answers moves on to the id-list cross-check", async () => {
   // Verified against real hardware (device 2023081133, 2026-08-18): probing
   // a genuinely new id with GET_USER_INFO hangs forever once delivered — the
   // device never sends a result — while an id that exists always answers in
@@ -1258,9 +1346,9 @@ test("sweepStaleOperations - a CREATE_USER probe that never answers resolves as 
   assert.ok(expired >= 1);
 
   const op = await ops.getOperation(opId);
-  assert.equal(op?.stage, "waiting", "a free id proceeds straight to SET_USER_INFO, not an error stage");
+  assert.equal(op?.stage, "waiting", "a silent probe moves on to the id-list cross-check, not an error stage");
   const cmd = await currentCommand(opId);
-  assert.equal(cmd.cmd_code, "SET_USER_INFO");
+  assert.equal(cmd.cmd_code, "GET_USER_ID_LIST");
 });
 
 test("sweepStaleOperations - a CREATE_USER probe still queued (device never polled) times out as a plain error", async () => {
@@ -1281,7 +1369,7 @@ test("sweepStaleOperations - a CREATE_USER probe still queued (device never poll
   assert.equal(op?.stage, "error", "an undelivered probe must use the generic offline-device timeout, not 'free'");
 });
 
-test("sweepStaleOperations - an ADD_EMPLOYEE_TO_DEVICE probe that never answers proceeds to create", async () => {
+test("sweepStaleOperations - an ADD_EMPLOYEE_TO_DEVICE probe that never answers moves on to the id-list cross-check", async () => {
   await freshDomainDb();
   const employeeId = await makeEmployee("V20000007");
   const { id: opId } = await ops.startAddEmployeeToDevice(DEV_B, { employeeId, userName: "Nueva" });
@@ -1295,7 +1383,7 @@ test("sweepStaleOperations - an ADD_EMPLOYEE_TO_DEVICE probe that never answers 
   const op = await ops.getOperation(opId);
   assert.equal(op?.stage, "waiting");
   const cmd = await currentCommand(opId);
-  assert.equal(cmd.cmd_code, "SET_USER_INFO");
+  assert.equal(cmd.cmd_code, "GET_USER_ID_LIST");
 });
 
 test("sweepStaleOperations - a CHANGE_PRIVILEGE verify that never answers resolves as mismatch, not error", async () => {

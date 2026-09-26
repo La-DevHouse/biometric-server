@@ -35,13 +35,15 @@ interface VerifyPlan {
 }
 
 interface CreateUserPlan {
-  phase: "probe" | "create" | "verify" | "apply_privilege" | "verify_privilege";
+  phase: "probe" | "probe_list" | "create" | "verify" | "apply_privilege" | "verify_privilege";
   userName: string;
   privilege: string;
 }
 
 interface DeleteUserPlan {
-  phase: "apply" | "verify";
+  phase: "baseline" | "apply" | "verify";
+  /** total_user_count del equipo antes de borrar — la verificación exige que baje exactamente 1. */
+  baselineUsers?: number;
 }
 
 interface CaptureFingerprintParams {
@@ -58,7 +60,15 @@ interface PushFingerprintParams {
 }
 
 interface AddEmployeeToDevicePlan {
-  phase: "probe" | "create" | "verify_create" | "push" | "verify_push" | "apply_privilege" | "verify_privilege";
+  phase:
+    | "probe"
+    | "probe_list"
+    | "create"
+    | "verify_create"
+    | "push"
+    | "verify_push"
+    | "apply_privilege"
+    | "verify_privilege";
   candidateId: number;
   userName: string;
   privilege: string;
@@ -393,30 +403,68 @@ async function advanceVerified(
 
 /**
  * DELETE_USER's own cmd_return_code cannot be trusted in either direction —
- * verified against real hardware: four separate deletions reported
- * cmd_return_code "Error" while a follow-up GET_USER_ID_LIST confirmed the
- * user was actually gone. So this never trusts the apply step's outcome; it
- * always re-queries the user afterward and bases done/mismatch purely on
- * whether the device still knows about them.
+ * verified against real hardware: deletions reported "Error" while the user
+ * was actually gone, and (2026-09-26) one reported "Error" and really did
+ * NOT delete. The verification can't rely on GET_USER_INFO either: it also
+ * hangs, intermittently, for ids that DO exist (docs/10 §8 O9) — the old
+ * "silence = gone" rule reported that failed deletion as "verified".
+ *
+ * So it brackets the delete with GET_DEVICE_STATUS, which has never hung:
+ * total_user_count must drop by exactly one. Anything else — same count, a
+ * different delta (someone enrolled/deleted at the keypad meanwhile), or an
+ * unreadable status — is reported as mismatch, never as done.
  */
 async function advanceDeleteUser(op: OperationRow, input: AdvanceInput): Promise<void> {
-  const plan: DeleteUserPlan = op.plan_json ? JSON.parse(op.plan_json) : { phase: "apply" };
+  const plan: DeleteUserPlan = op.plan_json ? JSON.parse(op.plan_json) : { phase: "baseline" };
 
-  if (plan.phase === "apply") {
-    await setStage(op.id, "verifying", { plan: { phase: "verify" } });
-    await queueCommandForOperation(op.id, op.dev_id, "GET_USER_INFO", { user_id: op.user_id });
+  if (plan.phase === "baseline") {
+    const baselineUsers = totalUserCount(input);
+    if (baselineUsers === null) {
+      // Nothing destructive has been sent yet — failing here is safe.
+      await finishOperation(
+        op.id,
+        "error",
+        "No se pudo leer el estado del equipo antes de borrar; el borrado no se envió."
+      );
+      return;
+    }
+    await setStage(op.id, "waiting", { plan: { phase: "apply", baselineUsers } });
+    await queueCommandForOperation(op.id, op.dev_id, "DELETE_USER", { user_id: op.user_id });
     return;
   }
 
-  // phase === "verify": GET_USER_INFO failing, or succeeding with no
-  // user_name, means the id is free — the deletion actually worked,
-  // regardless of what the apply step's return code claimed.
-  const stillExists = input.ok && !!input.resultJson?.user_name;
-  if (stillExists) {
+  if (plan.phase === "apply") {
+    // The apply result is ignored on purpose (see above) — only the count decides.
+    await setStage(op.id, "verifying", { plan: { ...plan, phase: "verify" } });
+    await queueCommandForOperation(op.id, op.dev_id, "GET_DEVICE_STATUS", {});
+    return;
+  }
+
+  // phase === "verify"
+  const after = totalUserCount(input);
+  const before = plan.baselineUsers ?? null;
+  if (after === null || before === null) {
     await finishOperation(
       op.id,
       "mismatch",
-      `El usuario ${op.user_id} sigue existiendo en el equipo; el borrado no se aplicó.`
+      "No se pudo leer el estado del equipo después del borrado; no se puede confirmar si se aplicó."
+    );
+    return;
+  }
+  if (after === before) {
+    await finishOperation(
+      op.id,
+      "mismatch",
+      `El usuario ${op.user_id} sigue existiendo en el equipo (sigue reportando ${after} usuarios); el borrado no se aplicó.`
+    );
+    return;
+  }
+  if (after !== before - 1) {
+    await finishOperation(
+      op.id,
+      "mismatch",
+      `El equipo pasó de ${before} a ${after} usuarios — no cuadra con un solo borrado (¿alguien agregó o ` +
+        "borró usuarios en el equipo al mismo tiempo?). Revisá la lista antes de dar esto por hecho."
     );
     return;
   }
@@ -603,6 +651,18 @@ async function advanceAddEmployeeToDevice(op: OperationRow, input: AdvanceInput)
           "persona. No se puede asignar automáticamente porque el ID debe ser la cédula; revisá ese usuario " +
           "directamente en el equipo antes de reintentar."
       );
+      return;
+    }
+    // Silencio/vacío: no alcanza para dar la cédula por libre (O9) — ver probeListVerdict.
+    await setStage(op.id, "waiting", { plan: { ...plan, phase: "probe_list" } });
+    await queueCommandForOperation(op.id, op.dev_id, "GET_USER_ID_LIST", {});
+    return;
+  }
+
+  if (plan.phase === "probe_list") {
+    const refusal = probeListVerdict(input, String(plan.candidateId));
+    if (refusal) {
+      await finishOperation(op.id, "error", refusal);
       return;
     }
     const nextPlan: AddEmployeeToDevicePlan = { ...plan, phase: "create" };
@@ -812,6 +872,42 @@ function decodeIdListOrEmpty(resultJson: Record<string, any> | null, binaries: B
   return decodeUserIdList(resultJson, binaries);
 }
 
+/** total_user_count de un GET_DEVICE_STATUS (llega como string), o null si no se pudo leer. */
+function totalUserCount(input: AdvanceInput): number | null {
+  if (!input.ok) return null;
+  const n = Number(input.resultJson?.total_user_count);
+  return Number.isInteger(n) && n >= 0 ? n : null;
+}
+
+/**
+ * Segunda opinión antes de creer que un ID está libre (docs/10 §8 O9). La
+ * sonda GET_USER_INFO no respondió — pero verificado en hardware real
+ * (2023081133, 2026-09-26) que ese silencio también ocurre, de forma
+ * intermitente, con ids que SÍ existen. GET_USER_ID_LIST no enumera a los
+ * usuarios sin huella, así que no sirve para decir "libre"; sí sirve para lo
+ * contrario: si el id aparece, existe Y tiene huellas — justo el caso donde
+ * SET_USER_INFO dispara el reindexado destructivo. Si no aparece, lo peor
+ * posible es un usuario sin huellas, que no tiene huellas que perder.
+ *
+ * Devuelve null si se puede crear, o el motivo para no hacerlo.
+ */
+function probeListVerdict(input: AdvanceInput, candidateId: string): string | null {
+  const ids = input.ok ? decodeIdListOrEmpty(input.resultJson, input.binaries) : null;
+  if (ids === null) {
+    return (
+      `No se pudo confirmar que el ID ${candidateId} esté libre (el equipo no devolvió su lista de usuarios). ` +
+      "No se crea para no pisar un usuario existente; reintentá en unos minutos."
+    );
+  }
+  if (ids.includes(candidateId)) {
+    return (
+      `El usuario ${candidateId} ya existe en el equipo con huellas registradas, aunque no respondió a la ` +
+      "consulta. No se crea encima: destruiría sus huellas. Reintentá en unos minutos para ver sus datos."
+    );
+  }
+  return null;
+}
+
 async function advanceCreateUser(op: OperationRow, input: AdvanceInput): Promise<void> {
   const plan: CreateUserPlan = op.plan_json
     ? JSON.parse(op.plan_json)
@@ -831,7 +927,8 @@ async function advanceCreateUser(op: OperationRow, input: AdvanceInput): Promise
     // above). GET_USER_INFO answering slowly sometimes is a real cost, but
     // it is the only command that actually answers "does this id exist" —
     // the cancel button and the stale-sweep exist precisely to bound that
-    // cost. A command error, or OK with no user_name, means the id is free.
+    // cost. A command error, or OK with no user_name, is NOT taken as "free"
+    // on its own anymore — see probeListVerdict (docs/10 §8 O9).
     const existingName = input.ok ? input.resultJson?.user_name : null;
     if (existingName) {
       await finishOperation(
@@ -840,6 +937,17 @@ async function advanceCreateUser(op: OperationRow, input: AdvanceInput): Promise
         `Ya existe el usuario ${op.user_id} ("${existingName}") en el dispositivo. ` +
           `Usa Renombrar o Cambiar privilegio; crear encima destruiría sus huellas.`
       );
+      return;
+    }
+    await setStage(op.id, "waiting", { plan: { ...plan, phase: "probe_list" } });
+    await queueCommandForOperation(op.id, op.dev_id, "GET_USER_ID_LIST", {});
+    return;
+  }
+
+  if (plan.phase === "probe_list") {
+    const refusal = probeListVerdict(input, String(op.user_id));
+    if (refusal) {
+      await finishOperation(op.id, "error", refusal);
       return;
     }
     await setStage(op.id, "waiting", { plan: { ...plan, phase: "create" } });
@@ -935,17 +1043,14 @@ const TEN_MINUTES_MS = 10 * 60 * 1000;
 const THREE_MINUTES_MS = 3 * 60 * 1000;
 
 /**
- * Every "verifying"-stage command is a GET_USER_INFO re-querying a specific
- * id (RENAME_USER/CHANGE_PRIVILEGE/CREATE_USER's verify) — and verified
- * against real hardware, this command's response time is itself a signal
- * on this firmware: an id that exists has answered in seconds in every
- * observation, an id that doesn't exist has never answered at all, not
- * even slowly. That second case is DELETE_USER's own success path (a
- * deletion that actually worked leaves nothing to find), so making every
- * successful deletion sit out the full 3-minute stale-sweep before it can
- * be reported as done — which real usage showed happening — is both a bad
- * wait and a wrong-looking "error" for something that actually succeeded.
- * A short timeout here doubles as that signal instead.
+ * "verifying"-stage commands are quick reads (GET_USER_INFO for
+ * RENAME_USER/CHANGE_PRIVILEGE/CREATE_USER, GET_DEVICE_STATUS for
+ * DELETE_USER) that normally answer in seconds, so a short timeout bounds
+ * the wait. A timeout here always resolves as "couldn't confirm" (mismatch),
+ * never as success: silence used to count as DELETE_USER's success path,
+ * but verified on hardware (2026-09-26, docs/10 §8 O9) GET_USER_INFO also
+ * hangs, intermittently, for ids that DO exist — that rule reported a
+ * failed deletion as verified.
  */
 const VERIFY_TIMEOUT_MS = 25 * 1000;
 
@@ -963,7 +1068,10 @@ const VERIFY_TIMEOUT_MS = 25 * 1000;
 // verify hang-means-gone, and a real collision (id taken) resolves almost
 // immediately regardless — there's no reason to make every genuinely free
 // id sit out the generic THREE_MINUTES_MS 'sent' timeout, so this gets its
-// own short window instead (see PROBE_TIMEOUT_MS).
+// own short window instead (see PROBE_TIMEOUT_MS). Update 2026-09-26 (O9):
+// that silence also happens, intermittently, for ids that DO exist, so it
+// is no longer the final word — it only moves the probe on to the
+// GET_USER_ID_LIST cross-check (probeListVerdict).
 const PROBE_PHASE_KINDS: ReadonlySet<OperationKind> = new Set(["CREATE_USER", "ADD_EMPLOYEE_TO_DEVICE"]);
 
 const PROBE_TIMEOUT_MS = 30 * 1000;
@@ -1018,13 +1126,11 @@ export async function sweepStaleOperations(): Promise<number> {
     if ((isVerifying || pendingProbe) && transId) {
       // Route through the normal per-kind handler as if the device had
       // reported failure, instead of a generic timeout error.
-      // RENAME_USER/CHANGE_PRIVILEGE's verify turns that into "mismatch"
-      // (already the right call — cannot confirm, don't claim success).
-      // DELETE_USER's verify turns it into "done" — a non-answer here means
-      // the id is gone, exactly what a successful deletion looks like.
-      // CREATE_USER/ADD_EMPLOYEE_TO_DEVICE's probe turns it into "the
-      // candidate id is free" — exactly the same hang, at the opposite end
-      // of a user's lifecycle.
+      // Every verify (RENAME_USER/CHANGE_PRIVILEGE/CREATE_USER/DELETE_USER)
+      // turns that into "mismatch" — cannot confirm, don't claim success.
+      // CREATE_USER/ADD_EMPLOYEE_TO_DEVICE's probe moves on to the
+      // GET_USER_ID_LIST cross-check (probeListVerdict) instead of taking the
+      // silence as "free" by itself (O9).
       try {
         await advanceOperationForCommand({
           opId: op.id,

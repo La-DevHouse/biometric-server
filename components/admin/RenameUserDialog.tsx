@@ -5,7 +5,6 @@ import { Dialog } from "@/components/ui/Dialog";
 import { Btn } from "@/components/ui/Btn";
 import { IconBtn } from "@/components/ui/IconBtn";
 import { Icon } from "@/components/ui/icons";
-import { OperationProgress, OperationResult } from "./OperationStatus";
 import { useOperation } from "./useOperation";
 import { renameUserAction } from "@/app/admin/actions";
 import { FIELD_INPUT as INPUT_CLASS } from "@/components/ui/fieldStyles";
@@ -21,11 +20,10 @@ export function RenameUserDialog({
 }) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState(currentName);
-  const { formAction, startError, op, busy, reset } = useOperation(renameUserAction);
+  const { formAction, startError, busy } = useOperation(renameUserAction, { onStarted: close });
 
   function close() {
     setOpen(false);
-    reset();
   }
 
   const truncated = name.trim().slice(0, 8);
@@ -36,38 +34,34 @@ export function RenameUserDialog({
       <IconBtn icon={Icon.edit} label={`Renombrar usuario ${userId}`} onClick={() => setOpen(true)} />
       <Dialog open={open} onClose={close} closable={!busy} title={`Renombrar usuario ${userId}`}>
         <div className="flex flex-col gap-3">
-          {!op && (
-            <form action={formAction} className="flex flex-col gap-3">
-              <input type="hidden" name="dev_id" value={devId} />
-              <input type="hidden" name="user_id" value={userId} />
-              <label className="flex flex-col gap-1 text-xs text-text/85">
-                Nombre nuevo
-                <input
-                  type="text"
-                  name="user_name"
-                  className={INPUT_CLASS}
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  autoFocus
-                />
-              </label>
-              <p className="text-xs text-text/70 m-0">
-                {name.length}/8 caracteres que el equipo puede guardar
-                {willTruncate && (
-                  <>
-                    {" "}
-                    — se guardará como <span className="font-mono text-text">&quot;{truncated}&quot;</span>
-                  </>
-                )}
-              </p>
-              {startError && <p className="text-sm m-0 text-text">{startError}</p>}
-              <Btn type="submit" variant="primary" disabled={busy || !name.trim()}>
-                {busy ? "Enviando…" : "Renombrar y verificar"}
-              </Btn>
-            </form>
-          )}
-          {op && !op.isTerminal && <OperationProgress op={op} />}
-          {op?.isTerminal && <OperationResult op={op} onClose={close} />}
+          <form action={formAction} className="flex flex-col gap-3">
+            <input type="hidden" name="dev_id" value={devId} />
+            <input type="hidden" name="user_id" value={userId} />
+            <label className="flex flex-col gap-1 text-xs text-text/85">
+              Nombre nuevo
+              <input
+                type="text"
+                name="user_name"
+                className={INPUT_CLASS}
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                autoFocus
+              />
+            </label>
+            <p className="text-xs text-text/70 m-0">
+              {name.length}/8 caracteres que el equipo puede guardar
+              {willTruncate && (
+                <>
+                  {" "}
+                  — se guardará como <span className="font-mono text-text">&quot;{truncated}&quot;</span>
+                </>
+              )}
+            </p>
+            {startError && <p className="text-sm m-0 text-text">{startError}</p>}
+            <Btn type="submit" variant="primary" disabled={busy || !name.trim()}>
+              {busy ? "Enviando…" : "Renombrar y verificar"}
+            </Btn>
+          </form>
         </div>
       </Dialog>
     </>

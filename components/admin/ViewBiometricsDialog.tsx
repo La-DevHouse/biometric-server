@@ -5,7 +5,6 @@ import { Dialog } from "@/components/ui/Dialog";
 import { Btn } from "@/components/ui/Btn";
 import { IconBtn } from "@/components/ui/IconBtn";
 import { Icon } from "@/components/ui/icons";
-import { OperationProgress, OperationResult } from "./OperationStatus";
 import { useOperation } from "./useOperation";
 import { viewBiometricsAction } from "@/app/admin/actions";
 
@@ -19,11 +18,10 @@ import { viewBiometricsAction } from "@/app/admin/actions";
  */
 export function ViewBiometricsDialog({ devId, userId }: { devId: string; userId: string }) {
   const [open, setOpen] = useState(false);
-  const { formAction, startError, op, busy, reset } = useOperation(viewBiometricsAction);
+  const { formAction, startError, busy } = useOperation(viewBiometricsAction, { onStarted: close });
 
   function close() {
     setOpen(false);
-    reset();
   }
 
   return (
@@ -31,24 +29,20 @@ export function ViewBiometricsDialog({ devId, userId }: { devId: string; userId:
       <IconBtn icon={Icon.view} label={`Biométricos de usuario ${userId}`} onClick={() => setOpen(true)} />
       <Dialog open={open} onClose={close} closable={!busy} title={`Biométricos de usuario ${userId}`}>
         <div className="flex flex-col gap-3">
-          {!op && (
-            <>
-              <p className="text-xs text-text/70 m-0">
-                Las plantillas de huella son metadata de solo lectura — esto solo consulta al equipo
-                qué huellas tiene registradas.
-              </p>
-              <form action={formAction}>
-                <input type="hidden" name="dev_id" value={devId} />
-                <input type="hidden" name="user_id" value={userId} />
-                {startError && <p className="text-sm m-0 text-text mb-2">{startError}</p>}
-                <Btn type="submit" variant="primary" disabled={busy}>
-                  {busy ? "Consultando…" : "Consultar al equipo"}
-                </Btn>
-              </form>
-            </>
-          )}
-          {op && !op.isTerminal && <OperationProgress op={op} />}
-          {op?.isTerminal && <OperationResult op={op} onClose={close} />}
+          <>
+            <p className="text-xs text-text/70 m-0">
+              Las plantillas de huella son metadata de solo lectura — esto solo consulta al equipo
+              qué huellas tiene registradas.
+            </p>
+            <form action={formAction}>
+              <input type="hidden" name="dev_id" value={devId} />
+              <input type="hidden" name="user_id" value={userId} />
+              {startError && <p className="text-sm m-0 text-text mb-2">{startError}</p>}
+              <Btn type="submit" variant="primary" disabled={busy}>
+                {busy ? "Consultando…" : "Consultar al equipo"}
+              </Btn>
+            </form>
+          </>
         </div>
       </Dialog>
     </>

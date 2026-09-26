@@ -68,19 +68,20 @@ export function Dialog({
         // especificidad) y el diálogo queda "cerrado" pero ocupando layout e
         // interceptando clicks igual.
         "hidden open:flex flex-col",
-        "backdrop:bg-text/40 bg-surface p-0 m-0 max-w-none max-h-none",
-        // Debajo de sm: ocupa toda la pantalla — un form largo no cabe en un
-        // recuadro chico en teléfono, y el header queda fijo mientras el
-        // resto hace scroll. De sm en adelante: el modal centrado de siempre,
-        // con borde negro + sombra dura offset (la firma del sistema nuevo —
-        // no hay sombra en mobile, ahí no tiene sentido con la caja pegada
-        // a los bordes de la pantalla).
-        // (max-h-none pisa el `dialog:modal{max-height:calc(100%-6px-2em)}`
-        // del user-agent, que si no recorta ~38px del full screen mobile.)
-        // h-dvh, no h-screen: mismo motivo que AdminShell — 100vh no
-        // descuenta la barra de direcciones dinámica en mobile.
-        "w-screen h-dvh border-0 shadow-none",
-        "sm:w-[min(92vw,28rem)] sm:h-auto sm:max-h-[85vh] sm:m-auto sm:border sm:border-text sm:shadow-hard"
+        "backdrop:bg-text/40 bg-surface p-0 max-w-none",
+        // Alto = el del contenido, con tope: un diálogo de una línea no se
+        // estira a toda la pantalla (antes, debajo de sm, era h-dvh fijo y un
+        // confirm corto quedaba como una hoja en blanco). Un form largo llega
+        // al tope y hace scroll en el body, con header y footer fijos.
+        // dvh, no vh: mismo motivo que AdminShell — 100vh no descuenta la
+        // barra de direcciones dinámica en mobile.
+        // h-fit, NO h-auto: el <dialog> modal del user-agent es
+        // position:fixed con top:0 y bottom:0 — con height:auto se estira a
+        // todo el alto disponible (hasta el max-h). El UA trae
+        // height:fit-content justamente por eso; h-fit lo restablece.
+        "m-auto h-fit border border-text shadow-hard",
+        "w-[calc(100vw-2rem)] max-h-[calc(100dvh-2rem)]",
+        "sm:w-[min(92vw,28rem)] sm:max-h-[85dvh]"
       )}
     >
       <div className="flex items-center justify-between p-4 border-b border-divider bg-chrome flex-none">
@@ -96,7 +97,7 @@ export function Dialog({
           </button>
         )}
       </div>
-      <div className="flex flex-col gap-3 p-4 flex-1 overflow-y-auto">{children}</div>
+      <div className="flex flex-col gap-3 p-4 flex-1 min-h-0 overflow-y-auto">{children}</div>
       {footer && <div className="flex-none border-t border-divider bg-chrome p-4">{footer}</div>}
     </dialog>
   );

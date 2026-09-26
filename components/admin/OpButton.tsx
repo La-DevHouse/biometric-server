@@ -3,18 +3,22 @@
 import { useId, useState, type ReactNode } from "react";
 import { Dialog } from "@/components/ui/Dialog";
 import { Btn } from "@/components/ui/Btn";
-import { OperationProgress, OperationResult } from "./OperationStatus";
 import { useOperation } from "./useOperation";
 import type { OpActionState } from "@/lib/opActionState";
 
 type OpAction = (prev: OpActionState, formData: FormData) => Promise<OpActionState>;
 
-/** Un click, sin más input que campos ocultos — bloquea en un diálogo propio hasta que resuelve. */
+/**
+ * Un click, sin más input que campos ocultos: confirma en un diálogo y lo
+ * cierra apenas la operación queda encolada — el seguimiento pasa al panel
+ * global "Procesando" (OperationsTracker), sin bloquear la interfaz.
+ */
 export function OpButton({
   action,
   hidden,
   title,
   label,
+  description,
   children,
   variant = "secondary",
 }: {
@@ -24,16 +28,17 @@ export function OpButton({
   title: string;
   /** Tooltip/aria-label del botón trigger, si es distinto del título (ej. variant="icon"). Por defecto usa `title`. */
   label?: string;
+  /** Qué va a pasar, en una o dos líneas. Tiene un texto por defecto. */
+  description?: ReactNode;
   children: ReactNode;
   variant?: "primary" | "secondary" | "ghost" | "icon";
 }) {
   const [open, setOpen] = useState(false);
   const formId = useId();
-  const { formAction, startError, op, busy, reset } = useOperation(action);
+  const { formAction, startError, busy } = useOperation(action, { onStarted: close });
 
   function close() {
     setOpen(false);
-    reset();
   }
 
   return (
@@ -47,24 +52,22 @@ export function OpButton({
         closable={!busy}
         title={title}
         footer={
-          !op && (
-            <Btn type="submit" form={formId} variant="primary" disabled={busy}>
-              {busy ? "Enviando…" : "Confirmar"}
-            </Btn>
-          )
+          <Btn type="submit" form={formId} variant="primary" disabled={busy}>
+            {busy ? "Enviando…" : "Confirmar"}
+          </Btn>
         }
       >
         <div className="flex flex-col gap-3">
-          {!op && (
-            <form id={formId} action={formAction}>
-              {Object.entries(hidden).map(([k, v]) => (
-                <input key={k} type="hidden" name={k} value={v} />
-              ))}
-              {startError && <p className="text-sm m-0 text-text mb-2">{startError}</p>}
-            </form>
-          )}
-          {op && !op.isTerminal && <OperationProgress op={op} />}
-          {op?.isTerminal && <OperationResult op={op} onClose={close} />}
+          <p className="text-sm m-0">
+            {description ?? "Se envía al equipo en segundo plano: podés seguir usando el panel mientras se procesa."}
+          </p>
+          <p className="text-xs text-text/70 m-0">El avance y el resultado aparecen en el panel “Procesando”.</p>
+          <form id={formId} action={formAction}>
+            {Object.entries(hidden).map(([k, v]) => (
+              <input key={k} type="hidden" name={k} value={v} />
+            ))}
+            {startError && <p className="text-sm m-0 text-text mb-2">{startError}</p>}
+          </form>
         </div>
       </Dialog>
     </>

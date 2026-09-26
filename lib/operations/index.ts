@@ -303,8 +303,17 @@ export async function startDeleteUser(devId: string, userId: string): Promise<St
   if (existing) return { id: existing };
 
   const label = `${OPERATION_LABELS.DELETE_USER} ${userId}`;
-  const id = await createOperation({ kind: "DELETE_USER", label, devId, userId });
-  await queueCommandForOperation(id, devId, "DELETE_USER", { user_id: userId });
+  // Arranca leyendo el conteo de usuarios: la verificación compara contra él
+  // (advance.ts → advanceDeleteUser; GET_USER_INFO no sirve para verificar, O9).
+  const id = await createOperation({
+    kind: "DELETE_USER",
+    label,
+    devId,
+    userId,
+    stepTotal: 3,
+    plan: { phase: "baseline" },
+  });
+  await queueCommandForOperation(id, devId, "GET_DEVICE_STATUS", {});
   return { id, warning: offlineWarning(dev) };
 }
 
@@ -640,6 +649,77 @@ export async function listRecentOperations(
     opts.devId ? [opts.devId, limit] : [limit]
   );
   return rows.map(toView);
+}
+
+/** Un comando de la cadena de una operación, sin binarios — lo que el panel "Procesando" lista paso a paso. */
+export interface OperationStepView {
+  trans_id: number;
+  cmd_code: string;
+  status: string;
+  cmd_return_code: string | null;
+  user_id: string | null;
+  backup_number: number | null;
+  updated_at: number;
+}
+
+export interface TrackedOperationView extends OperationView {
+  steps: OperationStepView[];
+}
+
+/**
+ * Para el panel global "Procesando" (components/admin/OperationsTracker):
+ * todas las operaciones activas —las lance quien las lance, incluido el
+ * fan-out automático— más las `ids` que el cliente ya venía siguiendo, para
+ * que vea también su estado terminal. Una sola consulta por ciclo de sondeo.
+ */
+export async function listTrackedOperations(ids: number[]): Promise<TrackedOperationView[]> {
+  const active = await listActiveOperations();
+  const seen = new Set(active.map((o) => o.id));
+  const extra = ids.filter((id) => !seen.has(id));
+  const extraRows = extra.length
+    ? await allAsync<OperationRowWithDevice>(
+        `${OPERATION_SELECT} WHERE o.id IN (${extra.map(() => "?").join(",")})`,
+        extra
+      )
+    : [];
+  const views = [...active, ...extraRows.map(toView)];
+  if (views.length === 0) return [];
+
+  const opIds = views.map((v) => v.id);
+  const cmds = await allAsync<{
+    op_id: number;
+    trans_id: number;
+    cmd_code: string;
+    status: string;
+    cmd_return_code: string | null;
+    cmd_param: string | null;
+    updated_at: number;
+  }>(
+    `SELECT op_id, trans_id, cmd_code, status, cmd_return_code, cmd_param, updated_at
+       FROM commands WHERE op_id IN (${opIds.map(() => "?").join(",")})
+      ORDER BY trans_id ASC`,
+    opIds
+  );
+  const byOp = new Map<number, OperationStepView[]>();
+  for (const c of cmds) {
+    let param: { user_id?: unknown; backup_number?: unknown } = {};
+    try {
+      param = c.cmd_param ? JSON.parse(c.cmd_param) : {};
+    } catch {
+      // parámetros ilegibles: el paso se muestra sin detalle
+    }
+    const step: OperationStepView = {
+      trans_id: c.trans_id,
+      cmd_code: c.cmd_code,
+      status: c.status,
+      cmd_return_code: c.cmd_return_code,
+      user_id: typeof param.user_id === "string" ? param.user_id : null,
+      backup_number: typeof param.backup_number === "number" ? param.backup_number : null,
+      updated_at: c.updated_at,
+    };
+    byOp.set(c.op_id, [...(byOp.get(c.op_id) ?? []), step]);
+  }
+  return views.map((v) => ({ ...v, steps: byOp.get(v.id) ?? [] }));
 }
 
 export async function getOperation(id: number): Promise<OperationView | null> {

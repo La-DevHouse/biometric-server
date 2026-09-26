@@ -439,6 +439,18 @@ Antes de que el comando llegue a entregarse (equipo desconectado, todavía en
 cola) sí aplica el margen largo normal — el silencio de un equipo que ni
 siquiera ha hecho polling todavía no significa nada.
 
+> **⚠️ Actualización 2026-09-26 — el silencio NO es prueba de que el usuario no
+> exista.** En `2023081133` se vio a `GET_USER_INFO` quedarse sin responder,
+> de forma intermitente, con usuarios que **sí** existían (usuario 2 y
+> `30000001`); un reintento minutos después respondió en 1 s. La regla de
+> arriba había dado por "borrado (verificado)" un `DELETE_USER` que en
+> realidad falló. Desde entonces el panel: (1) verifica `DELETE_USER` con
+> `total_user_count` de `GET_DEVICE_STATUS` antes y después (tiene que bajar
+> exactamente 1), nunca por silencio; (2) cuando la sonda de alta no responde,
+> la cruza con `GET_USER_ID_LIST` antes de crear: si la cédula aparece
+> (existe y tiene huellas), o si la lista no se puede leer, no crea. Ver
+> `docs/10-reestructura-dominio-sync.md` §8 O9.
+
 **`GET_USER_ID_LIST` no es una alternativa válida para este chequeo** — ver
 su propia advertencia: no enumera usuarios sin huella registrada, así que
 "no aparece en la lista" no significa "el ID está libre".
@@ -473,7 +485,17 @@ su propia advertencia: no enumera usuarios sin huella registrada, así que
 > - Cambiar el nombre → [`SET_USER_NAME`](#set_user_name) (verificado seguro, sin efectos secundarios)
 > - Cambiar el privilegio → [`SET_USER_PRIVILEGE`](#set_user_privilege) (verificado seguro, sin efectos secundarios — aunque solo `MANAGER` se confirmó aplicando correctamente)
 >
-> ## ⚠️ Tampoco confirmado que sirva para dar de alta usuarios nuevos
+> ## ✅ Actualización 2026-09-26: el alta de un usuario nuevo SIN huella SÍ funciona
+>
+> Se verificó en los dos equipos (`2023081133` y `2023081158`, firmware
+> `WS535BW1_BSCS_v1.5.31`): `SET_USER_INFO {user_id, user_name, user_privilege:"USER"}`
+> con IDs nunca usados (`30000001`, `30000002`, `111`) creó el usuario. Lo confirmaron
+> `GET_USER_INFO`, el aumento de `total_user_count` y la pantalla del equipo. El
+> nombre se trunca a 8 caracteres. El usuario **no aparece** en `GET_USER_ID_LIST`
+> hasta que tiene una huella. La advertencia de abajo (fallos del 2026-08-18) queda
+> como historia. Detalle en `docs/10-reestructura-dominio-sync.md` §7.3 (T4).
+>
+> ## ⚠️ (Histórico, 2026-08-18) Tampoco confirmado que sirva para dar de alta usuarios nuevos
 >
 > Una versión anterior de esta nota recomendaba `SET_USER_INFO` para crear
 > usuarios nuevos sin biométricos — esa recomendación **nunca se verificó
@@ -769,6 +791,29 @@ equipo las direcciones de memoria del otro.
 comando correcto hace que el **destino los regenere él mismo**. El único campo
 que sí conviene patchar antes de enviar es el `user_id` embebido (offset 608),
 para que coincida con el ID destino.
+
+### Duplicados y conflictos de dedo (verificado 2026-09-26, equipos A y B)
+
+- **Desde el teclado**, enrolar un dedo que ya existe en el equipo en **cualquier**
+  usuario da `DUPLICATED`: la revisión es contra todo el equipo, no por usuario.
+- **`SET_ENROLL_DATA` NO revisa duplicados**: acepta con `OK` un dedo que ya está en
+  otro user_id del mismo equipo, y `fp_count` sube.
+- Con el mismo dedo en dos user_id, **el marcaje siempre se asigna al registro
+  original o más antiguo, sin importar cuál ID es más bajo**: 45/45 al original en A
+  (5 frente a 30000002) y 13/13 en B (999 frente a 111; la copia tenía el ID más
+  bajo y perdió). La copia no está rota, solo tapada: al borrar el original, la copia
+  empieza a marcar de inmediato. Da una receta de migración para IDs viejos (empujar
+  la copia con la cédula → borrar el ID viejo); ver `docs/10` §4.5.
+- Máximo 10 huellas por usuario (slots 0–9). Desde el teclado, la número 11 da error.
+- **`SET_ENROLL_DATA` sobre un slot OCUPADO responde `OK` y no hace nada** (verificado
+  2 veces en `2023081158`: `fp_count` igual, bytes del slot sin cambios, el dedo viejo
+  sigue marcando). En un slot **libre** sí agrega (+1 `fp_count`, el dedo copiado de
+  otro equipo marca). No hay forma de reemplazar una sola huella: solo borrar el
+  usuario completo y recrearlo. Siempre hay que verificar releyendo.
+- El equipo **encadena comandos**: después de `send_cmd_result` pide el siguiente de
+  inmediato (~370 ms por comando). Solo el primero espera al poll de ~11 s.
+- `realtime_enroll_data` llega en el momento de un enrolamiento por teclado, con la
+  ficha completa y todas las plantillas del usuario (N × (4 + 612 B)).
 
 ### Lo que queda sin confirmar
 

@@ -7,6 +7,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { cx } from "@/lib/cx";
 import { Tag } from "@/components/ui/Tag";
 import { ToastProvider } from "./Toaster";
+import { OperationsTrackerProvider } from "./OperationsTracker";
 import { logoutAction } from "@/app/login/actions";
 
 // Glifos mono por ítem — parte de la maqueta "Menú lateral" (2026-09-23), no
@@ -108,6 +109,7 @@ export function AdminShell({
 
   return (
     <ToastProvider>
+      <OperationsTrackerProvider>
       {/* h-dvh, no h-screen: 100vh no descuenta la barra de direcciones
           dinámica del navegador en mobile — recorta el fondo de la página
           (el último ítem de una lista larga queda inalcanzable). */}
@@ -223,6 +225,7 @@ export function AdminShell({
           <div className="flex-1 overflow-y-auto p-4 md:p-6">{children}</div>
         </main>
       </div>
+      </OperationsTrackerProvider>
     </ToastProvider>
   );
 }
