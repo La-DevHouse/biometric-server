@@ -14,10 +14,12 @@
 // Env: DATABASE_URL, SYNC_FINGERPRINTS_INTERVAL_MIN (30), SYNC_ATTENDANCE_CRON
 // ("0 2 * * *"), SYNC_TZ ("America/Caracas"), SYNC_MAX_REMOVALS_PER_DEVICE (5),
 // SYNC_MAX_REMOVALS_PCT (20).
+import { readdirSync } from "node:fs";
+import path from "node:path";
 import PgBoss from "pg-boss";
 import { reconcileAll } from "@/lib/sync/reconcile";
 import { attendancePullAll, attendanceComputeAll } from "@/lib/sync/attendance";
-import { closeDb } from "@/lib/db";
+import { closeDb, prisma } from "@/lib/db";
 
 const FINGERPRINTS = "sync-fingerprints";
 const ATTENDANCE = "sync-attendance";
@@ -28,9 +30,48 @@ function fingerprintsCron(): string {
   return `*/${min} * * * *`;
 }
 
+const MIGRATION_POLL_MS = 10_000;
+
+/**
+ * Espera a que la base tenga aplicadas TODAS las migraciones que trae este
+ * código antes de arrancar. En Coolify la app y el worker son servicios
+ * separados sin orden de deploy entre sí; la única que migra es la app
+ * (`npm run start` = `prisma migrate deploy && …`). Si el worker nuevo arranca
+ * antes, espera acá en vez de correr código nuevo contra un schema viejo.
+ */
+async function waitForMigrations(): Promise<void> {
+  const dir = path.join(process.cwd(), "prisma", "migrations");
+  const expected = readdirSync(dir, { withFileTypes: true })
+    .filter((d) => d.isDirectory())
+    .map((d) => d.name);
+  let warned = false;
+  for (;;) {
+    let pending = expected;
+    try {
+      const rows = await prisma.$queryRaw<{ migration_name: string }[]>`
+        SELECT migration_name FROM _prisma_migrations
+         WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL`;
+      const applied = new Set(rows.map((r) => r.migration_name));
+      pending = expected.filter((m) => !applied.has(m));
+    } catch {
+      // _prisma_migrations todavía no existe (base recién creada): igual, esperar
+    }
+    if (pending.length === 0) {
+      if (warned) console.log("[worker] migraciones aplicadas por la app — arrancando.");
+      return;
+    }
+    if (!warned) {
+      console.log(`[worker] esperando a que la app aplique ${pending.length} migración(es): ${pending.join(", ")}`);
+      warned = true;
+    }
+    await new Promise((r) => setTimeout(r, MIGRATION_POLL_MS));
+  }
+}
+
 async function main() {
   const url = process.env.DATABASE_URL;
   if (!url) throw new Error("DATABASE_URL no está definida.");
+  await waitForMigrations();
   const tz = process.env.SYNC_TZ ?? "America/Caracas";
 
   // Tablas propias en el schema `pgboss` (las crea la librería; no son de Prisma).
