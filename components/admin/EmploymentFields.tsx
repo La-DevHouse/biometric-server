@@ -25,10 +25,13 @@ export function EmploymentFields({
   lookups,
   defaults,
   startLabel = "Fecha de inicio *",
+  onCompanyChange,
 }: {
   lookups: EmploymentLookups;
   defaults?: EmploymentDefaults;
   startLabel?: string;
+  /** Para el aviso de impacto del traslado: avisa qué empresa se eligió. */
+  onCompanyChange?: (companyId: number | null) => void;
 }) {
   const [companyId, setCompanyId] = useState<number | "">(defaults?.company_id ?? "");
   const [positionSel, setPositionSel] = useState<string>(
@@ -54,7 +57,11 @@ export function EmploymentFields({
           required
           className={INPUT}
           value={companyId}
-          onChange={(e) => setCompanyId(e.target.value === "" ? "" : Number(e.target.value))}
+          onChange={(e) => {
+            const v = e.target.value === "" ? "" : Number(e.target.value);
+            setCompanyId(v);
+            onCompanyChange?.(v === "" ? null : v);
+          }}
         >
           <option value="" disabled>
             — elegí —

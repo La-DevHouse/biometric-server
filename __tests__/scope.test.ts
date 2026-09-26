@@ -13,6 +13,7 @@ import { strict as assert } from "node:assert";
 
 const db = require("../lib/db") as typeof import("../lib/db");
 const scope = require("../lib/scope") as typeof import("../lib/scope");
+const impact = require("../lib/sync/impact") as typeof import("../lib/sync/impact");
 const { prisma } = db;
 
 // Todo lo que crea este archivo lleva este prefijo y se borra al final, para no
@@ -205,4 +206,56 @@ test("db - una empresa inactiva puede quedarse sin sedes activas", async () => {
     prisma.client_company.update({ where: { id: a.id }, data: { status: "active" } }),
     /al menos una sede activa/
   );
+});
+
+// --- Aviso de impacto (lib/sync/impact.ts): la simulación usa la misma regla que el alcance ---
+
+async function link(employeeId: number, devId: string, userId: string) {
+  await prisma.employee_device_enrollment.create({ data: { employee_id: employeeId, dev_id: devId, device_user_id: userId } });
+}
+
+test("impact - terminar el único contrato: pierde los equipos donde está vinculada", async () => {
+  const a = await company("IMP_A");
+  const d = await device("IMP_A1", a.siteId);
+  const emp = await employee("92000001");
+  await contract(emp, a.id);
+  await link(emp, d, "92000001");
+  const emp2 = await prisma.employment.findFirst({ where: { employee_id: emp } });
+
+  const r = await impact.previewImpact({ kind: "end_contract", employmentId: emp2!.id });
+  const mine = r.losses.find((l) => l.employeeId === emp);
+  assert.ok(mine);
+  assert.deepEqual(mine!.devices, [d]);
+});
+
+test("impact - apagar 'compartir empleados': pierde los equipos de las otras empresas del grupo, no los propios", async () => {
+  const g = await group("IMP_G", true);
+  const a = await company("IMP_GA", g);
+  const b = await company("IMP_GB", g);
+  const da = await device("IMP_GA1", a.siteId);
+  const db2 = await device("IMP_GB1", b.siteId);
+  const emp = await employee("92000002");
+  await contract(emp, a.id);
+  await link(emp, da, "92000002");
+  await link(emp, db2, "92000002");
+
+  const r = await impact.previewImpact({ kind: "group_shared", groupId: g, shared: false });
+  const mine = r.losses.find((l) => l.employeeId === emp);
+  assert.deepEqual(mine?.devices, [db2], "sigue en su propia empresa, pierde la hermana");
+});
+
+test("impact - mover un equipo a una sede de otra empresa: pierden los de la empresa vieja; sin sede = congelado, nadie pierde", async () => {
+  const a = await company("IMP_MA");
+  const other = await company("IMP_MB");
+  const d = await device("IMP_M1", a.siteId);
+  const emp = await employee("92000003");
+  await contract(emp, a.id);
+  await link(emp, d, "92000003");
+
+  const moved = await impact.previewImpact({ kind: "device_site", devId: d, siteId: other.siteId });
+  assert.deepEqual(moved.losses.find((l) => l.employeeId === emp)?.devices, [d]);
+
+  const unassigned = await impact.previewImpact({ kind: "device_site", devId: d, siteId: null });
+  assert.equal(unassigned.losses.find((l) => l.employeeId === emp), undefined, "congelado: no se quita a nadie");
+  assert.ok(unassigned.frozenDevices.length > 0);
 });

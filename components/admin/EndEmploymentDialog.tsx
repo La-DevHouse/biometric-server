@@ -9,6 +9,7 @@ import { useToast } from "./Toaster";
 import { endEmploymentAction } from "@/app/admin/empleados/actions";
 import { ADMIN_ACTION_INITIAL } from "@/lib/adminActionState";
 import { FIELD_INPUT as INPUT } from "@/components/ui/fieldStyles";
+import { ImpactPreview } from "./ImpactPreview";
 
 export function EndEmploymentDialog({
   employmentId,
@@ -42,6 +43,7 @@ export function EndEmploymentDialog({
             Fecha de baja *
             <input name="end_date" type="date" required className={INPUT} autoFocus />
           </label>
+          {open && <ImpactPreview change={{ kind: "end_contract", employmentId }} />}
           <Btn type="submit" variant="primary" disabled={pending}>
             {pending ? "Guardando…" : "Confirmar baja"}
           </Btn>

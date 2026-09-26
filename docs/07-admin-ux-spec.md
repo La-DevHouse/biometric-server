@@ -32,21 +32,58 @@ describe el "qué"; el "cómo se guarda" va en el 08.
 
 ---
 
-> **⚠️ Superado en parte por `docs/10-reestructura-dominio-sync.md` (2026-09-26).**
-> Donde choque, gana `10`: el grupo es tabla propia (`company_group`, sin RIF,
-> sin sedes/dispositivos/contratos) y ya no una empresa padre (§1.1); toda
-> empresa tiene ≥1 sede (§1.2); el contrato no lleva sede (§1.4); el
-> dispositivo se asigna solo a sede (§1.6); la vinculación empleado ↔ usuario
-> del equipo es automática por cédula (§1.7, §5.3); el compartir entre
-> empresas del grupo lo decide el flag del grupo (§5.4). Este documento se
-> reescribe con el PR 3 (UI) de `10`.
+## 0. Vigente (2026-09-27) — lo que manda sobre el resto de este documento
+
+Este borrador (2026-08-29) se escribió antes de la reestructura de
+`docs/10-reestructura-dominio-sync.md`. **Donde choque, gana esta sección y `10`.**
+Las secciones marcadas "(superado — ver §0)" quedan como historia del relevamiento.
+
+**Modelo:**
+- **Grupo de empresas** = entidad propia (`company_group`): solo nombre +
+  "Compartir empleados". Sin RIF, sin sedes, sin equipos, sin contratos.
+- **Empresa** (RIF obligatorio) pertenece a 0 o 1 grupo. Toda empresa activa tiene
+  **≥1 sede activa**: se crea junto con su primera sede, y no se puede desactivar la
+  última.
+- **Contrato de trabajo** (`employment`) = persona ↔ empresa, **sin sede**.
+- **Dispositivo** → una sede (la empresa sale de la sede). Sin sede = "pendiente de
+  asignar" = congelado.
+- **Alcance de la huella**: los equipos de las sedes de la empresa de cada contrato
+  vigente, más los de las demás empresas del grupo si el grupo comparte empleados.
+
+**Enrolamiento y huellas (automático):** el ID en el equipo es la cédula; la
+vinculación es automática. El **reconciliador** agrega a quien falte, copia las
+huellas que falten (las 10 primeras) y quita a quien ya no corresponda — cada 30
+min, ante cada cambio y con "Sincronizar ahora". Salvaguardas: nunca admins del
+equipo, nunca IDs que no sean de un empleado, equipos sin sede congelados, y un
+freno de borrado masivo que pide aprobación. Enrolar un dedo en el teclado de
+cualquier equipo del alcance alcanza: se detecta y se copia a los demás.
+
+**Vistas:**
+
+| Vista | Qué muestra / hace |
+| --- | --- |
+| **Empresas** | Lista agrupada por grupo; alta/edición de grupos y empresas (con primera sede) |
+| **Empresa → Datos y sedes** | Ficha, sedes (con equipos por sede), "Sincronizar ahora" |
+| **Empresa → Empleados** | Contratos vigentes con su estado en los equipos del alcance (huellas, "en N de M", al día / faltan) |
+| **Empresa → Asistencia** | Marcaciones hechas en los equipos de sus sedes (el marcaje es de la empresa donde se marca), filtros por fecha/sede, "Sincronizar asistencia" |
+| **Empleados** | Listado global, filtros por grupo/empresa/estado (sin filtro por sede) |
+| **Ficha de empleado** | Contratos (alta / baja / traslado con **aviso de impacto**), estado por equipo, huellas (orden de captura, origen, en cuántos equipos), "Sincronizar ahora" |
+| **Dispositivos** | Asignar a sede (con aviso de impacto), "Sincronización de huellas" (última corrida, "Sincronizar ahora", aprobar/rechazar bajas frenadas), "Sincronizar todos" |
+| **Enrolamiento** | Solo lectura: por equipo, qué falta, qué está incompleto, qué sobra, admins que no se tocan, IDs sin empleado, y los usuarios del equipo |
+| **Usuarios de equipo** | Por equipo: renombrar, privilegio, ver biométricos, eliminar (aviso si es un empleado del alcance — el reconciliador lo recrearía). **Sin alta manual.** |
+| **Diagnóstico** | Comandos crudos, cola, tráfico; **zona de riesgo** (borrar logs / biométricos, con doble confirmación); enlace a la asistencia global |
+
+**Aviso de impacto** ("X pierde acceso a Y") antes de guardar: terminar contrato,
+trasladar, apagar "Compartir empleados", cambiar el grupo de una empresa, mover un
+equipo de sede. Desactivar una empresa o un grupo todavía no lo muestra (queda el
+freno de borrado masivo como red) — `docs/10` §8 O12.
 
 ## 1. Catálogo de entidades del dominio
 
 Nomenclatura provisional en inglés/snake para alinear con el schema; los rótulos
 de UI van en español.
 
-### 1.1 `client_company` — empresa cliente
+### 1.1 `client_company` — empresa cliente (superado — ver §0)
 
 Origen: ventana **Organización** de Adempiere (`docs/adempiere/views/organizacion.md`).
 ALCO: **32 empresas reales hoy**.
@@ -72,7 +109,7 @@ Reglas:
 (Venezuela)" de Adempiere (NIL, SSO, RPE, INCES, FAOV, BANAVIH, aportes/
 deducciones) — cálculo de nómina, fuera de Fase 1.
 
-### 1.2 `site` — sede
+### 1.2 `site` — sede (superado — ver §0)
 
 **Entidad nueva.** ALCO (D12) nombró "sede" como categoría configurable, y el
 caso de uso de empleados compartidos es explícitamente **una empresa con varias
@@ -110,7 +147,7 @@ reclutamiento, sin vínculo laboral vigente).
 educación (vacíos en la práctica), "Imagen de Pulgar" de Adempiere (no es el dato
 biométrico funcional).
 
-### 1.4 `employment` — vínculo persona ↔ empresa
+### 1.4 `employment` — vínculo persona ↔ empresa (superado — ver §0)
 
 Origen: **Contrato de Empleado** de Adempiere (sub-tab de Socio de Negocio, `1/N`).
 
@@ -161,7 +198,7 @@ de jornada, sede" como el set inicial y pidió que sea configurable. `department
 etiqueta arbitrarios, se añade un mecanismo genérico `employee_attribute`
 entonces — no ahora, para no sobre-diseñar.
 
-### 1.6 `device` — dispositivo biométrico
+### 1.6 `device` — dispositivo biométrico (superado — ver §0)
 
 Evoluciona la tabla `devices` actual (capa de protocolo, ver `docs/02-architecture.md`).
 Origen adicional: **Dispositivos de Asistencia** de Adempiere (23 registros).
@@ -186,7 +223,7 @@ cliente tiene acceso **admin al dispositivo físico**, no a la plataforma. No ha
 ampliación de alcance. Ese rol se maneja como configuración/credencial del equipo
 (vía comandos del protocolo, ej. privilegio `MANAGER`), no como `app_user`.
 
-### 1.7 `employee_device_enrollment` — vínculo empleado ↔ enrolado del equipo
+### 1.7 `employee_device_enrollment` — vínculo empleado ↔ enrolado del equipo (superado — ver §0)
 
 **Entidad nueva.** ALCO (C8): la relación "usuario X en dispositivo Y = empleado
 Z" la maneja el sistema nuevo, con soporte para el mismo empleado en varios
@@ -206,7 +243,7 @@ dispositivos.
 - Único por `(dev_id, device_user_id)` — un slot de equipo mapea a un empleado a
   la vez.
 
-### 1.8 `employee_fingerprint` — plantilla biométrica a nivel empleado
+### 1.8 `employee_fingerprint` — plantilla biométrica a nivel empleado (superado — ver §0)
 
 **Entidad nueva.** ALCO: las huellas son parte de la info del empleado, para
 poder usarlas en varios biométricos.
@@ -385,7 +422,7 @@ app_user ──< export_run
 
 ---
 
-## 3. Vistas del panel nuevo
+## 3. Vistas del panel nuevo (superado — ver §0)
 
 El panel actual (`app/admin/**`) ya tiene: Inicio, Dispositivos, Usuarios
 (enrolados de equipo), Asistencia (marcajes), Diagnóstico. Se **mantienen** y se
@@ -440,39 +477,39 @@ la pantalla "Usuarios de la plataforma" viene con el CRUD de Hito 3).
 
 ## 5. Flujos transversales
 
-### 5.1 Alta de empresa cliente
+### 5.1 Alta de empresa cliente (superado — ver §0)
 Crear `client_company` → si es grupo, marcar `is_group` y crear las hijas con
 `parent_id` → crear sedes → asignar dispositivos.
 
-### 5.2 Alta de empleado
+### 5.2 Alta de empleado (superado — ver §0)
 Crear `employee` (persona, por documento) → crear `employment` en su empresa con
 sede / grupo / departamento / puesto / fecha de inicio → el turno lo hereda del
 `schedule_group` → vincular su huella a un equipo (flujo 5.3).
 
-### 5.3 Vincular empleado ↔ enrolado de equipo
+### 5.3 Vincular empleado ↔ enrolado de equipo (superado — ver §0)
 Desde **Enrolamiento**: el equipo reporta sus `user_id`; el operador asocia cada
 uno a un `employee` → se crea `employee_device_enrollment`. A partir de ahí los
 `attendance_log` de ese slot resuelven `employee_id`.
 
-### 5.4 Empleado compartido entre sedes/empresas hermanas
+### 5.4 Empleado compartido entre sedes/empresas hermanas (superado — ver §0)
 Si el grupo padre tiene `shared_employees`, un empleado de una hija puede
 enrolarse en el equipo de otra sede/hija sin `employment` nuevo — solo un
 `employee_device_enrollment` adicional. Su asistencia sigue contando para su
 `employment`.
 
-### 5.5 Copiar / migrar huella entre dispositivos
+### 5.5 Copiar / migrar huella entre dispositivos (superado — ver §0)
 **Depende de funcionalidad técnica no lograda** (`docs/02-architecture.md`).
 Diseño objetivo: `GET_ENROLL_DATA` del equipo origen → guardar en
 `employee_fingerprint` → `SET_ENROLL_DATA` al equipo destino → verificar con otro
 `GET_ENROLL_DATA`. Para el mismo grupo con `shared_employees`, ALCO quiere que sea
 automático.
 
-### 5.6 Baja de empleado
+### 5.6 Baja de empleado (superado — ver §0)
 `end_date` + `status=inactivo` en el `employment`. La persona queda en el registro
 global (reclutamiento). Desaparece de los reportes de la empresa de inmediato.
 Opcionalmente desactivar sus `employee_device_enrollment`.
 
-### 5.7 Traslado entre empresas
+### 5.7 Traslado entre empresas (superado — ver §0)
 Acción única "Trasladar": cierra el `employment` de origen y abre uno en destino
 con la **misma `employee`** → nueva sede / grupo → re-enrolar o copiar huella al
 equipo de la nueva sede (5.5). Toda la historia queda en las filas de `employment`.

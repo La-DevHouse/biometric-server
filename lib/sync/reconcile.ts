@@ -285,6 +285,45 @@ async function scopedEmployees(devId: string, companyId: number): Promise<Scoped
   return out;
 }
 
+export interface DeviceSyncState {
+  frozen: boolean;
+  plan: ReconcilePlan | null;
+  inScope: ScopedEmployee[];
+  /** user_id → privilegio según la caché (null = nunca leído). */
+  deviceUsers: Map<string, string | null>;
+  /** user_id → employee.id, para quien la cédula corresponde a un empleado. */
+  employeeByUser: Map<string, number>;
+}
+
+/**
+ * Lo que el reconciliador haría HOY en este equipo, sin hacerlo (vista de
+ * desajustes, docs/10 §6). Usa la caché `users`, así que refleja la última
+ * lectura del equipo — "Sincronizar ahora" la refresca.
+ */
+export async function deviceSyncState(devId: string): Promise<DeviceSyncState> {
+  const companyId = await deviceCompany(devId);
+  const [cachedUsers, linked, byCedula] = await Promise.all([
+    prisma.users.findMany({ where: { dev_id: devId }, select: { user_id: true, user_privilege: true } }),
+    prisma.employee_device_enrollment.findMany({ where: { dev_id: devId, status: "active" }, select: { device_user_id: true } }),
+    employeeIdsByCedula(),
+  ]);
+  const deviceUsers = new Map(cachedUsers.map((u) => [u.user_id, u.user_privilege ?? null]));
+  for (const l of linked) if (!deviceUsers.has(l.device_user_id)) deviceUsers.set(l.device_user_id, null);
+  const employeeByUser = new Map([...deviceUsers.keys()].filter((u) => byCedula.has(u)).map((u) => [u, byCedula.get(u)!]));
+  if (companyId === null) return { frozen: true, plan: null, inScope: [], deviceUsers, employeeByUser };
+
+  const inScope = await scopedEmployees(devId, companyId);
+  const cfg = syncConfig();
+  const plan = planReconcile({
+    inScope,
+    deviceUsers: [...deviceUsers].map(([userId, privilege]) => ({ userId, privilege })),
+    employeeByCedula: byCedula,
+    maxRemovals: cfg.maxRemovals,
+    maxRemovalsPct: cfg.maxRemovalsPct,
+  });
+  return { frozen: false, plan, inScope, deviceUsers, employeeByUser };
+}
+
 async function decideAndApply(op: OperationRow, plan: ReconcilePlanState, readDevice: boolean): Promise<void> {
   const devId = op.dev_id;
   const companyId = await deviceCompany(devId);

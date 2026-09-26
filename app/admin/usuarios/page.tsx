@@ -8,7 +8,7 @@ import { Tag } from "@/components/ui/Tag";
 import { Icon } from "@/components/ui/icons";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { OpButton } from "@/components/admin/OpButton";
-import { CreateUserDialog } from "@/components/admin/CreateUserDialog";
+import { deviceSyncState } from "@/lib/sync/reconcile";
 import { RenameUserDialog } from "@/components/admin/RenameUserDialog";
 import { ChangePrivilegeDialog } from "@/components/admin/ChangePrivilegeDialog";
 import { DeleteUserDialog } from "@/components/admin/DeleteUserDialog";
@@ -66,6 +66,10 @@ export default async function UsuariosPage({
   await requireUser();
   const { dev } = await searchParams;
   const { devices, effectiveDevId, users } = await getData(dev);
+  // Quién está en el alcance de este equipo: si se lo borra a mano, el
+  // reconciliador lo vuelve a crear (docs/10 §6) — se avisa en el diálogo.
+  const sync = effectiveDevId ? await deviceSyncState(effectiveDevId) : null;
+  const inScope = new Set(sync?.inScope.map((e) => e.cedula) ?? []);
 
   return (
     <div className="flex flex-col gap-4 max-w-[1100px]">
@@ -86,9 +90,9 @@ export default async function UsuariosPage({
             >
               {Icon.sync}
             </OpButton>
-            <div className="ml-auto">
-              <CreateUserDialog devId={effectiveDevId} />
-            </div>
+            <p className="m-0 ml-auto text-xs text-text/70">
+              Las altas las hace el reconciliador por cédula (ver Enrolamiento).
+            </p>
           </>
         )}
       </div>
@@ -101,8 +105,7 @@ export default async function UsuariosPage({
       ) : users.length === 0 ? (
         <EmptyState
           title="Sin usuarios en este equipo"
-          description='Da de alta el primero, o sincroniza la lista si el equipo ya tiene usuarios cargados.'
-          action={<CreateUserDialog devId={effectiveDevId} />}
+          description="Sincronizá la lista si el equipo ya tiene usuarios cargados. Las altas las hace el reconciliador por cédula."
         />
       ) : (
         <>
@@ -146,6 +149,7 @@ export default async function UsuariosPage({
                         />
                         <ViewBiometricsDialog devId={effectiveDevId!} userId={u.user_id} />
                         <DeleteUserDialog
+                          inScope={inScope.has(u.user_id)}
                           devId={effectiveDevId!}
                           userId={u.user_id}
                           userName={u.user_name || ""}
@@ -187,6 +191,7 @@ export default async function UsuariosPage({
                     />
                     <ViewBiometricsDialog devId={effectiveDevId!} userId={u.user_id} />
                     <DeleteUserDialog
+                      inScope={inScope.has(u.user_id)}
                       devId={effectiveDevId!}
                       userId={u.user_id}
                       userName={u.user_name || ""}

@@ -10,6 +10,7 @@ import { CompanyFormDialog, type CompanyFormValues } from "@/components/admin/Co
 import { SiteFormDialog } from "@/components/admin/SiteFormDialog";
 import { RecordStatusButton } from "@/components/admin/RecordStatusButton";
 import { ResyncEnrollmentsButton } from "@/components/admin/ResyncEnrollmentsButton";
+import { CompanyTabs } from "@/components/admin/CompanyTabs";
 import { setCompanyStatusAction, setSiteStatusAction } from "@/app/admin/empresas/actions";
 
 export const dynamic = "force-dynamic";
@@ -81,17 +82,16 @@ export default async function EmpresaDetailPage({
 
   return (
     <div className="flex max-w-3xl flex-col gap-6">
-      <div>
-        <Link href="/admin/empresas" className="text-xs text-accent no-underline hover:underline">
-          ← Empresas
-        </Link>
-        <div className="mt-1 flex items-center gap-3">
-          <h2 className="font-heading text-2xl font-semibold tracking-tight m-0">{company.name}</h2>
+      <CompanyTabs
+        companyId={company.id}
+        companyName={company.name}
+        active="datos"
+        badges={
           <Tag variant={company.status === "active" ? "accent" : "neutral"}>
             {company.status === "active" ? "Activa" : "Inactiva"}
           </Tag>
-        </div>
-      </div>
+        }
+      />
 
       <section className="flex flex-col gap-2 border border-divider p-4 text-sm">
         <Row label="RIF" value={company.tax_id ?? "—"} mono />

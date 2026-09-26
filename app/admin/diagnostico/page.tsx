@@ -6,6 +6,9 @@ import { DiagnosticoCommandForm } from "@/components/admin/DiagnosticoCommandFor
 import { Card, CardKicker, CardTitle } from "@/components/ui/Card";
 import { Tag } from "@/components/ui/Tag";
 import { EmptyState } from "@/components/ui/EmptyState";
+import Link from "next/link";
+import { ClearLogsDialog } from "@/components/admin/ClearLogsDialog";
+import { ClearEnrollDialog } from "@/components/admin/ClearEnrollDialog";
 
 // force-dynamic: la página pega a Postgres en un Server Component; con `revalidate`
 // Next intenta prerenderizarla en `next build`, lo que exige la BD accesible en
@@ -99,6 +102,17 @@ export default async function DiagnosticoPage({
         tráfico entrante/saliente. Es lo que permitió descubrir los quirks del firmware — nada
         aquí pasa por la capa de operaciones de negocio.
       </p>
+      <p className="m-0 max-w-2xl border border-accent2 p-2.5 text-xs">
+        ⚠ Los usuarios y huellas de los equipos los mantiene el reconciliador (docs/10): un alta, baja o huella
+        escrita a mano desde acá puede ser revertida en la próxima sincronización si no coincide con el alcance
+        (contratos, empresa, grupo, sede). Para cambiar quién está en un equipo, cambiá el contrato o la asignación.
+      </p>
+      <p className="m-0 text-xs">
+        <Link href="/admin/asistencia" className="text-accent no-underline hover:underline">
+          Asistencia global (todas las marcaciones, por equipo) →
+        </Link>{" "}
+        <span className="text-text/60">— la vista por empresa está en Empresas → Asistencia.</span>
+      </p>
 
       <Card>
         <CardKicker>Comando manual</CardKicker>
@@ -112,6 +126,21 @@ export default async function DiagnosticoPage({
         </Suspense>
         <span className="text-xs text-text/70">filtra la cola y el tráfico de abajo</span>
       </div>
+
+      {dev && (
+        <div className="flex flex-col gap-2 border border-accent2 p-4">
+          <h4 className="font-heading text-xl font-semibold tracking-tight m-0">Zona de riesgo — {dev}</h4>
+          <p className="m-0 max-w-lg text-sm text-text/70">
+            Borran datos del equipo físico y no se pueden deshacer (piden escribir el número de serie). El servidor
+            conserva lo ya sincronizado. Si se borran los biométricos, el reconciliador vuelve a copiar las huellas que
+            tiene guardadas de cada persona del alcance.
+          </p>
+          <div className="flex gap-2">
+            <ClearLogsDialog devId={dev} />
+            <ClearEnrollDialog devId={dev} />
+          </div>
+        </div>
+      )}
 
       <div className="flex flex-col gap-2">
         <h4 className="font-heading text-xl font-semibold tracking-tight m-0">Cola de comandos</h4>

@@ -23,6 +23,7 @@ import { ADMIN_ACTION_INITIAL } from "@/lib/adminActionState";
 import type { RifExtractedFields } from "@/lib/rifParser";
 import { FIELD_INPUT as INPUT, FIELD_LABEL as LABEL } from "@/components/ui/fieldStyles";
 import { COMMON_TIMEZONES, DEFAULT_TZ } from "@/lib/time";
+import { ImpactPreview } from "./ImpactPreview";
 
 export interface CompanyFormValues {
   id: number;
@@ -52,6 +53,7 @@ export function CompanyFormDialog({
 }) {
   const editing = !!company;
   const [open, setOpen] = useState(false);
+  const [groupId, setGroupId] = useState<number | null>(company?.group_id ?? null);
   const [rifParsing, setRifParsing] = useState(false);
   const [rifCaptureOpen, setRifCaptureOpen] = useState(false);
   const [logoFile, setLogoFile] = useState<File | null>(null);
@@ -229,7 +231,12 @@ export function CompanyFormDialog({
 
           <label className={LABEL}>
             Grupo <span className="text-text/60">(opcional — si el grupo comparte empleados, sus sedes se comparten)</span>
-            <select name="group_id" defaultValue={company?.group_id ?? ""} className={INPUT}>
+            <select
+              name="group_id"
+              value={groupId ?? ""}
+              onChange={(e) => setGroupId(e.target.value === "" ? null : Number(e.target.value))}
+              className={INPUT}
+            >
               <option value="">— sin grupo —</option>
               {groupOptions.map((g) => (
                 <option key={g.id} value={g.id}>
@@ -238,6 +245,9 @@ export function CompanyFormDialog({
               ))}
             </select>
           </label>
+          {editing && open && groupId !== company.group_id && (
+            <ImpactPreview change={{ kind: "company_group", companyId: company.id, groupId }} />
+          )}
 
           <label className={LABEL}>
             Modelo de negocio

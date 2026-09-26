@@ -9,11 +9,15 @@ import { clearEnrollAction } from "@/app/admin/actions";
 export function ClearEnrollDialog({ devId }: { devId: string }) {
   const [open, setOpen] = useState(false);
   const [ack, setAck] = useState(false);
+  // Segunda confirmación (docs/10 §6): escribir el número de serie del equipo.
+  const [typed, setTyped] = useState("");
+  const confirmed = ack && typed.trim() === devId;
   const { formAction, startError, busy } = useOperation(clearEnrollAction, { onStarted: close });
 
   function close() {
     setOpen(false);
     setAck(false);
+    setTyped("");
   }
 
   return (
@@ -34,8 +38,17 @@ export function ClearEnrollDialog({ devId }: { devId: string }) {
               <input type="checkbox" checked={ack} onChange={(e) => setAck(e.target.checked)} />
               Entiendo que esta acción no se puede deshacer
             </label>
+            <label className="flex flex-col gap-1 text-xs text-text/85">
+              Escribí el número de serie del equipo para confirmar: <span className="font-mono">{devId}</span>
+              <input
+                value={typed}
+                onChange={(e) => setTyped(e.target.value)}
+                className="min-h-9 border border-neutral-400 bg-surface px-2 font-mono text-sm"
+                autoComplete="off"
+              />
+            </label>
             {startError && <p className="text-sm m-0 text-text">{startError}</p>}
-            <Btn type="submit" variant="primary" disabled={busy || !ack}>
+            <Btn type="submit" variant="primary" disabled={busy || !confirmed}>
               {busy ? "Enviando…" : "Borrar biométricos"}
             </Btn>
           </form>

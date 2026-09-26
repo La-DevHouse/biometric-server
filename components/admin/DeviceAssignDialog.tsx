@@ -7,6 +7,7 @@ import { useToast } from "./Toaster";
 import { assignDeviceAction } from "@/app/admin/dispositivos/actions";
 import { ADMIN_ACTION_INITIAL } from "@/lib/adminActionState";
 import { FIELD_INPUT as INPUT, FIELD_LABEL as LABEL } from "@/components/ui/fieldStyles";
+import { ImpactPreview } from "./ImpactPreview";
 
 /**
  * Asigna el equipo a una sede (docs/10 R3). Un solo selector con las sedes
@@ -23,6 +24,7 @@ export function DeviceAssignDialog({
   current: { site_id: number | null; note: string | null };
 }) {
   const [open, setOpen] = useState(false);
+  const [siteId, setSiteId] = useState<number | null>(current.site_id);
   const [state, formAction, pending] = useActionState(assignDeviceAction, ADMIN_ACTION_INITIAL);
   const { push } = useToast();
 
@@ -55,7 +57,12 @@ export function DeviceAssignDialog({
 
           <label className={LABEL}>
             Sede
-            <select name="site_id" className={INPUT} defaultValue={current.site_id ?? ""}>
+            <select
+              name="site_id"
+              className={INPUT}
+              value={siteId ?? ""}
+              onChange={(e) => setSiteId(e.target.value === "" ? null : Number(e.target.value))}
+            >
               <option value="">— pendiente de asignar —</option>
               {[...byCompany.values()].map((c) => (
                 <optgroup key={c.name} label={c.name}>
@@ -68,6 +75,10 @@ export function DeviceAssignDialog({
               ))}
             </select>
           </label>
+
+          {open && siteId !== current.site_id && (
+            <ImpactPreview change={{ kind: "device_site", devId, siteId }} />
+          )}
 
           <label className={LABEL}>
             Nota interna <span className="text-text/60">(admin del equipo del lado de la empresa, texto libre)</span>

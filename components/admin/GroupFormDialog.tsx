@@ -9,6 +9,7 @@ import { useToast } from "./Toaster";
 import { createGroupAction, updateGroupAction } from "@/app/admin/empresas/actions";
 import { ADMIN_ACTION_INITIAL } from "@/lib/adminActionState";
 import { FIELD_INPUT as INPUT, FIELD_LABEL as LABEL } from "@/components/ui/fieldStyles";
+import { ImpactPreview } from "./ImpactPreview";
 
 export interface GroupFormValues {
   id: number;
@@ -24,6 +25,7 @@ export interface GroupFormValues {
 export function GroupFormDialog({ group }: { group?: GroupFormValues }) {
   const editing = !!group;
   const [open, setOpen] = useState(false);
+  const [shared, setShared] = useState(group?.shared_employees ?? true);
   const [state, formAction, pending] = useActionState(
     editing ? updateGroupAction : createGroupAction,
     ADMIN_ACTION_INITIAL
@@ -69,7 +71,8 @@ export function GroupFormDialog({ group }: { group?: GroupFormValues }) {
             <input
               type="checkbox"
               name="shared_employees"
-              defaultChecked={group?.shared_employees ?? true}
+              checked={shared}
+              onChange={(e) => setShared(e.target.checked)}
               className="mt-0.5"
             />
             <span>
@@ -80,6 +83,9 @@ export function GroupFormDialog({ group }: { group?: GroupFormValues }) {
               </span>
             </span>
           </label>
+          {editing && open && shared !== group.shared_employees && (
+            <ImpactPreview change={{ kind: "group_shared", groupId: group.id, shared }} />
+          )}
         </form>
       </Dialog>
     </>

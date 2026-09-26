@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireUser } from "@/lib/auth";
 import { getAsync, initDb, prisma } from "@/lib/db";
@@ -11,8 +12,6 @@ import { OpButton } from "@/components/admin/OpButton";
 import { SyncHoldActions } from "@/components/admin/SyncHoldActions";
 import { RenameDeviceDialog } from "@/components/admin/RenameDeviceDialog";
 import { DeviceAssignDialog } from "@/components/admin/DeviceAssignDialog";
-import { ClearLogsDialog } from "@/components/admin/ClearLogsDialog";
-import { ClearEnrollDialog } from "@/components/admin/ClearEnrollDialog";
 import { syncClockAction, refreshStatusAction, syncDeviceNowAction } from "@/app/admin/actions";
 
 // force-dynamic: la página pega a Postgres en un Server Component; con `revalidate`
@@ -253,17 +252,13 @@ export default async function DeviceDetailPage({
         </OpButton>
       </div>
 
-      <div className="flex flex-col gap-2">
-        <h4 className="font-heading text-xl font-semibold tracking-tight m-0">Zona de riesgo</h4>
-        <p className="text-sm text-text/70 max-w-lg">
-          Estas acciones borran datos del equipo físico y no se pueden deshacer. El servidor conserva
-          lo ya sincronizado.
-        </p>
-        <div className="flex gap-2">
-          <ClearLogsDialog devId={device.dev_id} />
-          <ClearEnrollDialog devId={device.dev_id} />
-        </div>
-      </div>
+      <p className="m-0 text-xs text-text/60">
+        Borrar la memoria de logs o todos los biométricos del equipo:{" "}
+        <Link href={`/admin/diagnostico?dev=${device.dev_id}`} className="text-accent no-underline hover:underline">
+          Diagnóstico → Zona de riesgo
+        </Link>
+        .
+      </p>
     </div>
   );
 }

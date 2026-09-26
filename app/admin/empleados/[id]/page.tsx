@@ -2,16 +2,17 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
-import { loadEmploymentLookups, loadDeviceCandidatesForEmployee } from "@/lib/lookups";
+import { loadEmploymentLookups } from "@/lib/lookups";
+import { applicableDevices } from "@/lib/scope";
+import { MAX_FINGERPRINTS, cedulaDigits } from "@/lib/fingerprints";
 import { Table, Th, Td, Tr } from "@/components/ui/Table";
 import { Tag } from "@/components/ui/Tag";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { EmployeeFormDialog, type EmployeeValues } from "@/components/admin/EmployeeFormDialog";
 import { EmploymentFormDialog } from "@/components/admin/EmploymentFormDialog";
 import { EndEmploymentDialog } from "@/components/admin/EndEmploymentDialog";
-import { CaptureFingerprintDialog } from "@/components/admin/CaptureFingerprintDialog";
-import { PushFingerprintDialog } from "@/components/admin/PushFingerprintDialog";
-import { AddEmployeeToDeviceDialog } from "@/components/admin/AddEmployeeToDeviceDialog";
+import { MultiOpButton } from "@/components/admin/MultiOpButton";
+import { syncEmployeeNowAction } from "@/app/admin/actions";
 
 export const dynamic = "force-dynamic";
 
@@ -28,7 +29,7 @@ export default async function EmpleadoDetailPage({
   const id = Number((await params).id);
   if (!Number.isFinite(id)) notFound();
 
-  const [employee, lookups, deviceCandidates] = await Promise.all([
+  const [employee, lookups, scopeDevices] = await Promise.all([
     prisma.employee.findUnique({
       where: { id },
       include: {
@@ -58,7 +59,7 @@ export default async function EmpleadoDetailPage({
       },
     }),
     loadEmploymentLookups(),
-    loadDeviceCandidatesForEmployee(id),
+    applicableDevices(id),
   ]);
   if (!employee) notFound();
 
@@ -73,6 +74,45 @@ export default async function EmpleadoDetailPage({
   };
   const activeEmployment = employee.employments.find((e) => e.status === "active");
   const activeEnrollments = employee.enrollments.filter((e) => e.status === "active");
+
+  // Estado por equipo (docs/10 §6): los de su alcance ∪ donde está vinculada hoy.
+  const cedula = cedulaDigits(employee.national_id);
+  const inScope = new Set(scopeDevices);
+  const linkedBy = new Map(activeEnrollments.map((en) => [en.dev_id, en.device_user_id]));
+  const deviceIds = [...new Set([...scopeDevices, ...linkedBy.keys()])];
+  const desired = employee.fingerprints.slice(0, MAX_FINGERPRINTS).map((f) => f.id);
+  const [deviceRows, mySlots] = await Promise.all([
+    prisma.devices.findMany({
+      where: { dev_id: { in: deviceIds } },
+      select: { dev_id: true, fk_name: true, site: { select: { name: true, company: { select: { name: true } } } } },
+      orderBy: { dev_id: "asc" },
+    }),
+    prisma.device_fingerprint_slot.findMany({
+      where: { dev_id: { in: deviceIds }, device_user_id: cedula },
+      select: { dev_id: true, fingerprint_id: true },
+    }),
+  ]);
+  const deviceStatus = deviceRows.map((d) => {
+    const linked = linkedBy.get(d.dev_id) ?? null;
+    const have = new Set(mySlots.filter((x) => x.dev_id === d.dev_id).map((x) => x.fingerprint_id));
+    const synced = desired.filter((f) => have.has(f)).length;
+    const scoped = inScope.has(d.dev_id);
+    const status = !scoped
+      ? { label: "Se quita (fuera del alcance)", variant: "neutral" as const }
+      : !linked
+        ? { label: "Pendiente de crear", variant: "neutral" as const }
+        : synced < desired.length
+          ? { label: "Faltan huellas", variant: "neutral" as const }
+          : { label: "Al día", variant: "accent" as const };
+    return {
+      devId: d.dev_id,
+      name: d.fk_name || d.dev_id,
+      place: d.site ? `${d.site.company.name} · ${d.site.name}` : "sin sede",
+      linked,
+      synced,
+      status,
+    };
+  });
 
   return (
     <div className="flex max-w-4xl flex-col gap-6">
@@ -196,56 +236,54 @@ export default async function EmpleadoDetailPage({
       </section>
 
       <section>
-        <div className="mb-2 flex items-center justify-between">
+        <div className="mb-2 flex items-center justify-between gap-2">
           <h3 className="m-0 text-sm font-semibold uppercase tracking-wide text-text/75">
-            Enrolamientos ({activeEnrollments.length} activo{activeEnrollments.length === 1 ? "" : "s"})
+            Equipos ({deviceStatus.length})
           </h3>
-          <AddEmployeeToDeviceDialog employeeId={employee.id} candidates={deviceCandidates} />
+          <MultiOpButton
+            action={syncEmployeeNowAction}
+            hidden={{ employee_id: String(employee.id) }}
+            title="Sincronizar ahora"
+            description="Corre la sincronización en los equipos de su alcance y donde está hoy: la crea donde falte, le copia las huellas que falten y la quita de donde ya no corresponda."
+          >
+            Sincronizar ahora
+          </MultiOpButton>
         </div>
-        {employee.enrollments.length === 0 ? (
+        <p className="m-0 mb-2 text-xs text-text/70">
+          Automático: la persona existe en los equipos de las sedes de la empresa de su contrato (y de su grupo si
+          comparte empleados), con ID = cédula ({cedula || "—"}). Se actualiza cada 30 min y ante cada cambio.
+        </p>
+        {deviceStatus.length === 0 ? (
           <EmptyState
-            title="Sin enrolamientos"
-            description="Vinculá a la persona con un slot de equipo desde Administración → Enrolamiento."
+            title="Sin equipos"
+            description="No tiene un contrato vigente con una empresa que tenga equipos asignados a sus sedes."
           />
         ) : (
           <Table>
             <thead>
               <tr>
                 <Th>Equipo</Th>
-                <Th>Slot</Th>
+                <Th>Empresa · Sede</Th>
+                <Th>ID en equipo</Th>
+                <Th>Huellas</Th>
                 <Th>Estado</Th>
-                <Th>Desde</Th>
-                <Th />
               </tr>
             </thead>
             <tbody>
-              {employee.enrollments.map((en) => (
-                <Tr key={en.id}>
-                  <Td>{en.device.fk_name || en.device.dev_id}</Td>
-                  <Td className="font-mono">{en.device_user_id}</Td>
+              {deviceStatus.map((d) => (
+                <Tr key={d.devId}>
                   <Td>
-                    <Tag variant={en.status === "active" ? "accent" : "neutral"}>
-                      {en.status === "active" ? "Activo" : "Cerrado"}
-                    </Tag>
+                    <Link href={`/admin/enrolamiento?dev=${d.devId}`} className="text-accent no-underline hover:underline">
+                      {d.name}
+                    </Link>
                   </Td>
-                  <Td className="text-xs">{fmtDate(en.enrolled_at)}</Td>
+                  <Td className="text-xs">{d.place}</Td>
+                  <Td className="font-mono">{d.linked ?? <span className="text-text/60">—</span>}</Td>
                   <Td>
-                    <div className="flex items-center gap-2">
-                      {en.status === "active" && (
-                        <CaptureFingerprintDialog
-                          employeeId={employee.id}
-                          devId={en.device.dev_id}
-                          deviceUserId={en.device_user_id}
-                          deviceLabel={en.device.fk_name || en.device.dev_id}
-                        />
-                      )}
-                      <Link
-                        href={`/admin/enrolamiento?dev=${en.device.dev_id}`}
-                        className="text-xs text-accent no-underline hover:underline"
-                      >
-                        Gestionar →
-                      </Link>
-                    </div>
+                    {d.synced} de {desired.length}
+                  </Td>
+                  <Td>
+                    <Tag variant={d.status.variant}>{d.status.label}</Tag>
                   </Td>
                 </Tr>
               ))}
@@ -255,19 +293,17 @@ export default async function EmpleadoDetailPage({
       </section>
 
       <section>
-        <div className="mb-2 flex items-center justify-between">
-          <h3 className="m-0 text-sm font-semibold uppercase tracking-wide text-text/75">
-            Huellas ({employee.fingerprints.length})
-          </h3>
-        </div>
+        <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-text/75">
+          Huellas ({employee.fingerprints.length})
+        </h3>
         <p className="m-0 mb-2 text-xs text-text/70">
-          Copia de referencia de la persona (no la del equipo) — se usa para copiar la huella a otro
-          equipo sin tener que volver a enrolarla físicamente ahí.
+          Copias de referencia de la persona. Se registran solas cuando enrola un dedo en el teclado de cualquier equipo
+          de su alcance, y se copian a los demás. Se propagan las {MAX_FINGERPRINTS} primeras (límite del equipo).
         </p>
         {employee.fingerprints.length === 0 ? (
           <EmptyState
-            title="Sin huellas capturadas"
-            description='Capturá una desde un equipo donde la persona ya esté enrolada, arriba en "Enrolamientos".'
+            title="Sin huellas"
+            description="Registrale un dedo físicamente en cualquier equipo de su alcance: se detecta solo y se copia a los demás."
           />
         ) : (
           <Table>
@@ -277,7 +313,6 @@ export default async function EmpleadoDetailPage({
                 <Th>Origen</Th>
                 <Th>En equipos</Th>
                 <Th>Capturada</Th>
-                <Th />
               </tr>
             </thead>
             <tbody>
@@ -285,29 +320,14 @@ export default async function EmpleadoDetailPage({
                 <Tr key={fp.id}>
                   <Td className="font-mono">
                     {i + 1}
-                    {i >= 10 && <span className="text-accent2"> (no se propaga: pasa de 10)</span>}
+                    {i >= MAX_FINGERPRINTS && <span className="text-accent2"> (no se propaga: pasa de {MAX_FINGERPRINTS})</span>}
                   </Td>
                   <Td>
                     {fp.source_device?.fk_name || fp.source_dev_id || "—"}
-                    {fp.source_backup_number != null && (
-                      <span className="text-text/60"> · slot {fp.source_backup_number}</span>
-                    )}
+                    {fp.source_backup_number != null && <span className="text-text/60"> · slot {fp.source_backup_number}</span>}
                   </Td>
                   <Td>{fp._count.slots}</Td>
                   <Td className="text-xs">{fmtDate(fp.captured_at)}</Td>
-                  <Td>
-                    <PushFingerprintDialog
-                      employeeId={employee.id}
-                      fingerprintId={fp.id}
-                      ordinal={i + 1}
-                      targets={activeEnrollments
-                        .filter((en) => en.device.dev_id !== fp.source_dev_id)
-                        .map((en) => ({
-                          devId: en.device.dev_id,
-                          label: `${en.device.fk_name || en.device.dev_id} (usuario ${en.device_user_id})`,
-                        }))}
-                    />
-                  </Td>
                 </Tr>
               ))}
             </tbody>

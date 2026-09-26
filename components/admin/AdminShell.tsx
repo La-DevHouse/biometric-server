@@ -17,7 +17,6 @@ const NAV_ITEMS = [
   { href: "/admin", label: "Inicio", icon: "⌂" },
   { href: "/admin/dispositivos", label: "Dispositivos", icon: "▤" },
   { href: "/admin/usuarios", label: "Usuarios de equipo", icon: "◍" },
-  { href: "/admin/asistencia", label: "Asistencia", icon: "◷" },
 ] as const;
 
 const ADMIN_ITEMS = [

@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { initDb, runAsync } from "@/lib/db";
+import { initDb, runAsync, prisma } from "@/lib/db";
 import { COMMAND_TEMPLATES } from "@/lib/commandTemplates";
 import {
   startSyncClock,
@@ -9,22 +9,20 @@ import {
   startSyncUsers,
   startRenameUser,
   startChangePrivilege,
-  startCreateUser,
   startDeleteUser,
   startSyncLogs,
   startClearLogs,
   startClearEnrollData,
   startViewBiometrics,
   startRefreshStatus,
-  startCaptureFingerprint,
-  startPushFingerprint,
-  startAddEmployeeToDevice,
   cancelOperation,
   type Privilege,
 } from "@/lib/operations";
 import type { OpActionState, MultiOpActionState } from "@/lib/opActionState";
 import { requireUser } from "@/lib/auth";
-import { startReconcileDevice, reconcileAll, resolveSyncHold } from "@/lib/sync/reconcile";
+import { startReconcileDevice, reconcileAll, resolveSyncHold, triggerReconcile, devicesAffectedByEmployee } from "@/lib/sync/reconcile";
+import { previewImpact, type ScopeChange, type ImpactResult } from "@/lib/sync/impact";
+import { attendancePullDevices } from "@/lib/sync/attendance";
 
 export type QueueCommandState =
   | { status: "idle" }
@@ -172,20 +170,6 @@ export async function changePrivilegeAction(
   }
 }
 
-export async function createUserAction(_prev: OpActionState, formData: FormData): Promise<OpActionState> {
-  await requireUser();
-  const devId = String(formData.get("dev_id") || "");
-  const userId = String(formData.get("user_id") || "");
-  const userName = String(formData.get("user_name") || "");
-  const privilege = (String(formData.get("user_privilege") || "USER")) as Privilege;
-  try {
-    const { id, warning } = await startCreateUser(devId, { userId, userName, privilege });
-    await afterStart();
-    return { status: "ok", id, warning };
-  } catch (err) {
-    return opError(err);
-  }
-}
 
 export async function deleteUserAction(_prev: OpActionState, formData: FormData): Promise<OpActionState> {
   await requireUser();
@@ -252,81 +236,7 @@ export async function clearEnrollAction(_prev: OpActionState, formData: FormData
   }
 }
 
-export async function captureFingerprintAction(
-  _prev: OpActionState,
-  formData: FormData
-): Promise<OpActionState> {
-  await requireUser();
-  const employeeId = Number(formData.get("employee_id"));
-  const devId = String(formData.get("dev_id") || "");
-  const deviceUserId = String(formData.get("device_user_id") || "");
-  try {
-    const { id, warning } = await startCaptureFingerprint(employeeId, devId, deviceUserId);
-    await afterStart();
-    revalidatePath("/admin/empleados", "layout");
-    return { status: "ok", id, warning };
-  } catch (err) {
-    return opError(err);
-  }
-}
 
-export async function pushFingerprintAction(
-  _prev: OpActionState,
-  formData: FormData
-): Promise<OpActionState> {
-  await requireUser();
-  const employeeId = Number(formData.get("employee_id"));
-  const fingerprintId = Number(formData.get("fingerprint_id"));
-  const targetDevId = String(formData.get("target_dev_id") || "");
-  try {
-    const { id, warning } = await startPushFingerprint(employeeId, fingerprintId, targetDevId);
-    await afterStart();
-    revalidatePath("/admin/empleados", "layout");
-    return { status: "ok", id, warning };
-  } catch (err) {
-    return opError(err);
-  }
-}
-
-/**
- * Dispara una operación ADD_EMPLOYEE_TO_DEVICE por cada equipo elegido —
- * nunca se propaga sola: el usuario elige uno o varios equipos a mano en
- * cada envío. Un fallo en un equipo (ej. ya vinculado ahí) no cancela los
- * demás; se acumula como advertencia.
- */
-export async function addEmployeeToDeviceAction(
-  _prev: MultiOpActionState,
-  formData: FormData
-): Promise<MultiOpActionState> {
-  await requireUser();
-  const employeeId = Number(formData.get("employee_id"));
-  const userName = String(formData.get("user_name") || "");
-  const privilege = String(formData.get("privilege") || "USER") as Privilege;
-  const devIds = formData.getAll("dev_id").map(String).filter(Boolean);
-  if (devIds.length === 0) {
-    return { status: "error", message: "Elegí al menos un equipo." };
-  }
-
-  const ids: number[] = [];
-  const notes: string[] = [];
-  for (const devId of devIds) {
-    try {
-      const { id, warning } = await startAddEmployeeToDevice(devId, { employeeId, userName, privilege });
-      ids.push(id);
-      if (warning) notes.push(`${devId}: ${warning}`);
-    } catch (err) {
-      notes.push(`${devId}: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  }
-
-  await afterStart();
-  revalidatePath("/admin/empleados", "layout");
-
-  if (ids.length === 0) {
-    return { status: "error", message: notes.join(" ") || "No se pudo iniciar la operación en ningún equipo." };
-  }
-  return { status: "ok", ids, warning: notes.length ? notes.join(" ") : undefined };
-}
 
 export async function cancelOperationAction(id: number): Promise<{ ok: boolean; reason?: string }> {
   await requireUser();
@@ -383,5 +293,48 @@ export async function resolveSyncHoldAction(
     };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/** Vista previa "X pierde acceso a Y" antes de guardar un cambio de alcance (docs/10 R8). Solo lectura. */
+export async function previewImpactAction(change: ScopeChange): Promise<ImpactResult | { error: string }> {
+  await requireUser();
+  try {
+    return await previewImpact(change);
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/** "Sincronizar ahora" para una persona: corre el reconciliador en los equipos de su alcance y donde está vinculada. */
+export async function syncEmployeeNowAction(_prev: MultiOpActionState, formData: FormData): Promise<MultiOpActionState> {
+  const user = await requireUser();
+  const employeeId = Number(formData.get("employee_id"));
+  if (!Number.isInteger(employeeId)) return { status: "error", message: "Persona inválida." };
+  try {
+    const ids = await triggerReconcile(await devicesAffectedByEmployee(employeeId), "manual", user.id);
+    if (ids.length === 0) {
+      return { status: "error", message: "No hay equipos para sincronizar: la persona no tiene contratos vigentes con equipos asignados, ni vínculos activos." };
+    }
+    await afterStart();
+    return { status: "ok", ids };
+  } catch (err) {
+    return { status: "error", message: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/** "Sincronizar asistencia" de una empresa: pull de marcaciones de los equipos de sus sedes (docs/10 R11/R12). */
+export async function syncCompanyAttendanceAction(_prev: MultiOpActionState, formData: FormData): Promise<MultiOpActionState> {
+  await requireUser();
+  const companyId = Number(formData.get("company_id"));
+  if (!Number.isInteger(companyId)) return { status: "error", message: "Empresa inválida." };
+  try {
+    const devices = await prisma.devices.findMany({ where: { site: { company_id: companyId } }, select: { dev_id: true } });
+    const ids = await attendancePullDevices(devices.map((d) => d.dev_id), "manual");
+    if (ids.length === 0) return { status: "error", message: "La empresa no tiene equipos en sedes activas." };
+    await afterStart();
+    return { status: "ok", ids };
+  } catch (err) {
+    return { status: "error", message: err instanceof Error ? err.message : String(err) };
   }
 }

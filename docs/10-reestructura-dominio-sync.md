@@ -1,8 +1,8 @@
 # Reestructura de dominio + sincronización automática de huellas y asistencia
 
-Estado: **en implementación.** PR 1 (estructura de dominio) y PR 2 (reconciliador +
-worker) **hechos** — ver §0. PR 3 (UI) pendiente; después, las pruebas con los 2
-equipos (T6, T7, T10–T12, T14).
+Estado: **implementado** — PR 1 (estructura de dominio), PR 2 (reconciliador +
+worker) y PR 3 (UI) hechos, ver §0. Pendiente: las pruebas con los 2 equipos (T6, T7,
+T10–T12, T14).
 
 Fuente: `plan.md` (raíz del repo), que resume la reunión con Ezequiel posterior a la
 Reunión 3, más la ronda de decisiones Jesús ↔ equipo del 2026-09-26 (§1). **Si algo
@@ -18,7 +18,7 @@ migración (§9), no antes.
 | --- | --- | --- |
 | **1** | Migración `20260926200000_company_group_and_site_scope` (§3.1 grupo/empresa/sede/contrato/dispositivo + backfill §3.2 + trigger §3.4) · `lib/scope.ts` (§4.1) · fan-out por alcance en `lib/enrollment.ts` (cubre empresa sin grupo / grupo que no comparte) · CRUD de grupos, empresa con primera sede obligatoria, contrato sin sede, dispositivo asignado solo a sede · tests `__tests__/scope.test.ts` | ✅ 2026-09-26 |
 | **2** | Migración `20260927100000_fingerprint_provenance_and_sync` (`device_fingerprint_slot` con backfill desde las huellas existentes, `employee_fingerprint` re-keyed con `finger_index`→`source_backup_number` renombrado sin pérdida, `sync_run`, `sync_hold`, `commands.priority` + `operations.priority` y dequeue por prioridad) · `lib/fingerprints.ts` (ingesta + procedencia + slot libre) · reconciliador `RECONCILE_DEVICE` (`lib/sync/reconcile.ts` + decisión pura `lib/sync/plan.ts`) · pull de asistencia (`lib/sync/attendance.ts`, + `last_sync_at` y `employee_id` por cédula) · worker `worker/index.ts` (`npm run worker`) · disparadores por evento en contratos/empresas/grupos/sedes/dispositivos/`realtime_enroll_data` · "Sincronizar ahora"/"Sincronizar todos" + aprobar/rechazar `sync_hold` en Dispositivos · tests `__tests__/reconcile.test.ts` | ✅ 2026-09-27 |
-| **3** | UI §6 (Empresa > Empleados / Asistencia, Enrolamiento de solo lectura, vista previa de impacto, `sync_hold`) | ⬜ |
+| **3** | Pestañas Empresa → Empleados / Asistencia · Enrolamiento de solo lectura (`deviceSyncState`: lo que el reconciliador haría hoy) · aviso de impacto (`lib/sync/impact.ts` + `<ImpactPreview>`) en terminar contrato, traslado, compartir empleados, grupo de empresa y sede de equipo · ficha de empleado con estado por equipo y "Sincronizar ahora" · fuera la UI manual de alta/captura/copia de huellas y de vinculación · borrados masivos solo en Diagnóstico con doble confirmación · Asistencia global sale del menú (enlace desde Diagnóstico) | ✅ 2026-09-27 |
 
 **Desvíos del PR 2 respecto de §3–§5:**
 - **Sin `employee_device_enrollment.desired`**: el estado deseado se recalcula en
@@ -36,6 +36,15 @@ migración (§9), no antes.
   usuarios del equipo⌉)` — así un equipo chico no queda frenado por un solo borrado.
 - **La ingesta no guarda el binario de `realtime_enroll_data`**: el evento solo
   dispara la corrida, que relee con `GET_USER_INFO` (forma limpia verificada).
+
+**Desvíos del PR 3 respecto de §6:**
+- **"Eliminar usuario" se mantiene** en Usuarios de equipo: la receta de migración de
+  IDs viejos (§4.5) necesita borrar a mano el ID que no es cédula. Si el usuario es
+  un empleado del alcance, el diálogo avisa que el reconciliador lo volvería a crear.
+- **Sin aviso de impacto al desactivar una empresa o un grupo** (botón genérico de
+  estado, inline): queda como O12. La red es el freno de borrado masivo.
+- **Asistencia global** no se movió de ruta: sale del menú y se llega desde
+  Diagnóstico.
 
 **Desvío respecto de §3:** la migración se partió en dos. Las tablas del
 reconciliador van con el PR 2 porque solo las consume él; meterlas en el PR 1
@@ -511,6 +520,7 @@ Pendientes: T6 (propagación A→B con el reconciliador), T7, T10–T14.
 | O9 | **`GET_USER_INFO` se cuelga de forma intermitente también con usuarios que SÍ existen** (visto en A el 2026-09-26: usuario 2 a las 19:27, y `30000001` a las 18:45, que seguía existiendo; un reintento minutos después respondió en 1 s). La regla "si no responde, no existe" de `ADD_EMPLOYEE_TO_DEVICE` y de la verificación de `DELETE_USER` **no es segura**: dio por borrado a `30000001` cuando su `DELETE_USER` había devuelto `Error`. El reconciliador verifica con `GET_DEVICE_STATUS` (cambio en los contadores) + `GET_USER_ID_LIST`, nunca por silencio, y **nunca manda `SET_USER_INFO` si hay duda de que el ID exista** (reindexado destructivo) | ✅ **Bug corregido en el código actual (2026-09-26):** `DELETE_USER` verifica con `total_user_count` antes y después (tiene que bajar exactamente 1; si no, `mismatch`); las sondas de `CREATE_USER`/`ADD_EMPLOYEE_TO_DEVICE` ya no toman el silencio como "libre": lo cruzan con `GET_USER_ID_LIST` (`probeListVerdict`) y no crean si la cédula aparece o si la lista no se puede leer |
 | O10 | `export_run` con `scope = group`: apuntaba a la empresa raíz (`scope_company_id`), que ya no existe como concepto. Cuando se implemente el Hito 5, agregar `scope_group_id` (FK a `company_group`) | Hito 5 |
 | O11 | Contratos con fecha de inicio futura: el fan-out del PR 1 solo enrola contratos **vigentes hoy** (§4.1). Hasta que exista el cron (PR 2), un contrato futuro se enrola con "Re-sincronizar enrolamientos" en la empresa cuando empieza | PR 2 lo resuelve solo |
+| O12 | Aviso de impacto al desactivar una empresa o un grupo (hoy solo lo protege el freno de borrado masivo) | — |
 
 ---
 

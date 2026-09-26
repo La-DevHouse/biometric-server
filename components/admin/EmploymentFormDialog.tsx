@@ -8,6 +8,7 @@ import { EmploymentFields } from "./EmploymentFields";
 import { createEmploymentAction, transferEmployeeAction } from "@/app/admin/empleados/actions";
 import { ADMIN_ACTION_INITIAL } from "@/lib/adminActionState";
 import type { EmploymentLookups } from "@/lib/lookups";
+import { ImpactPreview } from "./ImpactPreview";
 
 /**
  * Dos modos:
@@ -30,6 +31,7 @@ export function EmploymentFormDialog({
 }) {
   const isTransfer = mode === "transfer";
   const [open, setOpen] = useState(false);
+  const [toCompanyId, setToCompanyId] = useState<number | null>(null);
   const [state, formAction, pending] = useActionState(
     isTransfer ? transferEmployeeAction : createEmploymentAction,
     ADMIN_ACTION_INITIAL
@@ -68,7 +70,11 @@ export function EmploymentFormDialog({
           <EmploymentFields
             lookups={lookups}
             startLabel={isTransfer ? "Fecha del traslado *" : "Fecha de inicio *"}
+            onCompanyChange={setToCompanyId}
           />
+          {isTransfer && open && fromEmploymentId != null && toCompanyId != null && (
+            <ImpactPreview change={{ kind: "transfer", employmentId: fromEmploymentId, toCompanyId }} />
+          )}
           <Btn type="submit" variant="primary" disabled={pending}>
             {pending ? "Guardando…" : isTransfer ? "Confirmar traslado" : "Registrar contrato"}
           </Btn>

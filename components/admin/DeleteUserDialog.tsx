@@ -12,10 +12,13 @@ export function DeleteUserDialog({
   devId,
   userId,
   userName,
+  inScope = false,
 }: {
   devId: string;
   userId: string;
   userName: string;
+  /** Es un empleado del alcance de este equipo: el reconciliador lo volvería a crear. */
+  inScope?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [ack, setAck] = useState(false);
@@ -38,6 +41,13 @@ export function DeleteUserDialog({
               Se eliminará a <strong>{userName || userId}</strong> del equipo, junto con sus huellas.
               Las marcaciones de asistencia ya registradas se conservan.
             </p>
+            {inScope && (
+              <p className="text-sm m-0 border border-accent2 p-2">
+                ⚠ Es un empleado con contrato vigente en el alcance de este equipo: la próxima sincronización lo
+                vuelve a crear (con sus huellas). Para quitarle el acceso, terminá su contrato. Borrar a mano sirve para
+                IDs viejos que no son una cédula.
+              </p>
+            )}
             <label className="flex items-center gap-2 text-sm cursor-pointer">
               <input type="checkbox" checked={ack} onChange={(e) => setAck(e.target.checked)} />
               Entiendo que esta acción no se puede deshacer
