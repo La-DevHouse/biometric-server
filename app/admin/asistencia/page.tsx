@@ -89,8 +89,8 @@ async function getData(filters: { dev?: string; user?: string; from?: string; to
        FROM attendance_logs al
        LEFT JOIN devices d ON d.dev_id = al.dev_id
        LEFT JOIN users u ON u.dev_id = al.dev_id AND u.user_id = al.user_id
-       LEFT JOIN client_company c ON c.id = d.company_id
        LEFT JOIN site s ON s.id = d.site_id
+       LEFT JOIN client_company c ON c.id = s.company_id
        ${where}
       ORDER BY al.io_time DESC
       LIMIT ${RESULT_LIMIT + 1}`,

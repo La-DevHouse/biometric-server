@@ -208,7 +208,7 @@ export default async function StyleguidePage() {
               <tr>
                 <Th>Nombre</Th>
                 <Th>Estado</Th>
-                <Th>Empleos</Th>
+                <Th>Contratos</Th>
                 <Th />
               </tr>
             </thead>
@@ -230,7 +230,7 @@ export default async function StyleguidePage() {
           <MobileRow
             title="Farmalido C.A."
             tags={<Tag variant="accent">Activa</Tag>}
-            fields={[{ label: "Empleos", value: 12 }]}
+            fields={[{ label: "Contratos", value: 12 }]}
             actions={<Btn variant="ghost">Detalle →</Btn>}
           />
         </MobileList>

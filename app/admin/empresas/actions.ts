@@ -7,7 +7,8 @@ import { writeAudit } from "@/lib/audit";
 import type { AdminActionState } from "@/lib/adminActionState";
 import { joinDoc } from "@/lib/documento";
 import { DEFAULT_TZ, isValidTimeZone } from "@/lib/time";
-import { fanOutEmployeeToGroup } from "@/lib/enrollment";
+import { fanOutEmployeeToScope } from "@/lib/enrollment";
+import { activeEmploymentWhere, scopeCompanyIds } from "@/lib/scope";
 import { extractPdfText } from "@/lib/pdfText";
 import { parseRifText, type RifExtractedFields } from "@/lib/rifParser";
 import { extractRifPhoto } from "@/lib/documentVision";
@@ -69,10 +70,8 @@ function buildFields(fd: FormData, tax_id: string | null, legal_rep_national_id:
   return {
     name: str(fd, "name"),
     tax_id,
-    is_group: fd.get("is_group") === "on",
-    shared_employees: fd.get("shared_employees") === "on",
     address: str(fd, "address") || null,
-    parent_id: str(fd, "parent_id") === "" ? null : Number(str(fd, "parent_id")),
+    group_id: str(fd, "group_id") === "" ? null : Number(str(fd, "group_id")),
     business_model_id: bmRaw === "" ? null : Number(bmRaw),
     legal_rep_name: str(fd, "legal_rep_name") || null,
     legal_rep_national_id,
@@ -104,23 +103,20 @@ function auditView<T extends { logo?: Uint8Array<ArrayBufferLike> | null }>(row:
   return { ...row, logo: row.logo ? `[${row.logo.byteLength} bytes]` : null };
 }
 
-/** Valida el padre para la regla de 2 niveles. `selfId` en edición. */
-async function checkParent(
-  parentId: number | null,
-  selfId: number | null
-): Promise<string | null> {
-  if (parentId == null) return null;
-  if (selfId != null && parentId === selfId) return "Una empresa no puede ser su propio padre.";
-  const parent = await prisma.client_company.findUnique({ where: { id: parentId } });
-  if (!parent) return "La empresa padre seleccionada no existe.";
-  if (parent.parent_id != null)
-    return "Esa empresa ya es una empresa hija — la jerarquía es de 2 niveles (padre → hijas).";
-  if (selfId != null) {
-    const childCount = await prisma.client_company.count({ where: { parent_id: selfId } });
-    if (childCount > 0)
-      return "Esta empresa ya es padre de otras; no puede pasar a ser hija.";
-  }
-  return null;
+/** El grupo elegido debe existir. null = empresa sin grupo (docs/10 R1). */
+async function checkGroup(groupId: number | null): Promise<string | null> {
+  if (groupId == null) return null;
+  if (!Number.isFinite(groupId)) return "Grupo inválido.";
+  const g = await prisma.company_group.findUnique({ where: { id: groupId }, select: { id: true } });
+  return g ? null : "El grupo seleccionado no existe.";
+}
+
+/** ¿La empresa tiene al menos una sede activa (además de `exceptSiteId`)? */
+async function hasOtherActiveSite(companyId: number, exceptSiteId: number | null): Promise<boolean> {
+  const n = await prisma.site.count({
+    where: { company_id: companyId, status: "active", ...(exceptSiteId != null ? { id: { not: exceptSiteId } } : {}) },
+  });
+  return n > 0;
 }
 
 export async function createCompanyAction(
@@ -133,10 +129,16 @@ export async function createCompanyAction(
   const f = parsed.fields;
 
   if (!f.name) return { status: "error", error: "El nombre es obligatorio." };
-  if (!f.is_group && !f.tax_id)
-    return { status: "error", error: "El RIF es obligatorio para empresas operativas (no-grupo)." };
-  const parentErr = await checkParent(f.parent_id, null);
-  if (parentErr) return { status: "error", error: parentErr };
+  if (!f.tax_id) return { status: "error", error: "El RIF es obligatorio." };
+  const groupErr = await checkGroup(f.group_id);
+  if (groupErr) return { status: "error", error: groupErr };
+
+  // Toda empresa nace con su primera sede (docs/10 R2) — no es un paso opcional.
+  const siteName = str(fd, "site_name");
+  const siteCode = str(fd, "site_code") || null;
+  const siteTzRaw = str(fd, "site_timezone");
+  const siteTimezone = isValidTimeZone(siteTzRaw) ? siteTzRaw : DEFAULT_TZ;
+  if (!siteName) return { status: "error", error: "La primera sede es obligatoria: poné su nombre." };
 
   let logo: Uint8Array<ArrayBuffer> | null | undefined;
   try {
@@ -146,7 +148,15 @@ export async function createCompanyAction(
   }
 
   try {
-    const created = await prisma.client_company.create({ data: { ...f, logo: logo ?? null } });
+    // Una sola escritura anidada = una transacción: el trigger diferido "empresa
+    // con al menos una sede activa" se evalúa al commit, con la sede ya creada.
+    const created = await prisma.client_company.create({
+      data: {
+        ...f,
+        logo: logo ?? null,
+        sites: { create: { name: siteName, code: siteCode, timezone: siteTimezone } },
+      },
+    });
     await writeAudit({
       actorId: user.id,
       action: "company.create",
@@ -155,7 +165,7 @@ export async function createCompanyAction(
       after: auditView(created),
     });
     revalidatePath("/admin/empresas");
-    return { status: "ok", message: `Empresa "${f.name}" creada.` };
+    return { status: "ok", message: `Empresa "${f.name}" creada con la sede "${siteName}".` };
   } catch (e) {
     return { status: "error", error: e instanceof Error ? e.message : String(e) };
   }
@@ -176,10 +186,9 @@ export async function updateCompanyAction(
   if ("error" in parsed) return { status: "error", error: parsed.error };
   const f = parsed.fields;
   if (!f.name) return { status: "error", error: "El nombre es obligatorio." };
-  if (!f.is_group && !f.tax_id)
-    return { status: "error", error: "El RIF es obligatorio para empresas operativas (no-grupo)." };
-  const parentErr = await checkParent(f.parent_id, id);
-  if (parentErr) return { status: "error", error: parentErr };
+  if (!f.tax_id) return { status: "error", error: "El RIF es obligatorio." };
+  const groupErr = await checkGroup(f.group_id);
+  if (groupErr) return { status: "error", error: groupErr };
 
   let logo: Uint8Array<ArrayBuffer> | null | undefined;
   try {
@@ -216,6 +225,8 @@ export async function setCompanyStatusAction(
   const user = await requireUser();
   const before = await prisma.client_company.findUnique({ where: { id } });
   if (!before) return { ok: false, error: "La empresa no existe." };
+  if (active && !(await hasOtherActiveSite(id, null)))
+    return { ok: false, error: "Para reactivar la empresa, primero reactivá (o creá) al menos una de sus sedes." };
 
   await prisma.client_company.update({
     where: { id },
@@ -305,8 +316,16 @@ export async function setSiteStatusAction(
   active: boolean
 ): Promise<{ ok: boolean; error?: string }> {
   const user = await requireUser();
-  const before = await prisma.site.findUnique({ where: { id } });
+  const before = await prisma.site.findUnique({
+    where: { id },
+    include: { company: { select: { status: true } } },
+  });
   if (!before) return { ok: false, error: "La sede no existe." };
+  if (!active && before.company.status === "active" && !(await hasOtherActiveSite(before.company_id, id)))
+    return {
+      ok: false,
+      error: "Es la única sede activa de la empresa: una empresa activa necesita al menos una sede. Creá otra sede antes de desactivar esta.",
+    };
 
   await prisma.site.update({
     where: { id },
@@ -325,43 +344,93 @@ export async function setSiteStatusAction(
 }
 
 // --------------------------------------------------------------------------
-// Re-sincronizar enrolamientos del grupo (docs/09 §7.1 ítem 6)
+// Grupos de empresas (docs/10 R1)
+// --------------------------------------------------------------------------
+
+function groupFields(fd: FormData) {
+  return { name: str(fd, "name"), shared_employees: fd.get("shared_employees") === "on" };
+}
+
+export async function createGroupAction(
+  _prev: AdminActionState,
+  fd: FormData
+): Promise<AdminActionState> {
+  const user = await requireUser();
+  const f = groupFields(fd);
+  if (!f.name) return { status: "error", error: "El nombre del grupo es obligatorio." };
+  try {
+    const created = await prisma.company_group.create({ data: f });
+    await writeAudit({ actorId: user.id, action: "group.create", entityType: "company_group", entityId: created.id, after: created });
+    revalidatePath("/admin/empresas");
+    return { status: "ok", message: `Grupo "${f.name}" creado.` };
+  } catch (e) {
+    return { status: "error", error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+export async function updateGroupAction(
+  _prev: AdminActionState,
+  fd: FormData
+): Promise<AdminActionState> {
+  const user = await requireUser();
+  const id = Number(str(fd, "id"));
+  if (!Number.isFinite(id)) return { status: "error", error: "ID inválido." };
+  const f = groupFields(fd);
+  if (!f.name) return { status: "error", error: "El nombre del grupo es obligatorio." };
+  const before = await prisma.company_group.findUnique({ where: { id } });
+  if (!before) return { status: "error", error: "El grupo no existe." };
+  try {
+    const updated = await prisma.company_group.update({ where: { id }, data: f });
+    await writeAudit({ actorId: user.id, action: "group.update", entityType: "company_group", entityId: id, before, after: updated });
+    revalidatePath("/admin/empresas");
+    return { status: "ok", message: "Grupo actualizado." };
+  } catch (e) {
+    return { status: "error", error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+export async function setGroupStatusAction(
+  id: number,
+  active: boolean
+): Promise<{ ok: boolean; error?: string }> {
+  const user = await requireUser();
+  const before = await prisma.company_group.findUnique({ where: { id } });
+  if (!before) return { ok: false, error: "El grupo no existe." };
+  await prisma.company_group.update({ where: { id }, data: { status: active ? "active" : "inactive" } });
+  await writeAudit({
+    actorId: user.id,
+    action: active ? "group.reactivate" : "group.deactivate",
+    entityType: "company_group",
+    entityId: id,
+    before: { status: before.status },
+    after: { status: active ? "active" : "inactive" },
+  });
+  revalidatePath("/admin/empresas");
+  return { ok: true };
+}
+
+// --------------------------------------------------------------------------
+// Re-sincronizar enrolamientos (reparación manual del fan-out, docs/09 §7.1 ítem 6)
 // --------------------------------------------------------------------------
 
 /**
- * Para cada persona con empleo activo en cualquier empresa del grupo de
- * `companyId`, encola ADD_EMPLOYEE_TO_DEVICE en los equipos del grupo donde
- * todavía no esté. Reparación manual del fan-out (equipo que estaba offline,
- * flag recién activado, etc.).
+ * Para cada persona con un contrato vigente que alcance los equipos de esta
+ * empresa — contrato en la propia empresa, o en otra del mismo grupo si el
+ * grupo comparte empleados — encola ADD_EMPLOYEE_TO_DEVICE en los equipos de
+ * su alcance donde todavía no esté. Solo agrega; sacar a quien ya no aplica es
+ * trabajo del reconciliador (docs/10 §4.2). Hasta que exista el cron (PR 2),
+ * también es la forma de enrolar contratos con fecha de inicio futura una vez
+ * que empiezan.
  */
-export async function resyncGroupEnrollmentsAction(
+export async function resyncCompanyEnrollmentsAction(
   companyId: number
 ): Promise<{ ok: boolean; message?: string; error?: string }> {
   const user = await requireUser();
-
-  const c = await prisma.client_company.findUnique({
-    where: { id: companyId },
-    select: {
-      id: true,
-      shared_employees: true,
-      parent: { select: { id: true, shared_employees: true } },
-    },
-  });
-  if (!c) return { ok: false, error: "La empresa no existe." };
-  const root = c.parent
-    ? { id: c.parent.id, shared: c.parent.shared_employees }
-    : { id: c.id, shared: c.shared_employees };
-  if (!root.shared)
-    return { ok: false, error: "El grupo no tiene «Compartir empleados» activado." };
-
-  const children = await prisma.client_company.findMany({
-    where: { parent_id: root.id },
-    select: { id: true },
-  });
-  const companyIds = [root.id, ...children.map((x) => x.id)];
+  const companyIds = await scopeCompanyIds(companyId);
+  if (companyIds.length === 0) return { ok: false, error: "La empresa no existe." };
 
   const rows = await prisma.employment.findMany({
-    where: { company_id: { in: companyIds }, status: "active" },
+    where: { company_id: { in: companyIds }, ...activeEmploymentWhere() },
     select: { employee_id: true },
     distinct: ["employee_id"],
   });
@@ -369,17 +438,17 @@ export async function resyncGroupEnrollmentsAction(
   let started = 0;
   let warnings = 0;
   for (const r of rows) {
-    const res = await fanOutEmployeeToGroup(r.employee_id, root.id);
+    const res = await fanOutEmployeeToScope(r.employee_id);
     started += res.started;
     warnings += res.notes.length;
   }
 
   await writeAudit({
     actorId: user.id,
-    action: "enrollment.group_resync",
+    action: "enrollment.resync",
     entityType: "client_company",
-    entityId: root.id,
-    after: { employees: rows.length, started, warnings },
+    entityId: companyId,
+    after: { companies: companyIds, employees: rows.length, started, warnings },
   });
   revalidatePath("/admin/enrolamiento");
   revalidatePath(`/admin/empresas/${companyId}`);

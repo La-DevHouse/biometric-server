@@ -1,5 +1,11 @@
 # QA en vivo — Hito 3 (administración de dominio)
 
+> **⚠️ 2026-09-26:** los flujos de empresa padre/hija, sede en el contrato y
+> empresa del dispositivo de este checklist quedaron desactualizados por
+> `docs/10-reestructura-dominio-sync.md` (PR 1): grupos como entidad propia,
+> empresa con primera sede obligatoria, contrato sin sede, dispositivo → sede.
+> Re-verificar esos pasos con la UI nueva.
+
 Checklist para probar a mano en el panel **después de pushear a `main` y que Coolify
 redespliegue**. Cada sección: pasos + resultado esperado + casilla.
 

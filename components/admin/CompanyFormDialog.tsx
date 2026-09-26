@@ -22,15 +22,14 @@ import {
 import { ADMIN_ACTION_INITIAL } from "@/lib/adminActionState";
 import type { RifExtractedFields } from "@/lib/rifParser";
 import { FIELD_INPUT as INPUT, FIELD_LABEL as LABEL } from "@/components/ui/fieldStyles";
+import { COMMON_TIMEZONES, DEFAULT_TZ } from "@/lib/time";
 
 export interface CompanyFormValues {
   id: number;
   name: string;
   tax_id: string | null;
-  is_group: boolean;
-  shared_employees: boolean;
   address: string | null;
-  parent_id: number | null;
+  group_id: number | null;
   business_model_id: number | null;
   has_logo: boolean;
   legal_rep_name: string | null;
@@ -44,16 +43,15 @@ export interface CompanyFormValues {
 
 export function CompanyFormDialog({
   company,
-  parentOptions,
+  groupOptions,
   businessModels,
 }: {
   company?: CompanyFormValues;
-  parentOptions: { id: number; name: string }[];
+  groupOptions: { id: number; name: string }[];
   businessModels: { id: number; name: string }[];
 }) {
   const editing = !!company;
   const [open, setOpen] = useState(false);
-  const [isGroup, setIsGroup] = useState(company?.is_group ?? false);
   const [rifParsing, setRifParsing] = useState(false);
   const [rifCaptureOpen, setRifCaptureOpen] = useState(false);
   const [logoFile, setLogoFile] = useState<File | null>(null);
@@ -84,14 +82,9 @@ export function CompanyFormDialog({
     }
   }, [state, push]);
 
-  // el padre no puede ser una empresa hija ni la empresa misma
-  const options = parentOptions.filter((p) => p.id !== company?.id);
-
   function applyRifFields(fields: RifExtractedFields) {
     const form = formRef.current;
     if (!form) return;
-    setIsGroup(false);
-    (form.elements.namedItem("is_group") as HTMLInputElement).checked = false;
     (form.elements.namedItem("rif_prefix") as HTMLSelectElement).value = fields.taxIdPrefix;
     (form.elements.namedItem("rif_number") as HTMLInputElement).value = fields.taxIdNumber;
     (form.elements.namedItem("name") as HTMLInputElement).value = fields.businessName;
@@ -224,21 +217,10 @@ export function CompanyFormDialog({
             <input name="name" required defaultValue={company?.name ?? ""} className={INPUT} autoFocus />
           </label>
 
-          <label className="flex items-center gap-2 text-xs text-text/85">
-            <input
-              type="checkbox"
-              name="is_group"
-              defaultChecked={company?.is_group ?? false}
-              onChange={(e) => setIsGroup(e.target.checked)}
-            />
-            Es un grupo de empresas (agrupa empresas hijas; sin RIF)
-          </label>
-
           <DocumentField
             kind="rif"
             label="RIF"
-            hint={isGroup ? "(no aplica a grupos)" : undefined}
-            required={!isGroup}
+            required
             prefixName="rif_prefix"
             numberName="rif_number"
             defaultPrefix={company ? splitDoc(company.tax_id).prefix : "J"}
@@ -246,24 +228,15 @@ export function CompanyFormDialog({
           />
 
           <label className={LABEL}>
-            Empresa padre
-            <select name="parent_id" defaultValue={company?.parent_id ?? ""} className={INPUT}>
-              <option value="">— sin padre (nivel superior) —</option>
-              {options.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
+            Grupo <span className="text-text/60">(opcional — si el grupo comparte empleados, sus sedes se comparten)</span>
+            <select name="group_id" defaultValue={company?.group_id ?? ""} className={INPUT}>
+              <option value="">— sin grupo —</option>
+              {groupOptions.map((g) => (
+                <option key={g.id} value={g.id}>
+                  {g.name}
                 </option>
               ))}
             </select>
-          </label>
-
-          <label className="flex items-center gap-2 text-xs text-text/85">
-            <input
-              type="checkbox"
-              name="shared_employees"
-              defaultChecked={company?.shared_employees ?? true}
-            />
-            Compartir empleados con todas las empresas del grupo
           </label>
 
           <label className={LABEL}>
@@ -273,7 +246,7 @@ export function CompanyFormDialog({
               defaultValue={company?.business_model_id ?? ""}
               className={INPUT}
             >
-              <option value="">— hereda del grupo / sin especificar —</option>
+              <option value="">— sin especificar —</option>
               {businessModels.map((bm) => (
                 <option key={bm.id} value={bm.id}>
                   {bm.name}
@@ -286,6 +259,34 @@ export function CompanyFormDialog({
             Dirección
             <input name="address" defaultValue={company?.address ?? ""} className={INPUT} />
           </label>
+
+          {!editing && (
+            // Toda empresa nace con al menos una sede (docs/10 R2): no es un paso
+            // opcional posterior. Las demás sedes se agregan desde el detalle.
+            <fieldset className="flex flex-col gap-2 border border-divider p-3 m-0">
+              <legend className="px-1 text-xs font-semibold text-text/85">Primera sede *</legend>
+              <label className={LABEL}>
+                Nombre de la sede *
+                <input name="site_name" required placeholder="Ej. Sede principal" className={INPUT} />
+              </label>
+              <div className="flex flex-col sm:grid sm:grid-cols-2 gap-2">
+                <label className={LABEL}>
+                  Código <span className="text-text/60">(opcional)</span>
+                  <input name="site_code" className={INPUT} />
+                </label>
+                <label className={LABEL}>
+                  Zona horaria
+                  <select name="site_timezone" defaultValue={DEFAULT_TZ} className={INPUT}>
+                    {COMMON_TIMEZONES.map((tz) => (
+                      <option key={tz} value={tz}>
+                        {tz}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+            </fieldset>
+          )}
 
           <input ref={logoInputRef} type="file" name="logo" className="hidden" />
           {removeExistingLogo && <input type="hidden" name="remove_logo" value="on" />}

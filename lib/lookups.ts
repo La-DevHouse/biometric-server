@@ -1,19 +1,12 @@
-// Listas de opciones para los formularios de empleo (empresa/sede/horario/depto/puesto).
+// Listas de opciones para los formularios de contrato (empresa/horario/depto/puesto).
 import { prisma } from "@/lib/db";
 
 export async function loadEmploymentLookups() {
-  const [companiesRaw, allForBm, sites, schedules, departments, positionsRaw] = await Promise.all([
+  const [companies, schedules, departments, positionsRaw] = await Promise.all([
+    // El modelo de negocio es el de la empresa — ya no se hereda del grupo (docs/10 §2).
     prisma.client_company.findMany({
       where: { status: "active" },
-      select: { id: true, name: true, parent_id: true, business_model_id: true },
-      orderBy: { name: "asc" },
-    }),
-    // mapa id → modelo de negocio de TODAS las empresas (incl. inactivas) para
-    // resolver la herencia del grupo aunque el padre no esté activo
-    prisma.client_company.findMany({ select: { id: true, business_model_id: true } }),
-    prisma.site.findMany({
-      where: { status: "active" },
-      select: { id: true, name: true, company_id: true },
+      select: { id: true, name: true, business_model_id: true },
       orderBy: { name: "asc" },
     }),
     prisma.schedule_group.findMany({
@@ -33,14 +26,6 @@ export async function loadEmploymentLookups() {
     }),
   ]);
 
-  const bmById = new Map(allForBm.map((c) => [c.id, c.business_model_id]));
-  const companies = companiesRaw.map((c) => ({
-    id: c.id,
-    name: c.name,
-    // modelo de negocio efectivo: el propio, o el del grupo si no tiene
-    business_model_id:
-      c.business_model_id ?? (c.parent_id != null ? bmById.get(c.parent_id) ?? null : null),
-  }));
   const positions = positionsRaw.map((p) => ({
     id: p.id,
     name: p.name,
@@ -48,7 +33,7 @@ export async function loadEmploymentLookups() {
     business_model_ids: p.business_models.map((x) => x.business_model_id),
   }));
 
-  return { companies, sites, schedules, departments, positions };
+  return { companies, schedules, departments, positions };
 }
 
 export type EmploymentLookups = Awaited<ReturnType<typeof loadEmploymentLookups>>;
@@ -60,7 +45,7 @@ export interface DeviceCandidate {
 
 /**
  * Equipos candidatos para "agregar empleado a dispositivo" (uso manual). El
- * fan-out automático al grupo (lib/enrollment.ts) ya cubre el caso normal —
+ * fan-out automático por alcance (lib/enrollment.ts) ya cubre el caso normal —
  * este selector es para la excepción: un equipo de otra empresa o de otro
  * grupo (Reunión 3, docs/09 D3: "no seleccionable en el flujo normal", o sea
  * el flujo manual es justo para lo que el fan-out no alcanza). Por eso
@@ -73,8 +58,7 @@ export async function loadDeviceCandidatesForEmployee(employeeId: number): Promi
       select: {
         dev_id: true,
         fk_name: true,
-        company: { select: { name: true } },
-        site: { select: { name: true } },
+        site: { select: { name: true, company: { select: { name: true } } } },
       },
       orderBy: { dev_id: "asc" },
     }),
@@ -88,7 +72,7 @@ export async function loadDeviceCandidatesForEmployee(employeeId: number): Promi
   return devices
     .filter((d) => !alreadyLinked.has(d.dev_id))
     .map((d) => {
-      const place = [d.company?.name, d.site?.name].filter(Boolean).join(" — ");
+      const place = [d.site?.company.name, d.site?.name].filter(Boolean).join(" — ");
       return {
         devId: d.dev_id,
         label: `${d.fk_name || d.dev_id}${place ? ` — ${place}` : ""}`,

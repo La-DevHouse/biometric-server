@@ -35,7 +35,7 @@ export function EndEmploymentDialog({
         <form action={formAction} className="flex flex-col gap-3">
           <input type="hidden" name="id" value={employmentId} />
           <p className="m-0 text-xs text-text/70">
-            El empleo queda cerrado con esta fecha. La persona sigue en el sistema (pool de
+            El contrato queda cerrado con esta fecha. La persona sigue en el sistema (pool de
             reclutamiento) y su historial se conserva.
           </p>
           <label className="flex flex-col gap-1 text-xs text-text/85">

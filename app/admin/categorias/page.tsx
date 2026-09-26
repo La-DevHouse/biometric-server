@@ -149,7 +149,7 @@ export default async function CategoriasPage() {
                     <Th>Nombre</Th>
                     <Th>Código</Th>
                     <Th>Puestos</Th>
-                    <Th>Empleos</Th>
+                    <Th>Contratos</Th>
                     <Th>Estado</Th>
                     <Th />
                   </tr>
@@ -197,7 +197,7 @@ export default async function CategoriasPage() {
                   fields={[
                     { label: "Código", value: d.code ?? "—" },
                     { label: "Puestos", value: d._count.positions },
-                    { label: "Empleos", value: d._count.employments },
+                    { label: "Contratos", value: d._count.employments },
                   ]}
                   actions={
                     <>
@@ -238,7 +238,7 @@ export default async function CategoriasPage() {
                     <Th>Código</Th>
                     <Th>Departamento</Th>
                     <Th>Modelos</Th>
-                    <Th>Empleos</Th>
+                    <Th>Contratos</Th>
                     <Th>Estado</Th>
                     <Th />
                   </tr>
@@ -303,7 +303,7 @@ export default async function CategoriasPage() {
                     { label: "Código", value: p.code ?? "—" },
                     { label: "Departamento", value: p.department?.name ?? "—" },
                     { label: "Modelos", value: p.business_models.length === 0 ? "Genérico" : p.business_models.length },
-                    { label: "Empleos", value: p._count.employments },
+                    { label: "Contratos", value: p._count.employments },
                   ]}
                   actions={
                     <>

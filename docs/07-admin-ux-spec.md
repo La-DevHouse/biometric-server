@@ -32,6 +32,15 @@ describe el "qué"; el "cómo se guarda" va en el 08.
 
 ---
 
+> **⚠️ Superado en parte por `docs/10-reestructura-dominio-sync.md` (2026-09-26).**
+> Donde choque, gana `10`: el grupo es tabla propia (`company_group`, sin RIF,
+> sin sedes/dispositivos/contratos) y ya no una empresa padre (§1.1); toda
+> empresa tiene ≥1 sede (§1.2); el contrato no lleva sede (§1.4); el
+> dispositivo se asigna solo a sede (§1.6); la vinculación empleado ↔ usuario
+> del equipo es automática por cédula (§1.7, §5.3); el compartir entre
+> empresas del grupo lo decide el flag del grupo (§5.4). Este documento se
+> reescribe con el PR 3 (UI) de `10`.
+
 ## 1. Catálogo de entidades del dominio
 
 Nomenclatura provisional en inglés/snake para alinear con el schema; los rótulos

@@ -84,7 +84,7 @@ export default async function ScheduleDetailPage({
 
       <section className="flex flex-col gap-2 border border-divider p-4 text-sm">
         <div className="flex flex-col gap-0.5 sm:flex-row sm:gap-3">
-          <span className="sm:w-56 sm:flex-none text-text/70">Empleos en el horario</span>
+          <span className="sm:w-56 sm:flex-none text-text/70">Contratos en el horario</span>
           <span>{schedule._count.employments}</span>
         </div>
         <div className="flex flex-col gap-0.5 sm:flex-row sm:gap-3">

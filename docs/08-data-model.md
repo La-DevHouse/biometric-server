@@ -8,6 +8,16 @@ Decisiones del §9 confirmadas; alcance del §8 decidido (Fase 1 **sí** incluye
 motor de cálculo de asistencia). Cambios de schema a partir de acá son
 migraciones nuevas, no ediciones.
 
+> **⚠️ Reestructura 2026-09-26 (`docs/10-reestructura-dominio-sync.md`) — lo vigente:**
+> el grupo de empresas ya **no** es una fila de `client_company`: es la tabla
+> propia `company_group` (`name`, `shared_employees`), y `client_company.group_id`
+> es nullable. Se eliminaron `parent_id`/`is_group`/`shared_employees`, el trigger
+> de 2 niveles y el CHECK de RIF; `devices.company_id` (la empresa sale de la
+> sede) y `employment.site_id` (el contrato no lleva sede). Toda empresa activa
+> tiene al menos una sede activa (constraint trigger diferido). Migración
+> `20260926200000_company_group_and_site_scope`. §4.1, §4.2, §4.6, §5, §6 y §7
+> ya reflejan esto; la historia de abajo queda como contexto.
+>
 > **Historia de la jerarquía padre/hijas (leer en orden, no te quedes con la
 > primera línea):** la jerarquía de `client_company`
 > (`parent_id`/`is_group`/`shared_employees`) se **quitó por error** el
@@ -103,31 +113,42 @@ Migración `0002_domain` aplicada 2026-08-31. Migraciones posteriores en §7.
 > `business_model`, `payroll_type`, `logo`/rep. legal y `company_linked_at`.
 > Ver `docs/09-reunion-3.md` §3.1, §3.5.1 y §7.1 ítem 8.
 
-### 4.1 Empresas y sedes
+### 4.1 Grupos, empresas y sedes
+
+Vigente desde `20260926200000` (docs/10 R1–R3). Cardinalidades de plan.md:
+`Grupo 1 — 0..N Empresa` (`group_id` nullable), `Empresa 1 — 1..N Sede`,
+`Sede 1 — 0..N Dispositivo`.
 
 ```prisma
-model client_company {
-  id               Int              @id @default(autoincrement())
-  parent_id        Int?
-  parent           client_company?  @relation("company_hierarchy", fields: [parent_id], references: [id], onDelete: Restrict)
-  children         client_company[] @relation("company_hierarchy")
+model company_group {
+  id               Int           @id @default(autoincrement())
   name             String
-  tax_id           String?          // RIF J/G+dígitos. Requerido si is_group=false (CHECK §6)
-  is_group         Boolean          @default(false)   // fila padre (agrupador); NO lleva RIF
-  shared_employees Boolean          @default(true)    // en la fila del grupo; activa el fan-out de enrolamiento (docs/09 §3.3)
-  status           record_status    @default(active)
-  address          String?
+  shared_employees Boolean       @default(true)   // extiende el alcance de la huella a todas las empresas del grupo
+  status           record_status @default(active)
+  created_at       DateTime      @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime      @updatedAt @db.Timestamptz(6)
 
-  business_model_id Int?                               // tipo de comercio; filtra el catálogo de position (docs/09 §3.5.1). Nullable → hereda del grupo
+  companies client_company[]
+}
+
+model client_company {
+  id       Int            @id @default(autoincrement())
+  group_id Int?
+  group    company_group? @relation(fields: [group_id], references: [id], onDelete: Restrict)
+  name     String
+  tax_id   String?        // RIF. Nullable en la columna (filas viejas); la app lo exige
+  status   record_status  @default(active)
+  address  String?
+
+  business_model_id Int?                               // tipo de comercio; ya NO se hereda del grupo (docs/10 §2)
   business_model    business_model?  @relation(fields: [business_model_id], references: [id], onDelete: SetNull)
 
   logo                  Bytes?                         // → recibo de pago (docs/09 §3.11)
-  legal_rep_name        String?                        // representante legal
-  legal_rep_national_id String?                        // cédula del rep. legal (PREFIJO-dígitos)
+  legal_rep_name        String?
+  legal_rep_national_id String?
   legal_rep_phone       String?
 
-  // fallback de umbrales de asistencia (ver 07 §1.9). null → sin default de empresa
-  late_tolerance_min        Int?
+  late_tolerance_min        Int?                       // fallback de umbrales (07 §1.9)
   early_leave_tolerance_min Int?
   absence_rule              absence_rule?
   absence_min_hours         Int?
@@ -138,9 +159,9 @@ model client_company {
   sites           site[]
   employments     employment[]
   schedule_groups schedule_group[]
-  devices         device[]
+  export_runs     export_run[]
 
-  @@index([parent_id])
+  @@index([group_id])
   @@index([business_model_id])
 }
 
@@ -150,12 +171,12 @@ model site {
   company    client_company @relation(fields: [company_id], references: [id], onDelete: Cascade)
   name       String
   code       String?
+  timezone   String         @default("America/Caracas")
   status     record_status  @default(active)
-  created_at DateTime        @default(now()) @db.Timestamptz(6)
-  updated_at DateTime        @updatedAt @db.Timestamptz(6)
+  created_at DateTime       @default(now()) @db.Timestamptz(6)
+  updated_at DateTime       @updatedAt @db.Timestamptz(6)
 
-  devices     device[]
-  employments employment[]
+  devices devices[]                                     // el contrato NO apunta a la sede (docs/10 R4)
 
   @@unique([company_id, code])
   @@index([company_id])
@@ -191,8 +212,6 @@ model employment {
   employee          employee          @relation(fields: [employee_id], references: [id], onDelete: Restrict)
   company_id        Int
   company           client_company    @relation(fields: [company_id], references: [id], onDelete: Restrict)
-  site_id           Int?
-  site              site?             @relation(fields: [site_id], references: [id], onDelete: SetNull)
   schedule_group_id Int?
   schedule_group    schedule_group?   @relation(fields: [schedule_group_id], references: [id], onDelete: SetNull)
   position_id       Int?
@@ -214,6 +233,11 @@ model employment {
   @@index([schedule_group_id])
 }
 ```
+
+**Contrato sin sede (docs/10 R4, 2026-09-26):** `employment.site_id` se eliminó.
+La pertenencia es con la empresa; el alcance de la huella sale de las sedes de
+esa empresa (y de su grupo si comparte empleados) — ver `lib/scope.ts`. En la UI
+la entidad se llama "Contrato de trabajo"; la tabla conserva `employment`.
 
 **Tres ejes de categorización** (Reunión 3, `docs/09` §3.5.1):
 
@@ -391,18 +415,16 @@ model employee_fingerprint {
 
 model device {
   // ... campos de protocolo existentes ...
-  company_id        Int?
-  company           client_company? @relation(fields: [company_id], references: [id], onDelete: SetNull)
-  site_id           Int?
+  site_id           Int?            // SIN company_id: la empresa sale de la sede (docs/10 R3, 2026-09-26)
   site              site?           @relation(fields: [site_id], references: [id], onDelete: SetNull)
-  company_linked_at DateTime?       @db.Timestamptz(6)  // cuándo se asoció a su empresa/sede (docs/09 §3.13)
+  company_linked_at DateTime?       @db.Timestamptz(6)  // cuándo se asoció a su sede actual (docs/09 §3.13)
   last_sync_at      BigInt?         // última sync EXITOSA de marcajes (≠ last_seen_at heartbeat)
   device_admin_note String?         // admin del lado de la empresa (texto libre, NO app_user)
 
   enrollments          employee_device_enrollment[]
   sourced_fingerprints employee_fingerprint[]
 
-  @@index([company_id])
+  @@index([site_id])
 }
 
 model attendance_log {
@@ -413,6 +435,11 @@ model attendance_log {
   @@index([employee_id])
 }
 ```
+
+`site_id` es nullable a propósito aunque plan.md diga "dispositivo pertenece a
+exactamente una sede": el equipo se registra solo en su primer `receive_cmd`,
+antes de que alguien lo asigne. Sin sede = "pendiente de asignar" = congelado
+(docs/10 §3.3).
 
 Agregar `@relation` a `device` / `attendance_log` en `0002` es seguro: las tablas
 de dominio ya existen y estas columnas las escribe el admin / un resolver, no el
@@ -518,15 +545,15 @@ model export_run {
 ## 5. ERD
 
 ```
-client_company ──(parent_id, self, 2 niveles, mutable)──┐
-   │                                                     └── client_company
-   ├──< site ──< device* ──< employee_device_enrollment >── employee
-   │        │            └──< enroll_data*      (por dispositivo)
-   │        │            └──< employee_fingerprint (source)
-   │        └──< employment
+company_group ──< client_company                 (group_id nullable)
+client_company
+   ├──< site ──< device*  (site_id nullable = pendiente de asignar)
+   │                └──< employee_device_enrollment >── employee
+   │                └──< enroll_data*      (por dispositivo)
+   │                └──< employee_fingerprint (source)
    ├──< schedule_group ──< shift
    │            └──< employment
-   └──< employment >── employee
+   └──< employment >── employee          (sin sede)
           ├── position >── department
           ├── department
           └──< attendance_day ──< attendance_correction >── app_user
@@ -538,14 +565,12 @@ app_user ──< export_run
 (*) tabla de protocolo existente
 ```
 
----
-
 ## 6. Constraints que Prisma no expresa (SQL crudo en la migración)
 
 | Constraint | Dónde | Forma |
 | --- | --- | --- |
-| Jerarquía de 2 niveles | `client_company` | trigger `BEFORE INSERT/UPDATE`: rechazar si `parent_id` apunta a una fila cuyo `parent_id IS NOT NULL`. (CHECK no puede — necesita subquery.) Recreado en `20260910120000` tras el revert de `20260908155808`. |
-| RIF requerido en empresas hoja | `client_company` | `CHECK (is_group OR tax_id IS NOT NULL)`. Recreado en `20260910120000`. |
+| Empresa activa ⇒ ≥1 sede activa | `client_company`, `site` | Constraint triggers `DEFERRABLE INITIALLY DEFERRED` (`client_company_requires_active_site`, `site_keeps_company_active_site`, función `company_has_active_site`): se evalúan al COMMIT, así que empresa + sede en la misma transacción pasa. `20260926200000`. |
+| ~~Jerarquía de 2 niveles~~ / ~~RIF requerido en hojas~~ | `client_company` | **Eliminados en `20260926200000`** (el grupo es tabla propia; el RIF lo exige la app). |
 | Un enrolado activo por slot | `employee_device_enrollment` | `CREATE UNIQUE INDEX … (dev_id, device_user_id) WHERE status = 'active'` |
 | Corrección apunta a día **o** log, no ambos ni ninguno | `attendance_correction` | `CHECK ((attendance_day_id IS NULL) <> (attendance_log_id IS NULL))` |
 | Rangos de fecha coherentes | `employment`, `shift` | `CHECK (end_date IS NULL OR end_date >= start_date)` / `effective_to` |
@@ -562,6 +587,8 @@ app_user ──< export_run
 | `20260831211102_domain` | 2026-08-31 | Todos los modelos de §4 + enums de §3 + columnas nuevas en `device` / `attendance_log` (§4.6) + constraints crudos de §6. Tablas vacías. |
 | `20260901165749_site_timezone` | 2026-09-01 | `site.timezone TEXT NOT NULL DEFAULT 'America/Caracas'`. |
 | `20260908155808_remove_company_hierarchy` | 2026-09-08 | ⚠️ Quitó `parent_id`/`is_group`/`shared_employees` + trigger + CHECK. **Revertido por `20260910120000`.** |
+| `20260926180000_rename_employee_group_to_schedule_group` | 2026-09-26 | Rename puro `employee_group` → `schedule_group`. |
+| `20260926200000_company_group_and_site_scope` | 2026-09-26 | docs/10 PR 1: `company_group` + `client_company.group_id` (backfill desde las filas `is_group`/padres; las filas-grupo con algo colgando quedan como empresa miembro), sede "Principal" para toda empresa sin sede activa, equipos con empresa y sin sede → esa sede; drop `parent_id`/`is_group`/`shared_employees`, trigger de 2 niveles, CHECK de RIF, `devices.company_id`, `employment.site_id`; constraint trigger diferido "≥1 sede activa". |
 | `20260910120000_restore_hierarchy_and_domain_refinements` | 2026-09-10 | Reunión 3: restaura jerarquía (columnas + FK + índice + trigger 2 niveles + CHECK de RIF), agrega `business_model` + `position_business_model` + enum `payroll_type` + `employment.payroll_type` + `client_company.{logo, legal_rep_*}` + `device.company_linked_at`. |
 
 **Seeds mínimos** (script aparte, no migración): 1 `app_user` inicial para poder
@@ -601,3 +628,12 @@ y qué queda para Fase 2 (valoración legal, feriados) está en `07-admin-ux-spe
 - [x] `employment.department_id` se mantiene, sin uso en Fase 1 (departamento organizacional real)
 
 Contexto y decisiones completas: `docs/09-reunion-3.md` §3.5.1, §7.1, §10.
+
+### Adenda 2026-09-26 (reestructura, `docs/10`)
+
+- [x] Grupo = tabla propia `company_group` (`name`, `shared_employees`); `client_company.group_id` nullable
+- [x] Empresa 1..N sedes (constraint trigger diferido); sede "Principal" en el backfill
+- [x] `devices.company_id` eliminado (empresa vía sede); `devices.site_id` sigue nullable (= pendiente de asignar)
+- [x] `employment.site_id` eliminado (contrato sin sede)
+- [x] `business_model` ya no se hereda del grupo
+- [ ] PR 2: `device_fingerprint_slot`, `sync_run`, `sync_hold`, `commands.priority`, `employee_fingerprint` re-keyed, `employee_device_enrollment.desired` (docs/10 §3.1)

@@ -635,6 +635,11 @@ reabierto.
 
 ---
 
+> **Nota 2026-09-26:** la reunión posterior con Ezequiel (`plan.md`) cambió
+> parte de §7.1 — ítems 5 (el flag vive en `company_group`), 6 (el fan-out
+> pasa a un reconciliador periódico que también quita) y 10 (el modelo de
+> negocio ya no se hereda del grupo). Ver `docs/10-reestructura-dominio-sync.md` §2.
+
 ## 8. Preguntas abiertas / a confirmar con Ezequiel
 
 **Q1–Q14: todas resueltas en el formulario del 2026-09-10 → §7.1.** Lo único que

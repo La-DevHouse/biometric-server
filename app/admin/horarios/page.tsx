@@ -50,7 +50,7 @@ export default async function HorariosPage() {
                   <Th>Empresa</Th>
                   <Th>Código</Th>
                   <Th>Turnos</Th>
-                  <Th>Empleos</Th>
+                  <Th>Contratos</Th>
                   <Th>Estado</Th>
                   <Th />
                 </tr>
@@ -93,7 +93,7 @@ export default async function HorariosPage() {
                   { label: "Empresa", value: g.company.name },
                   { label: "Código", value: g.code ?? "—" },
                   { label: "Turnos", value: g._count.shifts },
-                  { label: "Empleos", value: g._count.employments },
+                  { label: "Contratos", value: g._count.employments },
                 ]}
               />
             ))}

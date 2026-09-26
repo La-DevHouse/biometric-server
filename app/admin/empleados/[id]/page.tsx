@@ -36,7 +36,6 @@ export default async function EmpleadoDetailPage({
           orderBy: [{ start_date: "desc" }],
           include: {
             company: { select: { name: true } },
-            site: { select: { name: true } },
             schedule_group: { select: { name: true } },
             position: { select: { name: true } },
             department: { select: { name: true } },
@@ -130,14 +129,13 @@ export default async function EmpleadoDetailPage({
         {employee.employments.length === 0 ? (
           <EmptyState
             title="Sin empleos"
-            description="Esta persona está en el pool de reclutamiento. Registrale un empleo para vincularla a una empresa."
+            description="Esta persona está en el pool de reclutamiento. Registrale un contrato para vincularla a una empresa."
           />
         ) : (
           <Table>
             <thead>
               <tr>
                 <Th>Empresa</Th>
-                <Th>Sede</Th>
                 <Th>Horario</Th>
                 <Th>Puesto / Depto</Th>
                 <Th>Nómina</Th>
@@ -150,7 +148,6 @@ export default async function EmpleadoDetailPage({
               {employee.employments.map((em) => (
                 <Tr key={em.id}>
                   <Td className="font-medium">{em.company.name}</Td>
-                  <Td>{em.site?.name ?? <span className="text-text/60">—</span>}</Td>
                   <Td>{em.schedule_group?.name ?? <span className="text-text/60">—</span>}</Td>
                   <Td>
                     {em.position?.name ?? "—"}

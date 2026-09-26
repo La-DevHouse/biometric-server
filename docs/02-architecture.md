@@ -166,8 +166,17 @@ empleado en un equipo donde todavía no existe, en un solo paso.
 > normal") — ver el fan-out más abajo. `ADD_EMPLOYEE_TO_DEVICE` sigue siendo
 > el mecanismo de bajo nivel; lo que cambió es quién lo dispara y con qué ID.
 
+- **(Actualizado 2026-09-26, `docs/10` PR 1)** El fan-out ahora es **por
+  alcance** (`lib/enrollment.ts` → `fanOutEmployeeToScope`, usando
+  `lib/scope.ts`): al crear o trasladar un contrato, la persona se enrola en
+  todos los equipos de las sedes de la empresa del contrato — y de las demás
+  empresas del grupo si el grupo (`company_group`) comparte empleados —, unión
+  sobre todos sus contratos vigentes. Cubre la empresa sin grupo y el grupo que
+  no comparte, que antes no enrolaban en ningún equipo. Solo agrega; quitar lo
+  que ya no aplica es del reconciliador (PR 2). El texto que sigue describe la
+  versión anterior.
 - **Fan-out automático al grupo (`lib/enrollment.ts` →
-  `fanOutEmployeeToGroup`)**: al crear o transferir un `employment`
+  `fanOutEmployeeToGroup`, reemplazado)**: al crear o transferir un `employment`
   (`app/admin/empleados/actions.ts`), si la empresa (o su grupo padre) tiene
   `shared_employees` activo, se encola `ADD_EMPLOYEE_TO_DEVICE` para esa
   persona en **todos** los equipos del grupo donde no tenga ya un

@@ -244,7 +244,7 @@ export function OperationsTrackerProvider({ children }: { children: ReactNode })
               </button>
               <button
                 type="button"
-                aria-label="Cerrar"
+                aria-label="Cerrar panel de operaciones"
                 title="Cerrar (limpia las terminadas)"
                 onClick={closePanel}
                 className="w-7 h-7 flex items-center justify-center text-base leading-none bg-transparent border border-neutral-500 hover:border-text cursor-pointer"

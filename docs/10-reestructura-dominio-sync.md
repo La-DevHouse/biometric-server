@@ -1,6 +1,7 @@
 # Reestructura de dominio + sincronización automática de huellas y asistencia
 
-Estado: **plan aprobado para implementar (2026-09-26)**. No hay código escrito todavía.
+Estado: **en implementación.** PR 1 (estructura de dominio) **hecho** el 2026-09-26 —
+ver §0. PR 2 (reconciliador + worker) y PR 3 (UI) pendientes.
 
 Fuente: `plan.md` (raíz del repo), que resume la reunión con Ezequiel posterior a la
 Reunión 3, más la ronda de decisiones Jesús ↔ equipo del 2026-09-26 (§1). **Si algo
@@ -9,6 +10,24 @@ uno antes y qué dice ahora. `07`/`08`/`09` se actualizan cuando se ejecute la
 migración (§9), no antes.
 
 ---
+
+## 0. Estado de implementación
+
+| PR | Contenido | Estado |
+| --- | --- | --- |
+| **1** | Migración `20260926200000_company_group_and_site_scope` (§3.1 grupo/empresa/sede/contrato/dispositivo + backfill §3.2 + trigger §3.4) · `lib/scope.ts` (§4.1) · fan-out por alcance en `lib/enrollment.ts` (cubre empresa sin grupo / grupo que no comparte) · CRUD de grupos, empresa con primera sede obligatoria, contrato sin sede, dispositivo asignado solo a sede · tests `__tests__/scope.test.ts` | ✅ 2026-09-26 |
+| **2** | Segunda migración con las tablas del reconciliador (`device_fingerprint_slot`, `sync_run`, `sync_hold`, `commands.priority`, `employee_fingerprint` re-keyed, `employee_device_enrollment.desired`) + reconciliador + worker `pg-boss` | ⬜ |
+| **3** | UI §6 (Empresa > Empleados / Asistencia, Enrolamiento de solo lectura, vista previa de impacto, `sync_hold`) | ⬜ |
+
+**Desvío respecto de §3:** la migración se partió en dos. Las tablas del
+reconciliador van con el PR 2 porque solo las consume él; meterlas en el PR 1
+obligaba a reescribir dos veces la captura/copia de huellas actuales.
+
+**Backfill real (DB local de desarrollo):** 23 filas-grupo → 23 `company_group`;
+23 filas-grupo vacías borradas; 29 empresas con sede "Principal"; horario,
+departamento y contrato existentes intactos. En Nuremberg corre el mismo
+backfill: una fila-grupo con horarios (u otra cosa) colgando se conserva como
+empresa miembro de su grupo, así que no hay pérdida de horarios.
 
 ## 1. Decisiones cerradas
 
@@ -47,6 +66,8 @@ migración (§9), no antes.
 | Qué dispara la propagación | Solo la operación manual `CAPTURE_FINGERPRINT` (`fanOutCapturedFingerprint`) | Que el reconciliador detecte la huella en el dispositivo (§4.3) |
 | `employee_fingerprint` | Único por `(employee_id, finger_index)`, con finger_index = slot de origen | Id propio más procedencia por slot (R9). El índice anterior mezcla huellas distintas que quedaron en el mismo número de slot |
 | Alta manual en un equipo de otro grupo | `AddEmployeeToDeviceDialog` para "la excepción" (`02`, 2026-09-22) | El reconciliador la borraría en la siguiente corrida. Se elimina (§6). Si Ezequiel necesita excepciones, van por el punto de extensión DT1 (§8 O3) |
+| Modelo de negocio heredado del grupo | `09` §7.1 ítem 10 / D18: nullable en la empresa → hereda del grupo → si no, se pide | El grupo no tiene atributos propios (plan.md): **ya no hay herencia**. Nullable en la empresa; se elige en su formulario |
+| Exportación "por grupo" | `export_run.scope = group` con `scope_company_id` = raíz del grupo | La raíz ya no es una empresa. Sin cambio de schema hasta el Hito 5 → §8 O10 |
 | `employment_status` y el alcance | `07` §5.6: "opcionalmente desactivar sus enrollments" | Obligatorio y automático: cuando termina el contrato se ajusta el alcance y el dispositivo borra al usuario |
 
 Lo que **ya existía** y no es nuevo: la cédula como ID (código `740964a`), el contrato
@@ -470,6 +491,8 @@ Pendientes: T6 (propagación A→B con el reconciliador), T7, T10–T14.
 | O7 | El filtro "empleados por sede" que pidió Ezequiel (`09` §3.12) queda sin soporte en el schema. Si lo vuelve a pedir, se hace un filtro calculado por marcajes | — |
 | O8 | ~~R10 después de T9b~~ **Decidido (2026-09-26): las 10 primeras + alerta.** Como no se puede sobrescribir un slot, no se recrea al usuario para meter huellas más recientes. Si la unión de huellas pasa de 10, las que sobran quedan en la copia canónica sin propagarse, y se muestra una alerta en la ficha del empleado | — |
 | O9 | **`GET_USER_INFO` se cuelga de forma intermitente también con usuarios que SÍ existen** (visto en A el 2026-09-26: usuario 2 a las 19:27, y `30000001` a las 18:45, que seguía existiendo; un reintento minutos después respondió en 1 s). La regla "si no responde, no existe" de `ADD_EMPLOYEE_TO_DEVICE` y de la verificación de `DELETE_USER` **no es segura**: dio por borrado a `30000001` cuando su `DELETE_USER` había devuelto `Error`. El reconciliador verifica con `GET_DEVICE_STATUS` (cambio en los contadores) + `GET_USER_ID_LIST`, nunca por silencio, y **nunca manda `SET_USER_INFO` si hay duda de que el ID exista** (reindexado destructivo) | ✅ **Bug corregido en el código actual (2026-09-26):** `DELETE_USER` verifica con `total_user_count` antes y después (tiene que bajar exactamente 1; si no, `mismatch`); las sondas de `CREATE_USER`/`ADD_EMPLOYEE_TO_DEVICE` ya no toman el silencio como "libre": lo cruzan con `GET_USER_ID_LIST` (`probeListVerdict`) y no crean si la cédula aparece o si la lista no se puede leer |
+| O10 | `export_run` con `scope = group`: apuntaba a la empresa raíz (`scope_company_id`), que ya no existe como concepto. Cuando se implemente el Hito 5, agregar `scope_group_id` (FK a `company_group`) | Hito 5 |
+| O11 | Contratos con fecha de inicio futura: el fan-out del PR 1 solo enrola contratos **vigentes hoy** (§4.1). Hasta que exista el cron (PR 2), un contrato futuro se enrola con "Re-sincronizar enrolamientos" en la empresa cuando empieza | PR 2 lo resuelve solo |
 
 ---
 

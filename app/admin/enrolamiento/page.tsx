@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { allAsync, initDb, prisma } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
+import { scopeCompanyIds } from "@/lib/scope";
 import { DeviceSelect } from "@/components/ui/DeviceSelect";
 import { Table, Th, Td, Tr } from "@/components/ui/Table";
 import { MobileList, MobileRow } from "@/components/ui/MobileRow";
@@ -45,8 +46,11 @@ export default async function EnrolamientoPage({
   await initDb();
   const { dev } = await searchParams;
 
+  // La empresa del equipo sale de su sede (docs/10 R3).
   const devices = await allAsync<{ dev_id: string; fk_name: string | null; company_id: number | null }>(
-    `SELECT dev_id, fk_name, company_id FROM devices ORDER BY dev_id`
+    `SELECT d.dev_id, d.fk_name, s.company_id
+       FROM devices d LEFT JOIN site s ON s.id = d.site_id
+      ORDER BY d.dev_id`
   );
   const effectiveDevId = dev || devices[0]?.dev_id;
 
@@ -79,11 +83,12 @@ export default async function EnrolamientoPage({
   const activeBySlot = new Map<string, (typeof enrollments)[number]>();
   for (const e of enrollments) if (e.status === "active") activeBySlot.set(e.device_user_id, e);
 
-  // Candidatos: empleados con empleo activo en la empresa del equipo.
+  // Candidatos: empleados con contrato activo en una empresa cuyo alcance
+  // incluye este equipo — la suya, más las de su grupo si comparte empleados.
   let companyScopeNote = false;
   let candidates: { id: number; label: string }[];
   if (device?.company_id) {
-    candidates = await loadCandidates([device.company_id]);
+    candidates = await loadCandidates(await scopeCompanyIds(device.company_id));
   } else {
     companyScopeNote = true;
     candidates = await loadCandidates(null);

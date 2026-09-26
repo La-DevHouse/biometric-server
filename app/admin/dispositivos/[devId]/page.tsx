@@ -27,7 +27,6 @@ interface DeviceDetail {
   stat_fp_count: number | null;
   stat_log_count: number | null;
   stat_updated_at: number | null;
-  company_id: number | null;
   site_id: number | null;
   company_linked_at: Date | null;
   device_admin_note: string | null;
@@ -41,7 +40,7 @@ async function getData(devId: string) {
   await initDb();
   const device = await getAsync<DeviceDetail>(
     `SELECT dev_id, fk_name, firmware, last_seen_at, stat_fp_count, stat_log_count, stat_updated_at,
-            company_id, site_id, company_linked_at, device_admin_note
+            site_id, company_linked_at, device_admin_note
        FROM devices WHERE dev_id = ?`,
     [devId]
   );
@@ -51,20 +50,24 @@ async function getData(devId: string) {
     devId,
   ]);
 
-  const [companies, sites] = await Promise.all([
-    prisma.client_company.findMany({
-      where: { status: "active" },
-      select: { id: true, name: true },
-      orderBy: { name: "asc" },
-    }),
+  // Sedes asignables (activas, de empresas activas) + la sede actual aunque ya
+  // no lo esté, para poder mostrarla. La empresa sale de la sede (docs/10 R3).
+  const [sitesRaw, currentSite] = await Promise.all([
     prisma.site.findMany({
-      where: { status: "active" },
-      select: { id: true, name: true, company_id: true },
-      orderBy: { name: "asc" },
+      where: { status: "active", company: { status: "active" } },
+      select: { id: true, name: true, company_id: true, company: { select: { name: true } } },
+      orderBy: [{ company: { name: "asc" } }, { name: "asc" }],
     }),
+    device.site_id != null
+      ? prisma.site.findUnique({
+          where: { id: device.site_id },
+          select: { name: true, company: { select: { name: true } } },
+        })
+      : null,
   ]);
+  const sites = sitesRaw.map((s) => ({ id: s.id, name: s.name, company_id: s.company_id, company_name: s.company.name }));
 
-  return { device, userCount: userCount?.n ?? 0, companies, sites };
+  return { device, userCount: userCount?.n ?? 0, sites, currentSite };
 }
 
 export default async function DeviceDetailPage({
@@ -77,10 +80,10 @@ export default async function DeviceDetailPage({
   const data = await getData(devId);
   if (!data) notFound();
 
-  const { device, userCount, companies, sites } = data;
+  const { device, userCount, sites, currentSite } = data;
   const online = isDeviceOnline(device.last_seen_at);
-  const companyName = companies.find((c) => c.id === device.company_id)?.name ?? null;
-  const siteName = sites.find((s) => s.id === device.site_id)?.name ?? null;
+  const companyName = currentSite?.company.name ?? null;
+  const siteName = currentSite?.name ?? null;
 
   return (
     <div className="flex flex-col gap-6 max-w-[1100px]">
@@ -106,10 +109,8 @@ export default async function DeviceDetailPage({
           <h4 className="font-heading text-xl font-semibold tracking-tight m-0">Asignación</h4>
           <DeviceAssignDialog
             devId={device.dev_id}
-            companies={companies}
             sites={sites}
             current={{
-              company_id: device.company_id,
               site_id: device.site_id,
               note: device.device_admin_note,
             }}
@@ -118,7 +119,7 @@ export default async function DeviceDetailPage({
         <div className="text-sm text-text/85 flex flex-col gap-1">
           <div>
             <span className="text-text/70">Empresa: </span>
-            {companyName ?? <span className="text-text/60">sin asignar</span>}
+            {companyName ?? <span className="text-text/60">pendiente de asignar (sin sede)</span>}
           </div>
           <div>
             <span className="text-text/70">Sede: </span>

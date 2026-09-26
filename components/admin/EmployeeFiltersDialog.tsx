@@ -13,11 +13,9 @@ import { FIELD_INPUT as INPUT_CLASS, FIELD_LABEL as LABEL } from "@/components/u
 export function EmployeeFiltersDialog({
   groups,
   companies,
-  sites,
 }: {
   groups: { id: number; name: string }[];
   companies: { id: number; name: string }[];
-  sites: { id: number; name: string; companyName: string }[];
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -27,9 +25,8 @@ export function EmployeeFiltersDialog({
   const q = searchParams.get("q") ?? "";
   const grupo = searchParams.get("grupo") ?? "";
   const empresa = searchParams.get("empresa") ?? "";
-  const sede = searchParams.get("sede") ?? "";
   const estado = searchParams.get("estado") ?? "";
-  const activeCount = [q, grupo, empresa, sede, estado].filter(Boolean).length;
+  const activeCount = [q, grupo, empresa, estado].filter(Boolean).length;
 
   function update(patch: Record<string, string>) {
     const params = new URLSearchParams(searchParams.toString());
@@ -87,22 +84,6 @@ export function EmployeeFiltersDialog({
         </select>
       </label>
       <label className={LABEL}>
-        Sede
-        <select
-          className={INPUT_CLASS}
-          value={sede}
-          disabled={isPending}
-          onChange={(e) => update({ sede: e.target.value })}
-        >
-          <option value="">todas</option>
-          {sites.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.companyName} — {s.name}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label className={LABEL}>
         Estado
         <select
           className={INPUT_CLASS}
@@ -111,7 +92,7 @@ export function EmployeeFiltersDialog({
           onChange={(e) => update({ estado: e.target.value })}
         >
           <option value="">todos</option>
-          <option value="activo">Con empleo activo</option>
+          <option value="activo">Con contrato activo</option>
           <option value="pool">Pool (sin vínculo)</option>
         </select>
       </label>

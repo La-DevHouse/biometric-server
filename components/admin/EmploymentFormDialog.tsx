@@ -46,12 +46,12 @@ export function EmploymentFormDialog({
   return (
     <>
       <Btn variant={isTransfer ? "secondary" : "primary"} onClick={() => setOpen(true)}>
-        {triggerLabel ?? (isTransfer ? "Trasladar" : "+ Nuevo empleo")}
+        {triggerLabel ?? (isTransfer ? "Trasladar" : "+ Nuevo contrato")}
       </Btn>
       <Dialog
         open={open}
         onClose={() => setOpen(false)}
-        title={isTransfer ? "Trasladar a otra empresa" : "Nuevo empleo"}
+        title={isTransfer ? "Trasladar a otra empresa" : "Nuevo contrato"}
       >
         <form action={formAction} className="flex flex-col gap-3">
           {isTransfer ? (
@@ -61,7 +61,7 @@ export function EmploymentFormDialog({
           )}
           {isTransfer && (
             <p className="m-0 text-xs text-text/70">
-              Cierra el empleo actual con esta fecha y abre uno nuevo en la empresa destino,
+              Cierra el contrato actual con esta fecha y abre uno nuevo en la empresa destino,
               conservando el historial de la persona.
             </p>
           )}
@@ -70,7 +70,7 @@ export function EmploymentFormDialog({
             startLabel={isTransfer ? "Fecha del traslado *" : "Fecha de inicio *"}
           />
           <Btn type="submit" variant="primary" disabled={pending}>
-            {pending ? "Guardando…" : isTransfer ? "Confirmar traslado" : "Registrar empleo"}
+            {pending ? "Guardando…" : isTransfer ? "Confirmar traslado" : "Registrar contrato"}
           </Btn>
         </form>
       </Dialog>

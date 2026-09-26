@@ -9,7 +9,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { CompanyFormDialog, type CompanyFormValues } from "@/components/admin/CompanyFormDialog";
 import { SiteFormDialog } from "@/components/admin/SiteFormDialog";
 import { RecordStatusButton } from "@/components/admin/RecordStatusButton";
-import { ResyncGroupButton } from "@/components/admin/ResyncGroupButton";
+import { ResyncEnrollmentsButton } from "@/components/admin/ResyncEnrollmentsButton";
 import { setCompanyStatusAction, setSiteStatusAction } from "@/app/admin/empresas/actions";
 
 export const dynamic = "force-dynamic";
@@ -26,18 +26,27 @@ export default async function EmpresaDetailPage({
   const company = await prisma.client_company.findUnique({
     where: { id },
     include: {
-      parent: { select: { id: true, name: true } },
-      children: { select: { id: true, name: true, status: true }, orderBy: { name: "asc" } },
+      group: {
+        select: {
+          id: true,
+          name: true,
+          status: true,
+          shared_employees: true,
+          companies: { select: { id: true, name: true, status: true }, orderBy: { name: "asc" } },
+        },
+      },
       business_model: { select: { name: true } },
-      sites: { orderBy: { name: "asc" } },
-      _count: { select: { employments: true, devices: true } },
+      sites: { orderBy: { name: "asc" }, include: { _count: { select: { devices: true } } } },
+      _count: { select: { employments: true } },
     },
   });
   if (!company) notFound();
+  const deviceCount = company.sites.reduce((n, s) => n + s._count.devices, 0);
+  const siblings = company.group?.companies.filter((c) => c.id !== company.id) ?? [];
 
-  const [parentRows, businessModels] = await Promise.all([
-    prisma.client_company.findMany({
-      where: { parent_id: null },
+  const [groupRows, businessModels] = await Promise.all([
+    prisma.company_group.findMany({
+      where: { status: "active" },
       select: { id: true, name: true },
       orderBy: { name: "asc" },
     }),
@@ -47,16 +56,18 @@ export default async function EmpresaDetailPage({
       orderBy: { name: "asc" },
     }),
   ]);
-  const parentOptions = parentRows.filter((p) => p.id !== id);
+  // el grupo actual se ofrece aunque esté inactivo, para no perderlo al editar
+  const groupOptions =
+    company.group && !groupRows.some((g) => g.id === company.group!.id)
+      ? [...groupRows, { id: company.group.id, name: `${company.group.name} (inactivo)` }]
+      : groupRows;
 
   const formValues: CompanyFormValues = {
     id: company.id,
     name: company.name,
     tax_id: company.tax_id,
-    is_group: company.is_group,
-    shared_employees: company.shared_employees,
     address: company.address,
-    parent_id: company.parent_id,
+    group_id: company.group_id,
     business_model_id: company.business_model_id,
     has_logo: company.logo != null,
     legal_rep_name: company.legal_rep_name,
@@ -79,29 +90,22 @@ export default async function EmpresaDetailPage({
           <Tag variant={company.status === "active" ? "accent" : "neutral"}>
             {company.status === "active" ? "Activa" : "Inactiva"}
           </Tag>
-          {company.is_group && <Tag variant="neutral">Grupo</Tag>}
         </div>
       </div>
 
       <section className="flex flex-col gap-2 border border-divider p-4 text-sm">
         <Row label="RIF" value={company.tax_id ?? "—"} mono />
         <Row
-          label="Padre"
+          label="Grupo"
           value={
-            company.parent ? (
-              <Link href={`/admin/empresas/${company.parent.id}`} className="text-accent no-underline hover:underline">
-                {company.parent.name}
-              </Link>
-            ) : (
-              "— nivel superior —"
-            )
+            company.group
+              ? `${company.group.name}${company.group.status !== "active" ? " (inactivo)" : ""} · ${
+                  company.group.shared_employees ? "comparte empleados" : "no comparte empleados"
+                }`
+              : "— sin grupo —"
           }
         />
-        <Row label="Empleados compartidos" value={company.shared_employees ? "Sí" : "No"} />
-        <Row
-          label="Modelo de negocio"
-          value={company.business_model?.name ?? "— hereda del grupo / sin especificar —"}
-        />
+        <Row label="Modelo de negocio" value={company.business_model?.name ?? "— sin especificar —"} />
         <Row label="Dirección" value={company.address ?? "—"} />
         <Row
           label="Representante legal"
@@ -126,8 +130,8 @@ export default async function EmpresaDetailPage({
             )
           }
         />
-        <Row label="Empleos" value={String(company._count.employments)} />
-        <Row label="Dispositivos" value={String(company._count.devices)} />
+        <Row label="Contratos" value={String(company._count.employments)} />
+        <Row label="Dispositivos" value={String(deviceCount)} />
         <Row
           label="Umbrales asistencia"
           value={
@@ -141,26 +145,24 @@ export default async function EmpresaDetailPage({
           }
         />
         <div className="mt-1 flex gap-2">
-          <CompanyFormDialog company={formValues} parentOptions={parentOptions} businessModels={businessModels} />
+          <CompanyFormDialog company={formValues} groupOptions={groupOptions} businessModels={businessModels} />
           <RecordStatusButton
             id={company.id}
             active={company.status === "active"}
             label="empresa"
             action={setCompanyStatusAction}
           />
-          {company.parent_id === null && company.shared_employees && (
-            <ResyncGroupButton companyId={company.id} />
-          )}
+          <ResyncEnrollmentsButton companyId={company.id} />
         </div>
       </section>
 
-      {company.children.length > 0 && (
+      {siblings.length > 0 && (
         <section>
           <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-text/60">
-            Empresas hijas
+            Otras empresas del grupo
           </h3>
           <ul className="flex flex-col gap-1 text-sm">
-            {company.children.map((ch) => (
+            {siblings.map((ch) => (
               <li key={ch.id}>
                 <Link href={`/admin/empresas/${ch.id}`} className="text-accent no-underline hover:underline">
                   {ch.name}
@@ -178,7 +180,7 @@ export default async function EmpresaDetailPage({
           <SiteFormDialog companyId={company.id} />
         </div>
         {company.sites.length === 0 ? (
-          <EmptyState title="Sin sedes" description="Agregá al menos una sede para asignarle dispositivos y empleos." />
+          <EmptyState title="Sin sedes" description="Una empresa activa necesita al menos una sede. Agregá una para asignarle dispositivos." />
         ) : (
           <>
             <div className="hidden md:block">
@@ -188,6 +190,7 @@ export default async function EmpresaDetailPage({
                     <Th>Nombre</Th>
                     <Th>Código</Th>
                     <Th>Zona horaria</Th>
+                    <Th>Dispositivos</Th>
                     <Th>Estado</Th>
                     <Th />
                   </tr>
@@ -198,6 +201,7 @@ export default async function EmpresaDetailPage({
                       <Td>{s.name}</Td>
                       <Td className="font-mono text-xs">{s.code ?? <span className="text-text/60">—</span>}</Td>
                       <Td className="text-xs">{s.timezone}</Td>
+                      <Td>{s._count.devices}</Td>
                       <Td>
                         <Tag variant={s.status === "active" ? "accent" : "neutral"}>
                           {s.status === "active" ? "Activa" : "Inactiva"}
@@ -235,6 +239,7 @@ export default async function EmpresaDetailPage({
                   fields={[
                     { label: "Código", value: s.code ?? "—" },
                     { label: "Zona horaria", value: s.timezone },
+                    { label: "Dispositivos", value: s._count.devices },
                   ]}
                   actions={
                     <>

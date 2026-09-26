@@ -7,7 +7,7 @@ import { requireUser } from "@/lib/auth";
 import { writeAudit } from "@/lib/audit";
 import type { AdminActionState } from "@/lib/adminActionState";
 import { joinDoc } from "@/lib/documento";
-import { fanOutEmployeeToGroup, fanOutNote } from "@/lib/enrollment";
+import { fanOutEmployeeToScope, fanOutNote } from "@/lib/enrollment";
 import { extractCedula, type CedulaExtractedFields } from "@/lib/documentVision";
 
 function str(fd: FormData, k: string) {
@@ -178,7 +178,7 @@ export async function updateEmployeeAction(
 }
 
 // --------------------------------------------------------------------------
-// Empleo (employment)
+// Contrato de trabajo (employment)
 // --------------------------------------------------------------------------
 
 const PAYROLL_TYPES = ["quincenal", "semanal"] as const;
@@ -188,7 +188,6 @@ function employmentData(fd: FormData) {
   const ptRaw = str(fd, "payroll_type");
   return {
     company_id: Number(str(fd, "company_id")),
-    site_id: optId(fd, "site_id"),
     schedule_group_id: optId(fd, "schedule_group_id"),
     // "__new__" → null acá; lo resuelve resolvePositionId() creando el puesto
     position_id: posRaw === "" || posRaw === "__new__" ? null : Number(posRaw),
@@ -203,7 +202,7 @@ function employmentData(fd: FormData) {
 
 /**
  * Si el form eligió "otro: crear puesto nuevo", crea el `position` (asociado al
- * modelo de negocio efectivo de la empresa, o genérico si no tiene) y devuelve
+ * modelo de negocio de la empresa, o genérico si no tiene) y devuelve
  * su id. Si no, devuelve el `position_id` ya parseado.
  */
 async function resolvePositionId(
@@ -218,12 +217,13 @@ async function resolvePositionId(
 
   const company = await prisma.client_company.findUnique({
     where: { id: companyId },
-    select: { business_model_id: true, parent: { select: { business_model_id: true } } },
+    select: { business_model_id: true },
   });
-  const bmId = company?.business_model_id ?? company?.parent?.business_model_id ?? null;
+  // Ya no se hereda del grupo: el grupo no tiene atributos propios (docs/10 §2).
+  const bmId = company?.business_model_id ?? null;
 
   // `position` no tiene columna business_model: el vínculo es M:N vía
-  // position_business_model. Sin modelo efectivo → cargo genérico (sin filas).
+  // position_business_model. Sin modelo → cargo genérico (sin filas).
   const business_model_ids = bmId != null ? [bmId] : [];
   const created = await prisma.position.create({
     data: {
@@ -262,17 +262,17 @@ export async function createEmploymentAction(
     });
     await writeAudit({ actorId: user.id, action: "employment.create", entityType: "employment", entityId: created.id, after: created });
 
-    // Compartir empleados: enrolar en todos los equipos del grupo (no fatal).
+    // Enrolar en todos los equipos de su alcance (docs/10 R6; no fatal).
     let note = "";
     try {
-      note = fanOutNote(await fanOutEmployeeToGroup(employee_id, d.company_id));
+      note = fanOutNote(await fanOutEmployeeToScope(employee_id));
     } catch (e) {
       console.error("fan-out de enrolamiento falló:", e);
     }
 
     revalidatePath(`/admin/empleados/${employee_id}`);
     revalidatePath("/admin/empleados");
-    return { status: "ok", message: "Empleo registrado." + note };
+    return { status: "ok", message: "Contrato registrado." + note };
   } catch (e) {
     return { status: "error", error: e instanceof Error ? e.message : String(e) };
   }
@@ -289,7 +289,7 @@ export async function endEmploymentAction(
   if (!endDate) return { status: "error", error: "La fecha de baja es obligatoria." };
 
   const before = await prisma.employment.findUnique({ where: { id } });
-  if (!before) return { status: "error", error: "El empleo no existe." };
+  if (!before) return { status: "error", error: "El contrato no existe." };
   if (endDate < before.start_date)
     return { status: "error", error: "La fecha de baja no puede ser anterior al inicio." };
 
@@ -313,17 +313,17 @@ export async function transferEmployeeAction(
 ): Promise<AdminActionState> {
   const user = await requireUser();
   const from_employment_id = Number(str(fd, "from_employment_id"));
-  const d = employmentData(fd); // company/site/schedule/position/department destino + start_date = fecha del traslado
+  const d = employmentData(fd); // company/schedule/position/department destino + start_date = fecha del traslado
   const transferDate = d.start_date;
-  if (!Number.isFinite(from_employment_id)) return { status: "error", error: "Empleo origen inválido." };
+  if (!Number.isFinite(from_employment_id)) return { status: "error", error: "Contrato origen inválido." };
   if (!transferDate) return { status: "error", error: "La fecha del traslado es obligatoria." };
   if (!Number.isFinite(d.company_id)) return { status: "error", error: "Seleccioná la empresa destino." };
 
   const from = await prisma.employment.findUnique({ where: { id: from_employment_id } });
-  if (!from) return { status: "error", error: "El empleo origen no existe." };
-  if (from.status !== "active") return { status: "error", error: "El empleo origen ya está cerrado." };
+  if (!from) return { status: "error", error: "El contrato origen no existe." };
+  if (from.status !== "active") return { status: "error", error: "El contrato origen ya está cerrado." };
   if (transferDate < from.start_date)
-    return { status: "error", error: "El traslado no puede ser anterior al inicio del empleo origen." };
+    return { status: "error", error: "El traslado no puede ser anterior al inicio del contrato origen." };
 
   const pos = await resolvePositionId(fd, d.position_id, d.company_id, user.id);
   if ("error" in pos) return { status: "error", error: pos.error };
@@ -339,7 +339,6 @@ export async function transferEmployeeAction(
         data: {
           employee_id: from.employee_id,
           company_id: d.company_id,
-          site_id: d.site_id,
           schedule_group_id: d.schedule_group_id,
           position_id: d.position_id,
           department_id: d.department_id,
@@ -361,7 +360,7 @@ export async function transferEmployeeAction(
 
     let note = "";
     try {
-      note = fanOutNote(await fanOutEmployeeToGroup(from.employee_id, d.company_id));
+      note = fanOutNote(await fanOutEmployeeToScope(from.employee_id));
     } catch (e) {
       console.error("fan-out de enrolamiento falló:", e);
     }

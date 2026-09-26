@@ -9,7 +9,7 @@
     "start": "prisma migrate deploy && tsx server.ts --prod",
     "lint": "eslint",
     "pretest": "tsx --env-file=.env scripts/test-db-setup.ts",
-    "test": "tsx --env-file=.env --test \"lib/**/*.test.ts\" \"__tests__/**/*.test.ts\"",
+    "test": "tsx --env-file=.env --test --test-concurrency=1 \"lib/**/*.test.ts\" \"__tests__/**/*.test.ts\"",
     "simulator": "tsx --env-file=.env scripts/simulator.ts",
     "sniffer": "tsx --env-file=.env scripts/sniffer.ts",
     "handshake-probe": "tsx --env-file=.env scripts/handshake-probe.ts",

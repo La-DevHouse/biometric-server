@@ -6,7 +6,6 @@ import { FIELD_INPUT as INPUT, FIELD_LABEL as LABEL } from "@/components/ui/fiel
 
 export interface EmploymentDefaults {
   company_id?: number | null;
-  site_id?: number | null;
   schedule_group_id?: number | null;
   position_id?: number | null;
   department_id?: number | null;
@@ -16,9 +15,11 @@ export interface EmploymentDefaults {
 }
 
 /**
- * Campos de un empleo: empresa + sede/horario (filtrados por empresa, client-side)
- * + departamento/puesto + inicio + ref nómina. Reusado por alta de empleo y por
- * traslado. Los `name` son fijos (`company_id`, `site_id`, …).
+ * Campos de un contrato de trabajo: empresa + horario (filtrado por empresa,
+ * client-side) + departamento/puesto + inicio + ref nómina. Reusado por alta de
+ * contrato y por traslado. Los `name` son fijos (`company_id`, …). Sin sede: la
+ * pertenencia es con la empresa, y el alcance de la huella sale de sus sedes
+ * (y las de su grupo) — docs/10 R4.
  */
 export function EmploymentFields({
   lookups,
@@ -33,10 +34,9 @@ export function EmploymentFields({
   const [positionSel, setPositionSel] = useState<string>(
     defaults?.position_id != null ? String(defaults.position_id) : ""
   );
-  const sites = lookups.sites.filter((s) => s.company_id === companyId);
   const schedules = lookups.schedules.filter((g) => g.company_id === companyId);
 
-  // modelo de negocio efectivo de la empresa elegida → filtra los puestos
+  // modelo de negocio de la empresa elegida → filtra los puestos
   const effectiveBm =
     companyId === "" ? null : lookups.companies.find((c) => c.id === companyId)?.business_model_id ?? null;
   const positions = lookups.positions.filter(
@@ -62,18 +62,6 @@ export function EmploymentFields({
           {lookups.companies.map((c) => (
             <option key={c.id} value={c.id}>
               {c.name}
-            </option>
-          ))}
-        </select>
-      </label>
-
-      <label className={LABEL}>
-        Sede
-        <select name="site_id" className={INPUT} defaultValue={defaults?.site_id ?? ""} disabled={!companyId}>
-          <option value="">— sin sede —</option>
-          {sites.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.name}
             </option>
           ))}
         </select>

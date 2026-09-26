@@ -14,7 +14,6 @@ type SearchParams = Promise<{
   q?: string;
   grupo?: string;
   empresa?: string;
-  sede?: string;
   estado?: string;
 }>;
 
@@ -24,7 +23,6 @@ export default async function EmpleadosPage({ searchParams }: { searchParams: Se
   const q = (sp.q ?? "").trim();
   const grupoId = sp.grupo ? Number(sp.grupo) : null;
   const empresaId = sp.empresa ? Number(sp.empresa) : null;
-  const siteId = sp.sede ? Number(sp.sede) : null;
   const estado = sp.estado === "pool" ? "pool" : sp.estado === "activo" ? "activo" : null;
 
   const where: Record<string, unknown> = {};
@@ -40,25 +38,21 @@ export default async function EmpleadosPage({ searchParams }: { searchParams: Se
   }
   if (estado === "pool") and.push({ employments: { none: { status: "active" } } });
   if (estado === "activo") and.push({ employments: { some: { status: "active" } } });
-  // Grupo: la empresa raíz o cualquiera de sus hijas.
+  // Grupo: contrato activo en cualquier empresa del grupo (docs/09 §3.12).
+  // Sin filtro por sede: el contrato no la tiene (docs/10 R4, conflicto O7).
   if (grupoId)
-    and.push({
-      employments: {
-        some: { status: "active", company: { OR: [{ id: grupoId }, { parent_id: grupoId }] } },
-      },
-    });
+    and.push({ employments: { some: { status: "active", company: { group_id: grupoId } } } });
   if (empresaId)
     and.push({ employments: { some: { status: "active", company_id: empresaId } } });
-  if (siteId) and.push({ employments: { some: { status: "active", site_id: siteId } } });
   if (and.length) where.AND = and;
 
-  const [employees, companies, groups, sites] = await Promise.all([
+  const [employees, companies, groups] = await Promise.all([
     prisma.employee.findMany({
       where,
       include: {
         employments: {
           where: { status: "active" },
-          include: { company: { select: { name: true } }, site: { select: { name: true } } },
+          include: { company: { select: { name: true } } },
         },
         _count: { select: { fingerprints: true } },
       },
@@ -70,15 +64,9 @@ export default async function EmpleadosPage({ searchParams }: { searchParams: Se
       select: { id: true, name: true },
       orderBy: { name: "asc" },
     }),
-    // Grupos = empresas raíz que agrupan hijas (docs/09 §3.12: filtro por grupo).
-    prisma.client_company.findMany({
-      where: { status: "active", is_group: true },
-      select: { id: true, name: true },
-      orderBy: { name: "asc" },
-    }),
-    prisma.site.findMany({
+    prisma.company_group.findMany({
       where: { status: "active" },
-      select: { id: true, name: true, company: { select: { name: true } } },
+      select: { id: true, name: true },
       orderBy: { name: "asc" },
     }),
   ]);
@@ -91,11 +79,7 @@ export default async function EmpleadosPage({ searchParams }: { searchParams: Se
           {employees.length === 300 && " (mostrando las primeras 300)"}
         </p>
         <div className="flex items-center gap-2">
-          <EmployeeFiltersDialog
-            groups={groups}
-            companies={companies}
-            sites={sites.map((s) => ({ id: s.id, name: s.name, companyName: s.company.name }))}
-          />
+          <EmployeeFiltersDialog groups={groups} companies={companies} />
           <EmployeeFormDialog />
         </div>
       </div>
@@ -110,7 +94,7 @@ export default async function EmpleadosPage({ searchParams }: { searchParams: Se
                 <tr>
                   <Th>Persona</Th>
                   <Th>Documento</Th>
-                  <Th>Empresa(s) / sede(s) activa(s)</Th>
+                  <Th>Empresa(s) con contrato activo</Th>
                   <Th>Huella</Th>
                   <Th>Estado</Th>
                   <Th />
@@ -126,7 +110,7 @@ export default async function EmpleadosPage({ searchParams }: { searchParams: Se
                     <Td className="text-xs">
                       {e.employments.length ? (
                         e.employments
-                          .map((em) => `${em.company.name}${em.site ? ` (${em.site.name})` : ""}`)
+                          .map((em) => em.company.name)
                           .join(", ")
                       ) : (
                         <span className="text-text/60">—</span>
@@ -178,7 +162,7 @@ export default async function EmpleadosPage({ searchParams }: { searchParams: Se
                     label: "Empresa(s)",
                     value: e.employments.length
                       ? e.employments
-                          .map((em) => `${em.company.name}${em.site ? ` (${em.site.name})` : ""}`)
+                          .map((em) => em.company.name)
                           .join(", ")
                       : "—",
                   },
