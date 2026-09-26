@@ -23,11 +23,14 @@ export interface PushTarget {
  */
 export function PushFingerprintDialog({
   employeeId,
-  fingerIndex,
+  fingerprintId,
+  ordinal,
   targets,
 }: {
   employeeId: number;
-  fingerIndex: number;
+  fingerprintId: number;
+  /** Posición en orden de captura (solo para mostrar). */
+  ordinal: number;
   targets: PushTarget[];
 }) {
   const [open, setOpen] = useState(false);
@@ -41,10 +44,10 @@ export function PushFingerprintDialog({
     <>
       <IconBtn
         icon={Icon.send}
-        label={`Copiar huella (dedo ${fingerIndex}) a otro equipo`}
+        label={`Copiar huella #${ordinal} a otro equipo`}
         onClick={() => setOpen(true)}
       />
-      <Dialog open={open} onClose={close} closable={!busy} title={`Copiar huella (dedo ${fingerIndex}) a otro equipo`}>
+      <Dialog open={open} onClose={close} closable={!busy} title={`Copiar huella #${ordinal} a otro equipo`}>
         <div className="flex flex-col gap-3">
           <>
             <p className="m-0 text-xs text-text/70">
@@ -53,7 +56,7 @@ export function PushFingerprintDialog({
             </p>
             <form action={formAction} className="flex flex-col gap-3">
               <input type="hidden" name="employee_id" value={employeeId} />
-              <input type="hidden" name="finger_index" value={fingerIndex} />
+              <input type="hidden" name="fingerprint_id" value={fingerprintId} />
               <label className="flex flex-col gap-1 text-xs text-text/85">
                 Equipo destino *
                 {targets.length === 0 ? (

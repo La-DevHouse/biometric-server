@@ -5,6 +5,7 @@ import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { writeAudit } from "@/lib/audit";
 import type { AdminActionState } from "@/lib/adminActionState";
+import { startReconcileDevice } from "@/lib/sync/reconcile";
 
 function str(fd: FormData, k: string) {
   return String(fd.get(k) ?? "").trim();
@@ -63,6 +64,15 @@ export async function assignDeviceAction(
     before: { site_id: device.site_id },
     after: { site_id },
   });
+  // Equipo nuevo o movido de sede: el reconciliador lo rellena con el alcance
+  // de su sede nueva y quita a quienes ya no aplican (docs/10 §4.3, T12). Sin sede → congelado.
+  if (linkChanged && site_id != null) {
+    try {
+      await startReconcileDevice(dev_id, { trigger: "event", actorId: user.id });
+    } catch (e) {
+      console.error("no se pudo disparar la sincronización del equipo:", e);
+    }
+  }
   revalidatePath(`/admin/dispositivos/${dev_id}`);
   revalidatePath("/admin/enrolamiento");
   return {

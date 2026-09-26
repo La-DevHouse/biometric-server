@@ -24,6 +24,7 @@ import {
 } from "@/lib/operations";
 import type { OpActionState, MultiOpActionState } from "@/lib/opActionState";
 import { requireUser } from "@/lib/auth";
+import { startReconcileDevice, reconcileAll, resolveSyncHold } from "@/lib/sync/reconcile";
 
 export type QueueCommandState =
   | { status: "idle" }
@@ -275,10 +276,10 @@ export async function pushFingerprintAction(
 ): Promise<OpActionState> {
   await requireUser();
   const employeeId = Number(formData.get("employee_id"));
-  const fingerIndex = Number(formData.get("finger_index"));
+  const fingerprintId = Number(formData.get("fingerprint_id"));
   const targetDevId = String(formData.get("target_dev_id") || "");
   try {
-    const { id, warning } = await startPushFingerprint(employeeId, fingerIndex, targetDevId);
+    const { id, warning } = await startPushFingerprint(employeeId, fingerprintId, targetDevId);
     await afterStart();
     revalidatePath("/admin/empleados", "layout");
     return { status: "ok", id, warning };
@@ -332,4 +333,55 @@ export async function cancelOperationAction(id: number): Promise<{ ok: boolean; 
   const result = await cancelOperation(id);
   revalidatePath("/admin", "layout");
   return result;
+}
+
+// ---------------------------------------------------------------------------
+// Sincronización de huellas (reconciliador, docs/10 §4.2–§4.5)
+// ---------------------------------------------------------------------------
+
+/** "Sincronizar ahora" de un equipo: corrida forzada (relee el equipo aunque los contadores no cambien). */
+export async function syncDeviceNowAction(_prev: OpActionState, formData: FormData): Promise<OpActionState> {
+  const user = await requireUser();
+  const devId = String(formData.get("dev_id") || "");
+  try {
+    const id = await startReconcileDevice(devId, { trigger: "manual", force: true, actorId: user.id });
+    if (id === null) {
+      return { status: "error", message: "Este equipo no tiene una sede activa asignada: está congelado y no se sincroniza." };
+    }
+    await afterStart();
+    return { status: "ok", id };
+  } catch (err) {
+    return opError(err);
+  }
+}
+
+/** "Sincronizar todos": una corrida por cada equipo asignado a una sede. */
+export async function syncAllDevicesAction(_prev: MultiOpActionState, _formData: FormData): Promise<MultiOpActionState> {
+  const user = await requireUser();
+  try {
+    const ids = await reconcileAll("manual", user.id);
+    if (ids.length === 0) return { status: "error", message: "No hay equipos asignados a sedes activas." };
+    await afterStart();
+    return { status: "ok", ids };
+  } catch (err) {
+    return { status: "error", message: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/** Aprobar/rechazar un freno de borrado masivo (sync_hold). Al aprobar se re-valida cada baja. */
+export async function resolveSyncHoldAction(
+  holdId: number,
+  approve: boolean
+): Promise<{ ok: boolean; message?: string; error?: string }> {
+  const user = await requireUser();
+  try {
+    const { started } = await resolveSyncHold(holdId, approve, user.id);
+    revalidatePath("/admin/dispositivos", "layout");
+    return {
+      ok: true,
+      message: approve ? `Aprobado: ${started} baja(s) encolada(s).` : "Rechazado: no se borra a nadie.",
+    };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
 }

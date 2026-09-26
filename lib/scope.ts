@@ -6,8 +6,8 @@
 //                                   existe, está activo y tiene shared_employees)
 //         dispositivos de todas las sedes activas de esas empresas
 //
-// Solo lectura — lo usan el fan-out de alta (lib/enrollment.ts), y lo van a usar
-// el reconciliador y la vista previa de impacto de la UI (docs/10 §4.2, R8).
+// Solo lectura — lo usan el reconciliador (lib/sync/reconcile.ts) y la vista
+// previa de impacto de la UI (docs/10 §4.2, R8).
 // Un equipo sin sede nunca está en el alcance de nadie (congelado, docs/10 §3.3).
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";

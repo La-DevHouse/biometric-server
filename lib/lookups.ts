@@ -45,7 +45,7 @@ export interface DeviceCandidate {
 
 /**
  * Equipos candidatos para "agregar empleado a dispositivo" (uso manual). El
- * fan-out automático por alcance (lib/enrollment.ts) ya cubre el caso normal —
+ * reconciliador (lib/sync/reconcile.ts) ya cubre el caso normal —
  * este selector es para la excepción: un equipo de otra empresa o de otro
  * grupo (Reunión 3, docs/09 D3: "no seleccionable en el flujo normal", o sea
  * el flujo manual es justo para lo que el fan-out no alcanza). Por eso

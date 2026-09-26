@@ -7,7 +7,18 @@ import { requireUser } from "@/lib/auth";
 import { writeAudit } from "@/lib/audit";
 import type { AdminActionState } from "@/lib/adminActionState";
 import { joinDoc } from "@/lib/documento";
-import { fanOutEmployeeToScope, fanOutNote } from "@/lib/enrollment";
+import { triggerReconcile, devicesAffectedByEmployee } from "@/lib/sync/reconcile";
+
+/** Dispara el reconciliador en los equipos afectados (docs/10 §4.3); no fatal. */
+async function syncNote(employeeId: number): Promise<string> {
+  try {
+    const n = (await triggerReconcile(await devicesAffectedByEmployee(employeeId), "event")).length;
+    return n > 0 ? ` Sincronizando ${n} equipo(s).` : "";
+  } catch (e) {
+    console.error("no se pudo disparar la sincronización:", e);
+    return "";
+  }
+}
 import { extractCedula, type CedulaExtractedFields } from "@/lib/documentVision";
 
 function str(fd: FormData, k: string) {
@@ -262,13 +273,8 @@ export async function createEmploymentAction(
     });
     await writeAudit({ actorId: user.id, action: "employment.create", entityType: "employment", entityId: created.id, after: created });
 
-    // Enrolar en todos los equipos de su alcance (docs/10 R6; no fatal).
-    let note = "";
-    try {
-      note = fanOutNote(await fanOutEmployeeToScope(employee_id));
-    } catch (e) {
-      console.error("fan-out de enrolamiento falló:", e);
-    }
+    // Enrolar en todos los equipos de su alcance (docs/10 R6): lo hace el reconciliador.
+    const note = await syncNote(employee_id);
 
     revalidatePath(`/admin/empleados/${employee_id}`);
     revalidatePath("/admin/empleados");
@@ -299,9 +305,11 @@ export async function endEmploymentAction(
       data: { end_date: endDate, status: "inactive" },
     });
     await writeAudit({ actorId: user.id, action: "employment.end", entityType: "employment", entityId: id, before, after: updated });
+    // Sale del alcance → el reconciliador lo quita de los equipos que ya no le aplican (con salvaguardas).
+    const note = await syncNote(before.employee_id);
     revalidatePath(`/admin/empleados/${before.employee_id}`);
     revalidatePath("/admin/empleados");
-    return { status: "ok", message: "Baja registrada." };
+    return { status: "ok", message: "Baja registrada." + note };
   } catch (e) {
     return { status: "error", error: e instanceof Error ? e.message : String(e) };
   }
@@ -358,12 +366,7 @@ export async function transferEmployeeAction(
       after: { new_employment: result.opened.id, to_company: d.company_id, date: transferDate },
     });
 
-    let note = "";
-    try {
-      note = fanOutNote(await fanOutEmployeeToScope(from.employee_id));
-    } catch (e) {
-      console.error("fan-out de enrolamiento falló:", e);
-    }
+    const note = await syncNote(from.employee_id);
 
     revalidatePath(`/admin/empleados/${from.employee_id}`);
     revalidatePath("/admin/empleados");

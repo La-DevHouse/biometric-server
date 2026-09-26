@@ -1,7 +1,8 @@
 # Reestructura de dominio + sincronización automática de huellas y asistencia
 
-Estado: **en implementación.** PR 1 (estructura de dominio) **hecho** el 2026-09-26 —
-ver §0. PR 2 (reconciliador + worker) y PR 3 (UI) pendientes.
+Estado: **en implementación.** PR 1 (estructura de dominio) y PR 2 (reconciliador +
+worker) **hechos** — ver §0. PR 3 (UI) pendiente; después, las pruebas con los 2
+equipos (T6, T7, T10–T12, T14).
 
 Fuente: `plan.md` (raíz del repo), que resume la reunión con Ezequiel posterior a la
 Reunión 3, más la ronda de decisiones Jesús ↔ equipo del 2026-09-26 (§1). **Si algo
@@ -16,8 +17,25 @@ migración (§9), no antes.
 | PR | Contenido | Estado |
 | --- | --- | --- |
 | **1** | Migración `20260926200000_company_group_and_site_scope` (§3.1 grupo/empresa/sede/contrato/dispositivo + backfill §3.2 + trigger §3.4) · `lib/scope.ts` (§4.1) · fan-out por alcance en `lib/enrollment.ts` (cubre empresa sin grupo / grupo que no comparte) · CRUD de grupos, empresa con primera sede obligatoria, contrato sin sede, dispositivo asignado solo a sede · tests `__tests__/scope.test.ts` | ✅ 2026-09-26 |
-| **2** | Segunda migración con las tablas del reconciliador (`device_fingerprint_slot`, `sync_run`, `sync_hold`, `commands.priority`, `employee_fingerprint` re-keyed, `employee_device_enrollment.desired`) + reconciliador + worker `pg-boss` | ⬜ |
+| **2** | Migración `20260927100000_fingerprint_provenance_and_sync` (`device_fingerprint_slot` con backfill desde las huellas existentes, `employee_fingerprint` re-keyed con `finger_index`→`source_backup_number` renombrado sin pérdida, `sync_run`, `sync_hold`, `commands.priority` + `operations.priority` y dequeue por prioridad) · `lib/fingerprints.ts` (ingesta + procedencia + slot libre) · reconciliador `RECONCILE_DEVICE` (`lib/sync/reconcile.ts` + decisión pura `lib/sync/plan.ts`) · pull de asistencia (`lib/sync/attendance.ts`, + `last_sync_at` y `employee_id` por cédula) · worker `worker/index.ts` (`npm run worker`) · disparadores por evento en contratos/empresas/grupos/sedes/dispositivos/`realtime_enroll_data` · "Sincronizar ahora"/"Sincronizar todos" + aprobar/rechazar `sync_hold` en Dispositivos · tests `__tests__/reconcile.test.ts` | ✅ 2026-09-27 |
 | **3** | UI §6 (Empresa > Empleados / Asistencia, Enrolamiento de solo lectura, vista previa de impacto, `sync_hold`) | ⬜ |
+
+**Desvíos del PR 2 respecto de §3–§5:**
+- **Sin `employee_device_enrollment.desired`**: el estado deseado se recalcula en
+  cada corrida desde el alcance (`lib/scope.ts`); guardarlo era una segunda fuente
+  de verdad que podía quedar vieja. La vista de desajustes del PR 3 lo calcula igual.
+- **`ADD_EMPLOYEE_TO_DEVICE` vincula en vez de fallar** si la cédula ya existe en el
+  equipo (plan.md: vinculación automática por cédula; "no sobreescribir ni borrar
+  sus huellas"): nunca `SET_USER_INFO` sobre el existente; ingiere sus huellas y
+  solo copia las que falten. El reconciliador usa esta misma operación para
+  "completar huellas" de alguien que ya está.
+- **Los disparos manuales y por evento no pasan por `pg-boss`**: la app llama
+  directo a `startReconcileDevice` (instantáneo e idempotente por equipo). El worker
+  solo corre el cron. Mismo resultado, una pieza menos en el camino caliente.
+- **Umbral del freno**: se permite hasta `max(SYNC_MAX_REMOVALS_PER_DEVICE, ⌈PCT% ×
+  usuarios del equipo⌉)` — así un equipo chico no queda frenado por un solo borrado.
+- **La ingesta no guarda el binario de `realtime_enroll_data`**: el evento solo
+  dispara la corrida, que relee con `GET_USER_INFO` (forma limpia verificada).
 
 **Desvío respecto de §3:** la migración se partió en dos. Las tablas del
 reconciliador van con el PR 2 porque solo las consume él; meterlas en el PR 1

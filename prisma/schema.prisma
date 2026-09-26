@@ -56,6 +56,9 @@ model devices {
 
   enrollments          employee_device_enrollment[]
   sourced_fingerprints employee_fingerprint[]
+  fingerprint_slots    device_fingerprint_slot[]
+  sync_runs            sync_run[]
+  sync_holds           sync_hold[]
 
   @@index([site_id])
 }
@@ -75,8 +78,12 @@ model commands {
   created_at      BigInt  @default(dbgenerated("(extract(epoch from now()) * 1000)::bigint"))
   updated_at      BigInt  @default(dbgenerated("(extract(epoch from now()) * 1000)::bigint"))
   op_id           Int?
+  /// Menor sale primero (docs/10 §3.1): el panel usa 100, el reconciliador 200.
+  /// El dequeue de receive_cmd ordena por (priority, created_at).
+  priority        Int     @default(100)
 
   @@index([dev_id, status])
+  @@index([dev_id, status, priority, created_at])
   @@index([op_id])
 }
 
@@ -178,6 +185,8 @@ model operations {
   created_at       BigInt  @default(dbgenerated("(extract(epoch from now()) * 1000)::bigint"))
   updated_at       BigInt  @default(dbgenerated("(extract(epoch from now()) * 1000)::bigint"))
   finished_at      BigInt?
+  /// Prioridad que heredan los comandos de esta operación (ver commands.priority).
+  priority         Int     @default(100)
 
   @@index([dev_id, stage])
   @@index([created_at(sort: Desc)])
@@ -233,6 +242,36 @@ enum app_user_role {
 enum payroll_type {
   quincenal
   semanal
+}
+
+/// Procedencia de una huella en un slot de un equipo (docs/10 R9).
+enum fingerprint_origin {
+  physical // enrolada en el teclado del equipo (y luego ingerida)
+  propagated // escrita por el sistema con SET_ENROLL_DATA
+}
+
+enum fingerprint_slot_state {
+  present
+  pending_write
+  pending_delete
+  error
+}
+
+enum sync_kind {
+  fingerprints
+  attendance_pull
+  attendance_compute
+}
+
+enum sync_trigger {
+  cron
+  manual
+  event
+}
+
+enum sync_hold_resolution {
+  approved
+  rejected
 }
 
 /// Grupo de empresas (docs/10 R1). Entidad propia, NO una fila de
@@ -497,21 +536,83 @@ model employee_device_enrollment {
   @@index([dev_id, device_user_id])
 }
 
-/// Copia canónica de la plantilla biométrica por empleado (≠ enroll_data, que es
-/// por dispositivo). Base para la migración de huellas entre equipos.
+/// Copia canónica de una huella de un empleado (docs/10 R9). Id propio — ya NO
+/// se identifica por (empleado, slot): el slot es orden de registro de UN equipo,
+/// no identidad de dedo, y dos dedos distintos pueden haber quedado en el mismo
+/// número de slot en equipos distintos. Dónde está cada copia: device_fingerprint_slot.
+/// "Las 10 primeras" (R10) = las 10 activas más antiguas por captured_at.
 model employee_fingerprint {
-  id            Int      @id @default(autoincrement())
-  employee_id   Int
-  employee      employee @relation(fields: [employee_id], references: [id], onDelete: Cascade)
-  finger_index  Int // backup_number: 0–9 dedos, 10 password, 11 tarjeta, 12 rostro
-  template      Bytes
-  source_dev_id String?
-  source_device devices? @relation(fields: [source_dev_id], references: [dev_id], onDelete: SetNull)
-  captured_at   DateTime @default(now()) @db.Timestamptz(6)
-  updated_at    DateTime @updatedAt @db.Timestamptz(6)
+  id                   Int                       @id @default(autoincrement())
+  employee_id          Int
+  employee             employee                  @relation(fields: [employee_id], references: [id], onDelete: Cascade)
+  template             Bytes // forma limpia de 612 B (GET_USER_INFO)
+  source_dev_id        String?
+  source_device        devices?                  @relation(fields: [source_dev_id], references: [dev_id], onDelete: SetNull)
+  source_backup_number Int? // slot donde se enroló físicamente (informativo)
+  status               record_status             @default(active)
+  captured_at          DateTime                  @default(now()) @db.Timestamptz(6)
+  updated_at           DateTime                  @updatedAt @db.Timestamptz(6)
+  slots                device_fingerprint_slot[]
 
-  @@unique([employee_id, finger_index])
-  @@index([employee_id])
+  @@index([employee_id, status, captured_at])
+}
+
+/// Registro de procedencia: qué hay en cada slot de huella de cada equipo y de
+/// dónde salió (docs/10 R9, §4.2). Es lo que hace idempotente al reconciliador:
+/// una copia `propagated` nunca se vuelve a ingerir como huella nueva (la
+/// escritura por software NO detecta duplicados — docs/05, T8b).
+model device_fingerprint_slot {
+  id             Int                    @id @default(autoincrement())
+  dev_id         String
+  device         devices                @relation(fields: [dev_id], references: [dev_id], onDelete: Cascade)
+  device_user_id String // = cédula (ref blanda a users.user_id)
+  backup_number  Int // 0–9
+  fingerprint_id Int?
+  fingerprint    employee_fingerprint?  @relation(fields: [fingerprint_id], references: [id], onDelete: SetNull)
+  origin         fingerprint_origin
+  state          fingerprint_slot_state @default(present)
+  last_seen_at   DateTime?              @db.Timestamptz(6)
+  last_error     String?
+  created_at     DateTime               @default(now()) @db.Timestamptz(6)
+  updated_at     DateTime               @updatedAt @db.Timestamptz(6)
+
+  @@unique([dev_id, device_user_id, backup_number])
+  @@index([fingerprint_id])
+}
+
+/// Auditoría de cada corrida del reconciliador / sincronización de asistencia.
+/// `stats` guarda los contadores del equipo (fp_count, user_count) que la
+/// próxima corrida usa como detector de cambios (docs/10 T1).
+model sync_run {
+  id                Int          @id @default(autoincrement())
+  kind              sync_kind
+  trigger           sync_trigger
+  dev_id            String?
+  device            devices?     @relation(fields: [dev_id], references: [dev_id], onDelete: Cascade)
+  op_id             Int? // operations.id (ref blanda)
+  started_at        DateTime     @default(now()) @db.Timestamptz(6)
+  finished_at       DateTime?    @db.Timestamptz(6)
+  ok                Boolean?
+  stats             Json?
+  actor_app_user_id Int?
+
+  @@index([dev_id, kind, started_at(sort: Desc)])
+}
+
+/// Freno de borrado masivo (docs/10 R8 / §4.5): cuando una corrida quitaría más
+/// usuarios de un equipo que el umbral, no borra nada y deja esto pendiente de
+/// aprobación en el panel.
+model sync_hold {
+  id               Int                   @id @default(autoincrement())
+  dev_id           String
+  device           devices               @relation(fields: [dev_id], references: [dev_id], onDelete: Cascade)
+  planned_removals Json // [{ user_id, employee_id, name }]
+  created_at       DateTime              @default(now()) @db.Timestamptz(6)
+  resolved_at      DateTime?             @db.Timestamptz(6)
+  resolved_by      Int?
+  resolution       sync_hold_resolution?
+
+  @@index([dev_id, resolved_at])
 }
 
 /// Día procesado por el motor de asistencia (Hito 4).

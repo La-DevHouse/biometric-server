@@ -6,6 +6,7 @@ import { Table, Th, Td, Tr } from "@/components/ui/Table";
 import { MobileList, MobileRow } from "@/components/ui/MobileRow";
 import { Tag } from "@/components/ui/Tag";
 import { LinkBtn } from "@/components/ui/Btn";
+import { SyncAllButton } from "@/components/admin/SyncAllButton";
 import { EmptyState } from "@/components/ui/EmptyState";
 
 // force-dynamic (no ISR): con Postgres, `revalidate` haría que Next intente
@@ -47,6 +48,9 @@ export default async function DispositivosPage() {
 
   return (
     <>
+      <div className="mb-3 flex justify-end">
+        <SyncAllButton />
+      </div>
       <div className="hidden md:block">
         <Table>
           <thead>

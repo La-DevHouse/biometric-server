@@ -18,7 +18,6 @@ import { logRawTraffic } from "./index";
 import { upsertUserFromInfo, upsertDeviceStatus } from "@/lib/operations/persist";
 import { advanceOperationForCommand, sweepStaleOperations } from "@/lib/operations/advance";
 import { finishOperation, getOperationRow } from "@/lib/operations/queue";
-import { fanOutCapturedFingerprint } from "@/lib/enrollment";
 
 const NO_CMD_STRATEGY = process.env.NO_CMD_STRATEGY || "ok_empty";
 
@@ -68,7 +67,8 @@ export async function handleReceiveCmd(
     [devId, fkName, firmware, fkBinDataLib, supportedEnrollData]
   );
 
-  // Find oldest WAIT command for this device
+  // Next WAIT command: lowest priority first (panel 100 before reconciler
+  // 200 — docs/10 §3.1), then oldest.
   const command = await getAsync<{
     trans_id: number;
     cmd_code: string;
@@ -77,7 +77,7 @@ export async function handleReceiveCmd(
   }>(
     `SELECT trans_id, cmd_code, cmd_param, cmd_binary FROM commands
      WHERE dev_id = ? AND status = 'WAIT'
-     ORDER BY created_at ASC LIMIT 1`,
+     ORDER BY priority ASC, created_at ASC, trans_id ASC LIMIT 1`,
     [devId]
   );
 
@@ -291,18 +291,19 @@ export async function handleSendCmdResult(
       }
     }
 
-    // Si esto acaba de completar una captura de huella, empujarla sola a
-    // cualquier otro equipo donde la persona ya tenga cuenta (fan-out de
-    // captura — ver lib/enrollment.ts). Aparte del try/catch de arriba: un
-    // fallo acá no debe tocar el resultado ya guardado de CAPTURE_FINGERPRINT.
+    // Si esto acaba de completar una captura manual con huellas nuevas, los
+    // demás equipos del alcance de esa persona tienen que recibirlas: se les
+    // dispara su corrida del reconciliador (docs/10 §4.3). Aparte del
+    // try/catch de arriba: un fallo acá no toca el resultado ya guardado.
     try {
       const op = await getOperationRow(command.op_id);
       if (op?.kind === "CAPTURE_FINGERPRINT" && op.stage === "done") {
         const plan = op.plan_json ? JSON.parse(op.plan_json) : {};
-        const params = op.params_json ? JSON.parse(op.params_json) : {};
-        const fingerIndexes: number[] = Array.isArray(plan.capturedFingers) ? plan.capturedFingers : [];
-        if (params.employeeId && fingerIndexes.length > 0) {
-          await fanOutCapturedFingerprint(params.employeeId, op.dev_id, fingerIndexes);
+        if (plan.employeeId && Array.isArray(plan.newFingerprintIds) && plan.newFingerprintIds.length > 0) {
+          const { triggerReconcile } = await import("@/lib/sync/reconcile");
+          const { applicableDevices } = await import("@/lib/scope");
+          const targets = (await applicableDevices(plan.employeeId)).filter((d) => d !== op.dev_id);
+          await triggerReconcile(targets, "event");
         }
       }
     } catch (err) {
@@ -414,6 +415,14 @@ export async function handleRealtimeEnrollData(
      ON CONFLICT(dev_id, user_id) DO NOTHING`,
     [devId, userId, userName, userPrivilege]
   );
+
+  // Alguien se enroló en el teclado (verificado: el equipo manda esto en el
+  // momento, docs/10 T3). La ingesta de la huella la hace el reconciliador con
+  // su propio GET_USER_INFO (forma limpia de 612 B); acá solo se dispara, sin
+  // bloquear la respuesta al equipo ni dejar que un fallo la afecte.
+  import("@/lib/sync/reconcile")
+    .then(({ startReconcileDevice }) => startReconcileDevice(devId, { trigger: "event" }))
+    .catch((err) => console.error("[sync] no se pudo disparar la corrida tras realtime_enroll_data:", devId, err));
 
   const resp = buildResponse({ responseCode: "OK" });
   return new NextResponse(resp.body, {

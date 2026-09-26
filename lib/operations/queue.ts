@@ -13,11 +13,13 @@ export async function queueCommandForOperation(
   params: Record<string, unknown> = {},
   binary: Buffer | null = null
 ): Promise<number> {
+  // El comando hereda la prioridad de su operación (docs/10 §3.1): lo del
+  // reconciliador (200) no le gana la cola a lo que pide el panel (100).
   const { lastID } = await runAsync(
-    `INSERT INTO commands (dev_id, cmd_code, cmd_param, cmd_binary, status, op_id)
-     VALUES (?, ?, ?, ?, 'WAIT', ?)
+    `INSERT INTO commands (dev_id, cmd_code, cmd_param, cmd_binary, status, op_id, priority)
+     VALUES (?, ?, ?, ?, 'WAIT', ?, COALESCE((SELECT priority FROM operations WHERE id = ?), 100))
      RETURNING trans_id`,
-    [devId, cmdCode, JSON.stringify(params), binary, opId]
+    [devId, cmdCode, JSON.stringify(params), binary, opId, opId]
   );
   await runAsync(
     `UPDATE operations
@@ -36,12 +38,17 @@ export interface CreateOperationInput {
   params?: Record<string, unknown>;
   stepTotal?: number;
   plan?: unknown;
+  /** 100 = panel (default), 200 = reconciliador / segundo plano. Menor sale primero. */
+  priority?: number;
 }
+
+/** Prioridad de las operaciones que lanza el reconciliador (docs/10 §3.1). */
+export const BACKGROUND_PRIORITY = 200;
 
 export async function createOperation(input: CreateOperationInput): Promise<number> {
   const { lastID } = await runAsync(
-    `INSERT INTO operations (kind, label, dev_id, user_id, params_json, step_total, plan_json)
-     VALUES (?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO operations (kind, label, dev_id, user_id, params_json, step_total, plan_json, priority)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
      RETURNING id`,
     [
       input.kind,
@@ -51,6 +58,7 @@ export async function createOperation(input: CreateOperationInput): Promise<numb
       input.params ? JSON.stringify(input.params) : null,
       input.stepTotal ?? 1,
       input.plan !== undefined ? JSON.stringify(input.plan) : null,
+      input.priority ?? 100,
     ]
   );
   return lastID;
@@ -140,6 +148,7 @@ export interface OperationRow {
   created_at: number;
   updated_at: number;
   finished_at: number | null;
+  priority: number;
 }
 
 export function getOperationRow(opId: number): Promise<OperationRow | undefined> {

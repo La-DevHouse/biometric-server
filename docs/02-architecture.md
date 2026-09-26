@@ -226,6 +226,34 @@ empleado en un equipo donde todavía no existe, en un solo paso.
   colisión, agotamiento de intentos, copia multi-huella con tolerancia a fallo
   parcial.
 
+## Reconciliador de huellas + worker (2026-09-27, `docs/10` PR 2)
+
+Reemplaza al fan-out de alta y de captura. Diseño completo y decisiones en
+`docs/10-reestructura-dominio-sync.md` §4–§5; resumen:
+
+- **`RECONCILE_DEVICE`** (`lib/sync/reconcile.ts`): una operación más, que avanza
+  con las respuestas del equipo. `GET_DEVICE_STATUS` → si `fp_count`/`total_user_count`
+  cambiaron desde la última corrida OK (`sync_run.stats`), `GET_USER_ID_LIST` +
+  `GET_USER_INFO` de cada uno (ingesta: vincula por cédula, huellas físicas nuevas →
+  copia canónica) → decide con `planReconcile` (`lib/sync/plan.ts`, función pura) →
+  encola `ADD_EMPLOYEE_TO_DEVICE` (alta o completar huellas) y `DELETE_USER`
+  (bajas), todo con prioridad 200. Salvaguardas: solo cédulas de empleados del
+  sistema, nunca MANAGER/OPERATOR ni privilegio desconocido, equipo sin sede =
+  congelado, freno de borrado masivo → `sync_hold`.
+- **Procedencia** (`lib/fingerprints.ts` + `device_fingerprint_slot`): una copia
+  que propagamos nunca vuelve como "huella nueva" (la escritura por software no
+  detecta duplicados, `05`). Toda copia va a un **slot libre** (sobre uno ocupado el
+  equipo responde OK y no escribe, `05`).
+- **Disparadores**: cron (worker), manual ("Sincronizar ahora"/"todos"), y por
+  evento — cambios de contrato, empresa/grupo/sede/dispositivo, y
+  `realtime_enroll_data` (alguien enroló en el teclado).
+- **Worker** (`worker/index.ts`, `npm run worker`): proceso aparte con `pg-boss`
+  (schema `pgboss` en el mismo Postgres) que solo corre el cron: reconciliar cada
+  `SYNC_FINGERPRINTS_INTERVAL_MIN` (30) y el pull de asistencia `SYNC_ATTENDANCE_CRON`
+  (02:00 Caracas). Es el embrión de `sync-worker-alco` (plan de separación de arriba).
+- **Cola con prioridad**: `commands.priority` (panel 100, reconciliador 200);
+  `receive_cmd` despacha por `(priority, created_at)`.
+
 ## Decisiones de modelo de datos que surgen del relevamiento de Adempiere (en curso)
 
 Estas decisiones se van tomando conforme avanza el kit de relevamiento (`adempiere-kit/`, ver `docs/00-index.md` → `07-admin-ux-spec.md` cuando esté escrito). Se registran aquí porque afectan directamente el esquema, no solo la UX.

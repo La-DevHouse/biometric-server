@@ -7,8 +7,16 @@ import { writeAudit } from "@/lib/audit";
 import type { AdminActionState } from "@/lib/adminActionState";
 import { joinDoc } from "@/lib/documento";
 import { DEFAULT_TZ, isValidTimeZone } from "@/lib/time";
-import { fanOutEmployeeToScope } from "@/lib/enrollment";
-import { activeEmploymentWhere, scopeCompanyIds } from "@/lib/scope";
+import { triggerReconcile, devicesAffectedByCompany, devicesOfGroup } from "@/lib/sync/reconcile";
+
+/** Dispara el reconciliador tras un cambio de alcance (docs/10 §4.3); no fatal. */
+async function resync(devIds: Iterable<string>): Promise<void> {
+  try {
+    await triggerReconcile(devIds, "event");
+  } catch (e) {
+    console.error("no se pudo disparar la sincronización:", e);
+  }
+}
 import { extractPdfText } from "@/lib/pdfText";
 import { parseRifText, type RifExtractedFields } from "@/lib/rifParser";
 import { extractRifPhoto } from "@/lib/documentVision";
@@ -197,6 +205,9 @@ export async function updateCompanyAction(
     return { status: "error", error: e instanceof Error ? e.message : String(e) };
   }
 
+  // Si cambia de grupo, cambia el alcance: equipos del grupo viejo ∪ del nuevo.
+  const scopeBefore = before.group_id !== f.group_id ? await devicesAffectedByCompany(id) : [];
+
   try {
     const updated = await prisma.client_company.update({
       where: { id },
@@ -210,6 +221,7 @@ export async function updateCompanyAction(
       before: auditView(before),
       after: auditView(updated),
     });
+    if (before.group_id !== f.group_id) await resync([...scopeBefore, ...(await devicesAffectedByCompany(id))]);
     revalidatePath("/admin/empresas");
     revalidatePath(`/admin/empresas/${id}`);
     return { status: "ok", message: "Cambios guardados." };
@@ -240,6 +252,7 @@ export async function setCompanyStatusAction(
     before: { status: before.status },
     after: { status: active ? "active" : "inactive" },
   });
+  await resync(await devicesAffectedByCompany(id));
   revalidatePath("/admin/empresas");
   revalidatePath(`/admin/empresas/${id}`);
   return { ok: true };
@@ -339,6 +352,8 @@ export async function setSiteStatusAction(
     before: { status: before.status },
     after: { status: active ? "active" : "inactive" },
   });
+  // Los equipos de una sede inactiva quedan congelados; el resto del alcance se recalcula.
+  await resync(await devicesAffectedByCompany(before.company_id));
   revalidatePath(`/admin/empresas/${before.company_id}`);
   return { ok: true };
 }
@@ -382,6 +397,7 @@ export async function updateGroupAction(
   try {
     const updated = await prisma.company_group.update({ where: { id }, data: f });
     await writeAudit({ actorId: user.id, action: "group.update", entityType: "company_group", entityId: id, before, after: updated });
+    if (before.shared_employees !== updated.shared_employees) await resync(await devicesOfGroup(id));
     revalidatePath("/admin/empresas");
     return { status: "ok", message: "Grupo actualizado." };
   } catch (e) {
@@ -405,60 +421,37 @@ export async function setGroupStatusAction(
     before: { status: before.status },
     after: { status: active ? "active" : "inactive" },
   });
+  await resync(await devicesOfGroup(id));
   revalidatePath("/admin/empresas");
   return { ok: true };
 }
 
 // --------------------------------------------------------------------------
-// Re-sincronizar enrolamientos (reparación manual del fan-out, docs/09 §7.1 ítem 6)
+// Sincronizar ahora (manual) — docs/10 §4.3
 // --------------------------------------------------------------------------
 
 /**
- * Para cada persona con un contrato vigente que alcance los equipos de esta
- * empresa — contrato en la propia empresa, o en otra del mismo grupo si el
- * grupo comparte empleados — encola ADD_EMPLOYEE_TO_DEVICE en los equipos de
- * su alcance donde todavía no esté. Solo agrega; sacar a quien ya no aplica es
- * trabajo del reconciliador (docs/10 §4.2). Hasta que exista el cron (PR 2),
- * también es la forma de enrolar contratos con fecha de inicio futura una vez
- * que empiezan.
+ * "Sincronizar ahora" para una empresa: dispara el reconciliador (docs/10 §4.2)
+ * en todos los equipos alcanzados por sus contratos — los de sus sedes y, si su
+ * grupo comparte empleados, los de las demás empresas del grupo. Agrega lo que
+ * falta y quita lo que sobra, con las salvaguardas de §4.5.
  */
 export async function resyncCompanyEnrollmentsAction(
   companyId: number
 ): Promise<{ ok: boolean; message?: string; error?: string }> {
   const user = await requireUser();
-  const companyIds = await scopeCompanyIds(companyId);
-  if (companyIds.length === 0) return { ok: false, error: "La empresa no existe." };
-
-  const rows = await prisma.employment.findMany({
-    where: { company_id: { in: companyIds }, ...activeEmploymentWhere() },
-    select: { employee_id: true },
-    distinct: ["employee_id"],
-  });
-
-  let started = 0;
-  let warnings = 0;
-  for (const r of rows) {
-    const res = await fanOutEmployeeToScope(r.employee_id);
-    started += res.started;
-    warnings += res.notes.length;
-  }
-
+  const devices = await devicesAffectedByCompany(companyId);
+  if (devices.length === 0) return { ok: false, error: "No hay equipos asignados a sedes de esta empresa (ni de su grupo)." };
+  const started = (await triggerReconcile(devices, "manual", user.id)).length;
   await writeAudit({
     actorId: user.id,
-    action: "enrollment.resync",
+    action: "sync.manual",
     entityType: "client_company",
     entityId: companyId,
-    after: { companies: companyIds, employees: rows.length, started, warnings },
+    after: { devices, started },
   });
-  revalidatePath("/admin/enrolamiento");
   revalidatePath(`/admin/empresas/${companyId}`);
-
-  return {
-    ok: true,
-    message: `${rows.length} persona(s) revisadas · ${started} enrolamiento(s) encolado(s)${
-      warnings ? ` · ${warnings} aviso(s)` : ""
-    }.`,
-  };
+  return { ok: true, message: `Sincronizando ${started} equipo(s). El avance aparece en el panel “Procesando”.` };
 }
 
 // --------------------------------------------------------------------------

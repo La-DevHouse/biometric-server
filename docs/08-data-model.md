@@ -374,6 +374,14 @@ si el cálculo SQL-side lo hace incómodo.
 
 ### 4.5 Biométrico a nivel empleado
 
+> **Vigente desde `20260927100000` (docs/10 R9):** `employee_fingerprint` ya no es
+> único por `(employee_id, finger_index)` — el slot es orden de registro de un
+> equipo, no identidad de dedo. Tiene id propio, `source_backup_number` (el slot de
+> origen, informativo) y `status`. Dónde está cada copia lo dice
+> `device_fingerprint_slot` (`physical` = enrolada en el teclado e ingerida;
+> `propagated` = escrita por el sistema y verificada). "Las 10 primeras" = las 10
+> activas más antiguas por `captured_at`. El bloque de abajo es el borrador original.
+
 ```prisma
 model employee_device_enrollment {
   id             Int               @id @default(autoincrement())
@@ -588,6 +596,7 @@ app_user ──< export_run
 | `20260901165749_site_timezone` | 2026-09-01 | `site.timezone TEXT NOT NULL DEFAULT 'America/Caracas'`. |
 | `20260908155808_remove_company_hierarchy` | 2026-09-08 | ⚠️ Quitó `parent_id`/`is_group`/`shared_employees` + trigger + CHECK. **Revertido por `20260910120000`.** |
 | `20260926180000_rename_employee_group_to_schedule_group` | 2026-09-26 | Rename puro `employee_group` → `schedule_group`. |
+| `20260927100000_fingerprint_provenance_and_sync` | 2026-09-27 | docs/10 PR 2: `employee_fingerprint.finger_index` → `source_backup_number` (rename, sin pérdida; se quita el unique `(employee_id, finger_index)`), `status`; `device_fingerprint_slot` (procedencia por slot, backfill desde las huellas existentes); `sync_run`; `sync_hold`; `commands.priority` + `operations.priority`; enums `fingerprint_origin`, `fingerprint_slot_state`, `sync_kind`, `sync_trigger`, `sync_hold_resolution`. |
 | `20260926200000_company_group_and_site_scope` | 2026-09-26 | docs/10 PR 1: `company_group` + `client_company.group_id` (backfill desde las filas `is_group`/padres; las filas-grupo con algo colgando quedan como empresa miembro), sede "Principal" para toda empresa sin sede activa, equipos con empresa y sin sede → esa sede; drop `parent_id`/`is_group`/`shared_employees`, trigger de 2 niveles, CHECK de RIF, `devices.company_id`, `employment.site_id`; constraint trigger diferido "≥1 sede activa". |
 | `20260910120000_restore_hierarchy_and_domain_refinements` | 2026-09-10 | Reunión 3: restaura jerarquía (columnas + FK + índice + trigger 2 niveles + CHECK de RIF), agrega `business_model` + `position_business_model` + enum `payroll_type` + `employment.payroll_type` + `client_company.{logo, legal_rep_*}` + `device.company_linked_at`. |
 
@@ -636,4 +645,4 @@ Contexto y decisiones completas: `docs/09-reunion-3.md` §3.5.1, §7.1, §10.
 - [x] `devices.company_id` eliminado (empresa vía sede); `devices.site_id` sigue nullable (= pendiente de asignar)
 - [x] `employment.site_id` eliminado (contrato sin sede)
 - [x] `business_model` ya no se hereda del grupo
-- [ ] PR 2: `device_fingerprint_slot`, `sync_run`, `sync_hold`, `commands.priority`, `employee_fingerprint` re-keyed, `employee_device_enrollment.desired` (docs/10 §3.1)
+- [x] PR 2 (`20260927100000`): `employee_fingerprint` con id propio (sin unique por slot; `source_backup_number` informativo; `status`), `device_fingerprint_slot` (procedencia `physical`/`propagated` por `(dev_id, device_user_id, backup_number)`), `sync_run`, `sync_hold`, `commands.priority`/`operations.priority`. `employee_device_enrollment.desired` **no** se agregó (se recalcula desde el alcance — docs/10 §0). Modelos completos: `prisma/schema.prisma`.

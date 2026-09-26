@@ -10,7 +10,6 @@ import {
   Privilege,
   PRIVILEGE_SCREEN_LABEL,
   TERMINAL_STAGES,
-  MAX_FINGERPRINT_INDEX,
   truncateUserName,
   OPERATION_LABELS,
   STAGE_LABELS,
@@ -21,7 +20,16 @@ import {
   getOperationRow,
   finishOperation,
   OperationRow,
+  BACKGROUND_PRIORITY,
 } from "./queue";
+import {
+  cedulaDigits,
+  desiredFingerprints,
+  usedSlots,
+  freeSlot,
+  patchTemplateUserId,
+  MIN_TEMPLATE_BYTES,
+} from "@/lib/fingerprints";
 import { sweepStaleOperations } from "./advance";
 import { isDeviceOnline } from "@/lib/deviceStatus";
 
@@ -33,6 +41,14 @@ export interface StartResult {
   /** Advisory only — the operation is already queued either way. */
   warning?: string;
 }
+
+/** Opciones de arranque para operaciones que también lanza el reconciliador. */
+export interface StartOptions {
+  /** true = segundo plano (reconciliador): prioridad 200 en la cola, docs/10 §3.1. */
+  background?: boolean;
+}
+
+const priorityOf = (opts?: StartOptions) => (opts?.background ? BACKGROUND_PRIORITY : 100);
 
 export interface OperationView {
   id: number;
@@ -297,7 +313,11 @@ export async function startCreateUser(devId: string, input: CreateUserInput): Pr
   return { id, warning };
 }
 
-export async function startDeleteUser(devId: string, userId: string): Promise<StartResult> {
+export async function startDeleteUser(
+  devId: string,
+  userId: string,
+  opts: StartOptions & { reason?: string } = {}
+): Promise<StartResult> {
   const dev = await ensureDevice(devId);
   const existing = await findActiveOperation("DELETE_USER", devId, userId);
   if (existing) return { id: existing };
@@ -312,18 +332,36 @@ export async function startDeleteUser(devId: string, userId: string): Promise<St
     userId,
     stepTotal: 3,
     plan: { phase: "baseline" },
+    params: opts.reason ? { reason: opts.reason } : undefined,
+    priority: priorityOf(opts),
   });
   await queueCommandForOperation(id, devId, "GET_DEVICE_STATUS", {});
   return { id, warning: offlineWarning(dev) };
 }
 
-export async function startSyncLogs(devId: string): Promise<StartResult> {
+export async function startSyncLogs(
+  devId: string,
+  opts: StartOptions & { since?: Date | null } = {}
+): Promise<StartResult> {
   const dev = await ensureDevice(devId);
   const existing = await findActiveOperation("SYNC_LOGS", devId);
   if (existing) return { id: existing };
 
-  const id = await createOperation({ kind: "SYNC_LOGS", label: OPERATION_LABELS.SYNC_LOGS, devId });
-  await queueCommandForOperation(id, devId, "GET_LOG_DATA", {});
+  // Con `since`: solo desde esa fecha (el pull diario de asistencia, docs/10
+  // §4.6). GET_LOG_DATA toma begin_time/end_time "YYYYMMDD" (docs/05).
+  const params: Record<string, string> = {};
+  if (opts.since) {
+    const ymd = (d: Date) => d.toISOString().slice(0, 10).replace(/-/g, "");
+    params.begin_time = ymd(opts.since);
+    params.end_time = ymd(new Date(Date.now() + 24 * 3600 * 1000));
+  }
+  const id = await createOperation({
+    kind: "SYNC_LOGS",
+    label: opts.since ? `${OPERATION_LABELS.SYNC_LOGS} (desde ${params.begin_time})` : OPERATION_LABELS.SYNC_LOGS,
+    devId,
+    priority: priorityOf(opts),
+  });
+  await queueCommandForOperation(id, devId, "GET_LOG_DATA", params);
   return { id, warning: offlineWarning(dev) };
 }
 
@@ -406,24 +444,27 @@ export async function startCaptureFingerprint(
   return { id, warning: offlineWarning(dev) };
 }
 
+/**
+ * Copia una huella canónica (employee_fingerprint.id) a un equipo donde la
+ * persona ya existe, en un slot LIBRE — sobre uno ocupado el equipo responde
+ * OK y no escribe nada (docs/05, T9b). El slot se registra como `propagated`
+ * recién cuando la relectura lo confirma (advance.ts).
+ */
 export async function startPushFingerprint(
   employeeId: number,
-  fingerIndex: number,
-  targetDevId: string
+  fingerprintId: number,
+  targetDevId: string,
+  opts: StartOptions = {}
 ): Promise<StartResult> {
   const dev = await ensureDevice(targetDevId);
 
-  const fingerprint = await prisma.employee_fingerprint.findUnique({
-    where: { employee_id_finger_index: { employee_id: employeeId, finger_index: fingerIndex } },
-  });
-  if (!fingerprint) {
-    throw new Error(
-      "No hay una huella capturada para ese dedo. Capturala primero desde el equipo de origen."
-    );
+  const fingerprint = await prisma.employee_fingerprint.findUnique({ where: { id: fingerprintId } });
+  if (!fingerprint || fingerprint.employee_id !== employeeId) {
+    throw new Error("Esa huella no existe o no es de esta persona.");
   }
-  if (fingerprint.template.length < 612) {
+  if (fingerprint.template.length < MIN_TEMPLATE_BYTES) {
     throw new Error(
-      `La huella capturada mide ${fingerprint.template.length} bytes — se esperaban al menos 612. Puede estar corrupta; volvé a capturarla.`
+      `La huella capturada mide ${fingerprint.template.length} bytes — se esperaban al menos ${MIN_TEMPLATE_BYTES}. Puede estar corrupta; volvé a capturarla.`
     );
   }
 
@@ -431,43 +472,34 @@ export async function startPushFingerprint(
     where: { employee_id: employeeId, dev_id: targetDevId, status: "active" },
   });
   if (!enrollment) {
-    throw new Error(
-      "La persona no tiene un usuario vinculado en el equipo destino. Vinculala primero desde Enrolamiento."
-    );
+    throw new Error("La persona no tiene un usuario vinculado en el equipo destino.");
   }
+  const userId = enrollment.device_user_id;
 
-  const targetUserId = Number(enrollment.device_user_id);
-  if (!Number.isInteger(targetUserId)) {
-    throw new Error(
-      `El ID de usuario del equipo destino ("${enrollment.device_user_id}") no es numérico — este ` +
-        `firmware codifica el ID como entero de 4 bytes dentro de la huella, así que no se puede migrar.`
-    );
-  }
-
-  const existing = await findActiveOperation("PUSH_FINGERPRINT", targetDevId, enrollment.device_user_id);
+  const existing = await findActiveOperation("PUSH_FINGERPRINT", targetDevId, userId);
   if (existing) return { id: existing };
 
-  // Único campo que hace falta tocar: el user_id embebido. El resto (índice
-  // de slot, campos internos del firmware) el equipo destino los regenera
-  // solo — verificado contra hardware real.
-  const patched = Buffer.from(fingerprint.template);
-  patched.writeUInt32LE(targetUserId, 608);
+  const slot = freeSlot(await usedSlots(targetDevId, userId));
+  if (slot === null) {
+    throw new Error("El usuario ya tiene los 10 slots de huella ocupados en ese equipo.");
+  }
 
-  const label = `${OPERATION_LABELS.PUSH_FINGERPRINT} (dedo ${fingerIndex}) a usuario ${enrollment.device_user_id}`;
+  const label = `${OPERATION_LABELS.PUSH_FINGERPRINT} (slot ${slot}) a usuario ${userId}`;
   const id = await createOperation({
     kind: "PUSH_FINGERPRINT",
     label,
     devId: targetDevId,
-    userId: enrollment.device_user_id,
-    params: { employeeId, fingerIndex },
+    userId,
+    params: { employeeId, fingerprintId, backupNumber: slot },
     plan: { phase: "apply" },
+    priority: priorityOf(opts),
   });
   await queueCommandForOperation(
     id,
     targetDevId,
     "SET_ENROLL_DATA",
-    { user_id: enrollment.device_user_id, backup_number: fingerIndex, enroll_data: "BIN_1" },
-    patched
+    { user_id: userId, backup_number: slot, enroll_data: "BIN_1" },
+    patchTemplateUserId(fingerprint.template, userId)
   );
   return {
     id,
@@ -480,8 +512,8 @@ export async function startPushFingerprint(
 
 // ---------------------------------------------------------------------------
 // Alta de empleado en un equipo nuevo — ver docs/02-architecture.md
-// ("Agregar empleado al equipo"). El fan-out automático al grupo (lib/enrollment.ts)
-// llama a esto solo; el uso manual ("+ Agregar a equipo") es para el caso
+// ("Agregar empleado al equipo"). El reconciliador (lib/sync/reconcile.ts)
+// llama a esto solo, en segundo plano; el uso manual ("+ Agregar a equipo") es para el caso
 // excepcional fuera del grupo (Reunión 3, docs/09 D3). El ID de usuario es la
 // cédula del empleado, sin prefijo (Reunión 3 D4: "el ID del biométrico es la
 // cédula, en todos los equipos" — llave de la migración) — una colisión con
@@ -491,12 +523,6 @@ export async function startPushFingerprint(
 // pasos manuales extra.
 // ---------------------------------------------------------------------------
 
-/** Cédula sin prefijo de nacionalidad, para usar como device_user_id — decisión
- * Reunión 3 (docs/09 §3.6): el ID del biométrico es la cédula, en todos los
- * equipos, sin el prefijo V/E/J/G que sí lleva `employee.national_id`. */
-function cedulaDigits(nationalId: string): string {
-  return nationalId.replace(/\D/g, "");
-}
 
 export interface AddEmployeeToDeviceInput {
   employeeId: number;
@@ -506,7 +532,8 @@ export interface AddEmployeeToDeviceInput {
 
 export async function startAddEmployeeToDevice(
   devId: string,
-  input: AddEmployeeToDeviceInput
+  input: AddEmployeeToDeviceInput,
+  opts: StartOptions = {}
 ): Promise<StartResult> {
   const dev = await ensureDevice(devId);
   const userName = input.userName.trim();
@@ -515,10 +542,12 @@ export async function startAddEmployeeToDevice(
   const employee = await prisma.employee.findUnique({ where: { id: input.employeeId } });
   if (!employee) throw new Error("Empleado no encontrado.");
 
+  // En segundo plano (reconciliador) sí se corre sobre alguien ya vinculado: la
+  // sonda encuentra su usuario y solo completa las huellas que le falten.
   const alreadyLinked = await prisma.employee_device_enrollment.findFirst({
     where: { employee_id: input.employeeId, dev_id: devId, status: "active" },
   });
-  if (alreadyLinked) {
+  if (alreadyLinked && !opts.background) {
     throw new Error(`Esta persona ya está vinculada a este equipo (usuario ${alreadyLinked.device_user_id}).`);
   }
 
@@ -544,21 +573,17 @@ export async function startAddEmployeeToDevice(
   const truncatedName = truncateUserName(userName);
   const privilege: Privilege = input.privilege ?? "USER";
 
-  const fingerprints = await prisma.employee_fingerprint.findMany({
-    where: { employee_id: input.employeeId, finger_index: { lte: MAX_FINGERPRINT_INDEX } },
-    select: { finger_index: true },
-    orderBy: { finger_index: "asc" },
-  });
-  const pendingFingers = fingerprints.map((f) => f.finger_index);
+  // Las "10 primeras" huellas activas (R10 / O8).
+  const pendingFingerprints = (await desiredFingerprints(input.employeeId)).map((f) => f.id);
 
   const warning = combineWarnings(
     truncatedName !== userName
       ? `El dispositivo trunca los nombres a 8 caracteres: se guardará "${truncatedName}".`
       : undefined,
-    pendingFingers.length > 0
-      ? `Esta persona ya tiene ${pendingFingers.length} huella(s) capturada(s) — se copiarán a este equipo automáticamente tras crear el usuario.`
+    pendingFingerprints.length > 0
+      ? `Esta persona ya tiene ${pendingFingerprints.length} huella(s) capturada(s) — se copiarán a este equipo automáticamente tras crear el usuario.`
       : "Esta persona no tiene huellas capturadas todavía — se creará el usuario, pero hay que registrarle la huella físicamente en algún equipo (o copiarla desde uno donde ya la tenga) para que pueda marcar aquí.",
-    privilege !== "USER" && pendingFingers.length === 0
+    privilege !== "USER" && pendingFingerprints.length === 0
       ? `El privilegio "${privilege}" no quedará aplicado hasta que la persona tenga una huella registrada en este equipo — verificado que este firmware lo ignora en silencio sin eso. Se reintenta solo al final, pero puede terminar reportando que no se pudo aplicar todavía.`
       : undefined,
     offlineWarning(dev)
@@ -577,10 +602,11 @@ export async function startAddEmployeeToDevice(
       attempt: 1,
       userName: truncatedName,
       privilege,
-      pendingFingers,
-      pushedFingers: [],
-      failedFingers: [],
+      pendingFingerprints,
+      pushedFingerprints: [],
+      failedFingerprints: [],
     },
+    priority: priorityOf(opts),
   });
   await queueCommandForOperation(id, devId, "GET_USER_INFO", { user_id: String(candidateId) });
   return { id, warning };

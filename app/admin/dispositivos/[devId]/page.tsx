@@ -8,11 +8,12 @@ import { StatCard } from "@/components/ui/StatCard";
 import { Tag } from "@/components/ui/Tag";
 import { LinkBtn } from "@/components/ui/Btn";
 import { OpButton } from "@/components/admin/OpButton";
+import { SyncHoldActions } from "@/components/admin/SyncHoldActions";
 import { RenameDeviceDialog } from "@/components/admin/RenameDeviceDialog";
 import { DeviceAssignDialog } from "@/components/admin/DeviceAssignDialog";
 import { ClearLogsDialog } from "@/components/admin/ClearLogsDialog";
 import { ClearEnrollDialog } from "@/components/admin/ClearEnrollDialog";
-import { syncClockAction, refreshStatusAction } from "@/app/admin/actions";
+import { syncClockAction, refreshStatusAction, syncDeviceNowAction } from "@/app/admin/actions";
 
 // force-dynamic: la página pega a Postgres en un Server Component; con `revalidate`
 // Next intenta prerenderizarla en `next build`, lo que exige la BD accesible en
@@ -34,6 +35,10 @@ interface DeviceDetail {
 
 function fmtDate(d: Date | null): string {
   return d ? d.toISOString().slice(0, 10) : "—";
+}
+
+function fmtDateTime(d: Date): string {
+  return d.toLocaleString("es-VE", { timeZone: "America/Caracas", dateStyle: "short", timeStyle: "short" });
 }
 
 async function getData(devId: string) {
@@ -67,7 +72,15 @@ async function getData(devId: string) {
   ]);
   const sites = sitesRaw.map((s) => ({ id: s.id, name: s.name, company_id: s.company_id, company_name: s.company.name }));
 
-  return { device, userCount: userCount?.n ?? 0, sites, currentSite };
+  const [lastRun, openHold] = await Promise.all([
+    prisma.sync_run.findFirst({
+      where: { dev_id: devId, kind: "fingerprints", finished_at: { not: null } },
+      orderBy: { started_at: "desc" },
+    }),
+    prisma.sync_hold.findFirst({ where: { dev_id: devId, resolved_at: null }, orderBy: { created_at: "desc" } }),
+  ]);
+
+  return { device, userCount: userCount?.n ?? 0, sites, currentSite, lastRun, openHold };
 }
 
 export default async function DeviceDetailPage({
@@ -80,7 +93,8 @@ export default async function DeviceDetailPage({
   const data = await getData(devId);
   if (!data) notFound();
 
-  const { device, userCount, sites, currentSite } = data;
+  const { device, userCount, sites, currentSite, lastRun, openHold } = data;
+  const runStats = (lastRun?.stats ?? {}) as { added?: number; completed?: number; removed?: number; held?: number; unknown?: string[]; protected?: string[] };
   const online = isDeviceOnline(device.last_seen_at);
   const companyName = currentSite?.company.name ?? null;
   const siteName = currentSite?.name ?? null;
@@ -142,6 +156,51 @@ export default async function DeviceDetailPage({
           <p className="text-xs text-text/70 m-0">
             Sin empresa, al enrolar en este equipo la lista de empleados no se puede acotar.
           </p>
+        )}
+      </div>
+
+      <div className="flex flex-col gap-2 border border-divider p-4">
+        <div className="flex items-center justify-between gap-3">
+          <h4 className="font-heading text-xl font-semibold tracking-tight m-0">Sincronización de huellas</h4>
+          <OpButton
+            action={syncDeviceNowAction}
+            hidden={{ dev_id: device.dev_id }}
+            title="Sincronizar ahora"
+            description="Relee el equipo, agrega a quien falte, copia las huellas que falten y quita a quien ya no corresponda — con las salvaguardas (nunca admins ni IDs que no sean de un empleado)."
+          >
+            Sincronizar ahora
+          </OpButton>
+        </div>
+        {!companyName ? (
+          <p className="text-sm text-text/70 m-0">Sin sede asignada: el equipo está congelado y no se sincroniza.</p>
+        ) : lastRun ? (
+          <div className="text-sm text-text/85 flex flex-col gap-1">
+            <div>
+              <span className="text-text/70">Última corrida: </span>
+              {lastRun.finished_at ? fmtDateTime(lastRun.finished_at) : "—"} ({lastRun.trigger}
+              {lastRun.ok === false ? ", con error" : ""})
+            </div>
+            <div className="text-xs text-text/70">
+              {runStats.added ?? 0} alta(s) · {runStats.completed ?? 0} a completar · {runStats.removed ?? 0} baja(s)
+              {runStats.unknown?.length ? ` · IDs sin empleado: ${runStats.unknown.join(", ")}` : ""}
+              {runStats.protected?.length ? ` · admins fuera del alcance (no se tocan): ${runStats.protected.join(", ")}` : ""}
+            </div>
+          </div>
+        ) : (
+          <p className="text-sm text-text/70 m-0">Todavía no corrió ninguna sincronización en este equipo.</p>
+        )}
+        {openHold && (
+          <div className="flex flex-col gap-2 border border-accent2 p-3">
+            <p className="m-0 text-sm">
+              <strong>Bajas frenadas:</strong> la última corrida quitaría{" "}
+              {(openHold.planned_removals as unknown[]).length} usuario(s) de este equipo, más de lo que se
+              permite de una vez. No se borró a nadie. Usuarios:{" "}
+              <span className="font-mono">
+                {(openHold.planned_removals as Array<{ user_id: string }>).map((r) => r.user_id).join(", ")}
+              </span>
+            </p>
+            <SyncHoldActions holdId={openHold.id} />
+          </div>
         )}
       </div>
 

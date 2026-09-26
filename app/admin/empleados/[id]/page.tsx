@@ -45,9 +45,14 @@ export default async function EmpleadoDetailPage({
           orderBy: [{ status: "asc" }, { enrolled_at: "desc" }],
           include: { device: { select: { dev_id: true, fk_name: true } } },
         },
+        // Orden de captura: las 10 primeras activas son las que se propagan (docs/10 R10).
         fingerprints: {
-          orderBy: [{ finger_index: "asc" }],
-          include: { source_device: { select: { dev_id: true, fk_name: true } } },
+          where: { status: "active" },
+          orderBy: [{ captured_at: "asc" }, { id: "asc" }],
+          include: {
+            source_device: { select: { dev_id: true, fk_name: true } },
+            _count: { select: { slots: true } },
+          },
         },
         _count: { select: { enrollments: true, fingerprints: true } },
       },
@@ -268,22 +273,33 @@ export default async function EmpleadoDetailPage({
           <Table>
             <thead>
               <tr>
-                <Th>Dedo</Th>
+                <Th>#</Th>
                 <Th>Origen</Th>
+                <Th>En equipos</Th>
                 <Th>Capturada</Th>
                 <Th />
               </tr>
             </thead>
             <tbody>
-              {employee.fingerprints.map((fp) => (
+              {employee.fingerprints.map((fp, i) => (
                 <Tr key={fp.id}>
-                  <Td className="font-mono">{fp.finger_index}</Td>
-                  <Td>{fp.source_device?.fk_name || fp.source_dev_id || "—"}</Td>
+                  <Td className="font-mono">
+                    {i + 1}
+                    {i >= 10 && <span className="text-accent2"> (no se propaga: pasa de 10)</span>}
+                  </Td>
+                  <Td>
+                    {fp.source_device?.fk_name || fp.source_dev_id || "—"}
+                    {fp.source_backup_number != null && (
+                      <span className="text-text/60"> · slot {fp.source_backup_number}</span>
+                    )}
+                  </Td>
+                  <Td>{fp._count.slots}</Td>
                   <Td className="text-xs">{fmtDate(fp.captured_at)}</Td>
                   <Td>
                     <PushFingerprintDialog
                       employeeId={employee.id}
-                      fingerIndex={fp.finger_index}
+                      fingerprintId={fp.id}
+                      ordinal={i + 1}
                       targets={activeEnrollments
                         .filter((en) => en.device.dev_id !== fp.source_dev_id)
                         .map((en) => ({

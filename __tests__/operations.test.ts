@@ -23,7 +23,7 @@ const ops = require("../lib/operations") as typeof import("../lib/operations");
 const advance = require("../lib/operations/advance") as typeof import("../lib/operations/advance");
 const persist = require("../lib/operations/persist") as typeof import("../lib/operations/persist");
 const kinds = require("../lib/operations/kinds") as typeof import("../lib/operations/kinds");
-const enrollment = require("../lib/enrollment") as typeof import("../lib/enrollment");
+const fingerprints = require("../lib/fingerprints") as typeof import("../lib/fingerprints");
 
 const DEV_A = "TEST_DEV_A";
 
@@ -600,6 +600,7 @@ function fakeTemplate(embeddedUserId: number): Buffer {
 
 async function freshDomainDb() {
   await freshDb();
+  // device_fingerprint_slot / sync_run / sync_hold se van en cascada con devices (freshDb).
   await db.execAsync(
     `DELETE FROM employee_fingerprint; DELETE FROM employee_device_enrollment; DELETE FROM employee;`
   );
@@ -623,22 +624,39 @@ async function makeEnrollment(employeeId: number, devId: string, deviceUserId: s
   );
 }
 
-// CAPTURE_FINGERPRINT never asks which slot to capture — verified against
-// real hardware (2026-09-08) that the device's backup_number is just
-// registration order, not a finger identity (a right index finger landed in
-// the same slot 0 previously documented as "right thumb"). It reads
-// whatever the device reports and captures every fingerprint slot found.
+async function makeFingerprint(employeeId: number, template: Buffer, sourceBackupNumber = 0): Promise<number> {
+  const row = await db.getAsync<{ id: number }>(
+    `INSERT INTO employee_fingerprint (employee_id, source_backup_number, template, source_dev_id, updated_at)
+     VALUES (?, ?, ?, ?, now()) RETURNING id`,
+    [employeeId, sourceBackupNumber, template, DEV_A]
+  );
+  return row!.id;
+}
 
-test("CAPTURE_FINGERPRINT - captures the single fingerprint found as the canonical copy", async () => {
+async function slotsOf(devId: string, userId: string) {
+  return db.allAsync<{ backup_number: number; origin: string; fingerprint_id: number | null }>(
+    `SELECT backup_number, origin, fingerprint_id FROM device_fingerprint_slot
+      WHERE dev_id = ? AND device_user_id = ? ORDER BY backup_number`,
+    [devId, userId]
+  );
+}
+
+// --- CAPTURE_FINGERPRINT / ingesta (lib/fingerprints.ts, docs/10 R9) ---
+// Nunca pide elegir slot: el backup_number es orden de registro del equipo,
+// no identidad de dedo (verificado contra hardware real, 2026-09-08). Lo que
+// el equipo reporta y el registro de procedencia no conoce = huella física
+// nueva; lo ya conocido no se duplica.
+
+test("CAPTURE_FINGERPRINT - a new physical fingerprint becomes a canonical copy + a physical slot", async () => {
   await freshDomainDb();
   const employeeId = await makeEmployee("V10000001");
 
-  const { id: opId } = await ops.startCaptureFingerprint(employeeId, DEV_A, "7");
-  const template = fakeTemplate(7);
+  const { id: opId } = await ops.startCaptureFingerprint(employeeId, DEV_A, "10000001");
+  const template = fakeTemplate(10000001);
   await completeCurrentStep(opId, {
     ok: true,
     resultJson: {
-      user_id: "7",
+      user_id: "10000001",
       user_name: "ana",
       user_privilege: "USER",
       enroll_data_array: [{ backup_number: 0, enroll_data: "BIN_1" }],
@@ -648,26 +666,30 @@ test("CAPTURE_FINGERPRINT - captures the single fingerprint found as the canonic
 
   const op = await ops.getOperation(opId);
   assert.equal(op?.stage, "done");
-  assert.match(op!.note ?? "", /1 huella capturada \(slot 0\)/);
+  assert.match(op!.note ?? "", /1 huella\(s\) nueva\(s\)/);
 
-  const row = await db.getAsync<{ template: Buffer; source_dev_id: string }>(
-    `SELECT template, source_dev_id FROM employee_fingerprint WHERE employee_id = ? AND finger_index = 0`,
+  const row = await db.getAsync<{ template: Buffer; source_dev_id: string; source_backup_number: number }>(
+    `SELECT template, source_dev_id, source_backup_number FROM employee_fingerprint WHERE employee_id = ?`,
     [employeeId]
   );
-  assert.ok(row, "the canonical fingerprint must be persisted");
-  assert.equal(row!.source_dev_id, DEV_A);
   assert.ok(row!.template.equals(template));
+  assert.equal(row!.source_dev_id, DEV_A);
+  assert.equal(row!.source_backup_number, 0);
+  assert.deepEqual(
+    (await slotsOf(DEV_A, "10000001")).map((x) => [x.backup_number, x.origin]),
+    [[0, "physical"]]
+  );
+  const link = await db.getAsync(`SELECT 1 FROM employee_device_enrollment WHERE employee_id = ? AND dev_id = ?`, [employeeId, DEV_A]);
+  assert.ok(link, "the cédula links the device user to the employee automatically");
 });
 
-test("CAPTURE_FINGERPRINT - captures every fingerprint slot the device reports in one shot", async () => {
+test("CAPTURE_FINGERPRINT - capturing the same device twice does not duplicate anything", async () => {
   await freshDomainDb();
   const employeeId = await makeEmployee("V10000003");
-
-  const { id: opId } = await ops.startCaptureFingerprint(employeeId, DEV_A, "7");
-  await completeCurrentStep(opId, {
+  const info = {
     ok: true,
     resultJson: {
-      user_id: "7",
+      user_id: "10000003",
       user_name: "ana",
       user_privilege: "USER",
       enroll_data_array: [
@@ -675,196 +697,152 @@ test("CAPTURE_FINGERPRINT - captures every fingerprint slot the device reports i
         { backup_number: 2, enroll_data: "BIN_2" },
       ],
     },
-    binaries: [fakeTemplate(7), fakeTemplate(7)],
-  });
+    binaries: [fakeTemplate(10000003), fakeTemplate(10000003)],
+  };
 
-  const op = await ops.getOperation(opId);
-  assert.equal(op?.stage, "done");
-  assert.match(op!.note ?? "", /2 huellas capturadas \(slots 0, 2\)/);
+  const first = await ops.startCaptureFingerprint(employeeId, DEV_A, "10000003");
+  await completeCurrentStep(first.id, info);
+  const second = await ops.startCaptureFingerprint(employeeId, DEV_A, "10000003");
+  await completeCurrentStep(second.id, info);
 
-  const rows = await db.allAsync<{ finger_index: number }>(
-    `SELECT finger_index FROM employee_fingerprint WHERE employee_id = ? ORDER BY finger_index`,
-    [employeeId]
-  );
-  assert.deepEqual(
-    rows.map((r) => r.finger_index),
-    [0, 2]
-  );
+  const count = await db.getAsync<{ n: number }>(`SELECT COUNT(*) AS n FROM employee_fingerprint WHERE employee_id = ?`, [employeeId]);
+  assert.equal(count!.n, 2);
+  assert.match((await ops.getOperation(second.id))!.note ?? "", /Sin huellas nuevas/);
 });
 
 test("CAPTURE_FINGERPRINT - no fingerprints registered on the device ends in error", async () => {
   await freshDomainDb();
   const employeeId = await makeEmployee("V10000002");
 
-  const { id: opId } = await ops.startCaptureFingerprint(employeeId, DEV_A, "7");
+  const { id: opId } = await ops.startCaptureFingerprint(employeeId, DEV_A, "10000002");
   await completeCurrentStep(opId, {
     ok: true,
-    resultJson: {
-      user_id: "7",
-      user_name: "ana",
-      user_privilege: "USER",
-      enroll_data_array: [],
-    },
+    resultJson: { user_id: "10000002", user_name: "ana", user_privilege: "USER", enroll_data_array: [] },
   });
 
   const op = await ops.getOperation(opId);
   assert.equal(op?.stage, "error");
   assert.match(op!.note ?? "", /no tiene huellas registradas/);
-
-  const row = await db.getAsync(
-    `SELECT 1 FROM employee_fingerprint WHERE employee_id = ?`,
-    [employeeId]
-  );
-  assert.equal(row, undefined, "nothing should be persisted when the finger wasn't found");
 });
 
-// --- fanOutCapturedFingerprint: propagates a freshly-captured fingerprint to
-// any other active enrollment the person already has (typically bare
-// accounts left by the group hire fan-out, lib/enrollment.ts) ---
-
-test("fanOutCapturedFingerprint - pushes to every other active enrollment, not the source device", async () => {
+test("CAPTURE_FINGERPRINT - a device user id that is no employee's cédula is not ingested", async () => {
   await freshDomainDb();
-  const employeeId = await makeEmployee("V30000001");
-  await makeEnrollment(employeeId, DEV_A, "7");
-  await makeEnrollment(employeeId, DEV_B, "12");
-  await db.runAsync(
-    `INSERT INTO employee_fingerprint (employee_id, finger_index, template, source_dev_id, updated_at)
-     VALUES (?, 0, ?, ?, now())`,
-    [employeeId, fakeTemplate(7), DEV_A]
-  );
+  const employeeId = await makeEmployee("V10000009");
 
-  const result = await enrollment.fanOutCapturedFingerprint(employeeId, DEV_A, [0]);
-  assert.equal(result.applied, true);
-  assert.equal(result.started, 1);
-  assert.deepEqual(result.notes, []);
+  const { id: opId } = await ops.startCaptureFingerprint(employeeId, DEV_A, "7");
+  await completeCurrentStep(opId, {
+    ok: true,
+    resultJson: { user_id: "7", user_name: "x", user_privilege: "USER", enroll_data_array: [{ backup_number: 0, enroll_data: "BIN_1" }] },
+    binaries: [fakeTemplate(7)],
+  });
 
-  const op = await db.getAsync<{ kind: string; dev_id: string; user_id: string }>(
-    `SELECT kind, dev_id, user_id FROM operations WHERE kind = 'PUSH_FINGERPRINT' ORDER BY id DESC LIMIT 1`
-  );
-  assert.equal(op?.dev_id, DEV_B, "pushes to the sibling enrollment, never back to the source device");
-  assert.equal(op?.user_id, "12");
+  assert.equal((await ops.getOperation(opId))?.stage, "error");
+  const row = await db.getAsync(`SELECT 1 FROM employee_fingerprint WHERE employee_id = ?`, [employeeId]);
+  assert.equal(row, undefined);
 });
 
-test("fanOutCapturedFingerprint - no other enrollments: does nothing", async () => {
+test("ingestUserInfo - a slot we propagated is never re-ingested as a new fingerprint (no ping-pong)", async () => {
   await freshDomainDb();
-  const employeeId = await makeEmployee("V30000002");
-  await makeEnrollment(employeeId, DEV_A, "7");
-  await db.runAsync(
-    `INSERT INTO employee_fingerprint (employee_id, finger_index, template, source_dev_id, updated_at)
-     VALUES (?, 0, ?, ?, now())`,
-    [employeeId, fakeTemplate(7), DEV_A]
+  const employeeId = await makeEmployee("V10000011");
+  const fpId = await makeFingerprint(employeeId, fakeTemplate(1));
+  await fingerprints.recordPropagatedSlot(DEV_B, "10000011", 3, fpId);
+
+  // DEV_B reports that slot (the device refined the template, so the bytes
+  // differ — docs/05): still the same copy, per the provenance registry.
+  const result = await fingerprints.ingestUserInfo(
+    DEV_B,
+    { user_id: "10000011", enroll_data_array: [{ backup_number: 3, enroll_data: "BIN_1" }] },
+    [fakeTemplate(10000011)]
   );
-
-  const result = await enrollment.fanOutCapturedFingerprint(employeeId, DEV_A, [0]);
-  assert.equal(result.applied, false);
-  assert.equal(result.started, 0);
+  assert.deepEqual(result.newFingerprintIds, []);
+  const count = await db.getAsync<{ n: number }>(`SELECT COUNT(*) AS n FROM employee_fingerprint WHERE employee_id = ?`, [employeeId]);
+  assert.equal(count!.n, 1);
 });
 
-test("fanOutCapturedFingerprint - a failing target is reported as a note, not thrown", async () => {
-  await freshDomainDb();
-  const employeeId = await makeEmployee("V30000003");
-  await makeEnrollment(employeeId, DEV_A, "7");
-  // DEV_B enrollment deliberately missing a captured fingerprint row to push —
-  // startPushFingerprint refuses with a clear error, which must be caught and
-  // accumulated instead of blowing up the whole fan-out.
-  await makeEnrollment(employeeId, DEV_B, "12");
-
-  const result = await enrollment.fanOutCapturedFingerprint(employeeId, DEV_A, [3]);
-  assert.equal(result.applied, true);
-  assert.equal(result.started, 0);
-  assert.equal(result.notes.length, 1);
-  assert.match(result.notes[0], /DEV_B/);
+test("freeSlot - first unused slot 0–9, or null when all ten are taken", () => {
+  assert.equal(fingerprints.freeSlot([]), 0);
+  assert.equal(fingerprints.freeSlot([0, 1, 3]), 2);
+  assert.equal(fingerprints.freeSlot([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]), null);
 });
 
-test("startPushFingerprint - refuses when the employee has no captured fingerprint for that finger", async () => {
-  await freshDomainDb();
-  const employeeId = await makeEmployee("V10000003");
-  await makeEnrollment(employeeId, DEV_B, "12");
+// --- PUSH_FINGERPRINT: always into a FREE slot (an occupied one silently
+// ignores the write — docs/05, T9b), verified by re-reading ---
 
-  await assert.rejects(() => ops.startPushFingerprint(employeeId, 0, DEV_B), /Capturala primero/);
+test("startPushFingerprint - refuses a fingerprint that isn't this person's", async () => {
+  await freshDomainDb();
+  const employeeId = await makeEmployee("V10000013");
+  await makeEnrollment(employeeId, DEV_B, "10000013");
+  await assert.rejects(() => ops.startPushFingerprint(employeeId, 999999, DEV_B), /no existe o no es de esta persona/);
 });
 
 test("startPushFingerprint - refuses when there is no active enrollment on the target device", async () => {
   await freshDomainDb();
   const employeeId = await makeEmployee("V10000004");
-  await db.runAsync(
-    `INSERT INTO employee_fingerprint (employee_id, finger_index, template, source_dev_id, updated_at)
-     VALUES (?, 0, ?, ?, now())`,
-    [employeeId, fakeTemplate(7), DEV_A]
-  );
-
-  await assert.rejects(() => ops.startPushFingerprint(employeeId, 0, DEV_B), /vinculado en el equipo destino/);
+  const fpId = await makeFingerprint(employeeId, fakeTemplate(7));
+  await assert.rejects(() => ops.startPushFingerprint(employeeId, fpId, DEV_B), /vinculado en el equipo destino/);
 });
 
-test("PUSH_FINGERPRINT - patches the embedded user_id and verifies before finishing done", async () => {
+test("PUSH_FINGERPRINT - writes to the first free slot, patches the user_id, verifies, records a propagated slot", async () => {
   await freshDomainDb();
   const employeeId = await makeEmployee("V10000005");
-  await makeEnrollment(employeeId, DEV_B, "12");
-  await db.runAsync(
-    `INSERT INTO employee_fingerprint (employee_id, finger_index, template, source_dev_id, updated_at)
-     VALUES (?, 0, ?, ?, now())`,
-    [employeeId, fakeTemplate(7), DEV_A]
-  );
+  await makeEnrollment(employeeId, DEV_B, "10000005");
+  const other = await makeFingerprint(employeeId, fakeTemplate(7), 0);
+  await fingerprints.recordPropagatedSlot(DEV_B, "10000005", 0, other); // slot 0 taken
+  const fpId = await makeFingerprint(employeeId, fakeTemplate(7), 1);
 
-  const { id: opId, warning } = await ops.startPushFingerprint(employeeId, 0, DEV_B);
+  const { id: opId, warning } = await ops.startPushFingerprint(employeeId, fpId, DEV_B);
   assert.match(warning ?? "", /confirmación real es física/);
 
   const cmd = await currentCommand(opId);
   assert.equal(cmd.cmd_code, "SET_ENROLL_DATA");
-  const queued = await db.getAsync<{ cmd_binary: Buffer }>(
-    `SELECT cmd_binary FROM commands WHERE trans_id = ?`,
-    [cmd.trans_id]
-  );
-  assert.equal(queued!.cmd_binary.readUInt32LE(608), 12, "user_id at offset 608 must be patched to the target");
+  assert.equal(JSON.parse(cmd.cmd_param ?? "{}").backup_number, 1, "slot 0 is occupied → slot 1");
+  const queued = await db.getAsync<{ cmd_binary: Buffer }>(`SELECT cmd_binary FROM commands WHERE trans_id = ?`, [cmd.trans_id]);
+  assert.equal(queued!.cmd_binary.readUInt32LE(608), 10000005, "user_id at offset 608 patched to the target");
 
-  // Apply: SET_ENROLL_DATA "succeeds" — not trusted on its own, see below.
-  await completeCurrentStep(opId, { ok: true, resultJson: null });
-  let op = await ops.getOperation(opId);
-  assert.equal(op?.stage, "verifying");
-  const verifyCmd = await currentCommand(opId);
-  assert.equal(verifyCmd.cmd_code, "GET_USER_INFO");
-
-  // Verify: the target now reports a fingerprint on that finger.
+  await completeCurrentStep(opId, { ok: true, resultJson: null }); // apply: not trusted
+  assert.equal((await ops.getOperation(opId))?.stage, "verifying");
   await completeCurrentStep(opId, {
     ok: true,
     resultJson: {
-      user_id: "12",
+      user_id: "10000005",
       user_name: "j",
       user_privilege: "USER",
-      enroll_data_array: [{ backup_number: 0, enroll_data: "BIN_1" }],
+      enroll_data_array: [
+        { backup_number: 0, enroll_data: "BIN_1" },
+        { backup_number: 1, enroll_data: "BIN_2" },
+      ],
     },
-    binaries: [fakeTemplate(12)],
+    binaries: [fakeTemplate(10000005), fakeTemplate(10000005)],
   });
-  op = await ops.getOperation(opId);
-  assert.equal(op?.stage, "done");
+  assert.equal((await ops.getOperation(opId))?.stage, "done");
+  const slots = await slotsOf(DEV_B, "10000005");
+  assert.deepEqual(
+    slots.map((x) => [x.backup_number, x.origin, x.fingerprint_id]),
+    [
+      [0, "propagated", other],
+      [1, "propagated", fpId],
+    ]
+  );
 });
 
-test("PUSH_FINGERPRINT - device reports OK but the finger never shows up ends in mismatch", async () => {
+test("PUSH_FINGERPRINT - device reports OK but the slot stays empty ends in mismatch, no slot recorded", async () => {
   await freshDomainDb();
   const employeeId = await makeEmployee("V10000006");
-  await makeEnrollment(employeeId, DEV_B, "12");
-  await db.runAsync(
-    `INSERT INTO employee_fingerprint (employee_id, finger_index, template, source_dev_id, updated_at)
-     VALUES (?, 0, ?, ?, now())`,
-    [employeeId, fakeTemplate(7), DEV_A]
-  );
+  await makeEnrollment(employeeId, DEV_B, "10000006");
+  const fpId = await makeFingerprint(employeeId, fakeTemplate(7));
 
-  const { id: opId } = await ops.startPushFingerprint(employeeId, 0, DEV_B);
+  const { id: opId } = await ops.startPushFingerprint(employeeId, fpId, DEV_B);
   await completeCurrentStep(opId, { ok: true, resultJson: null });
-
-  // Verify: the device reports OK but with no matching finger — the write
-  // didn't actually apply, same untrustworthy-return-code pattern as
-  // DELETE_USER.
   await completeCurrentStep(opId, {
     ok: true,
-    resultJson: { user_id: "12", user_name: "j", user_privilege: "USER", enroll_data_array: [] },
+    resultJson: { user_id: "10000006", user_name: "j", user_privilege: "USER", enroll_data_array: [] },
   });
-  const op = await ops.getOperation(opId);
-  assert.equal(op?.stage, "mismatch");
+  assert.equal((await ops.getOperation(opId))?.stage, "mismatch");
+  assert.deepEqual(await slotsOf(DEV_B, "10000006"), []);
 });
 
-// --- ADD_EMPLOYEE_TO_DEVICE: probe-with-retry, create, link, then push any
-// already-captured fingerprints in one shot ---
+// --- ADD_EMPLOYEE_TO_DEVICE: probe, create (or link the existing cédula),
+// then push the "first 10" canonical copies into free slots ---
 
 test("startAddEmployeeToDevice - unknown employee is rejected before queuing anything", async () => {
   await freshDomainDb();
@@ -874,15 +852,18 @@ test("startAddEmployeeToDevice - unknown employee is rejected before queuing any
   );
 });
 
-test("startAddEmployeeToDevice - refuses when already linked to that device", async () => {
+test("startAddEmployeeToDevice - manual start refuses when already linked; background (reconciler) allows it", async () => {
   await freshDomainDb();
   const employeeId = await makeEmployee("V20000001");
-  await makeEnrollment(employeeId, DEV_B, "3");
+  await makeEnrollment(employeeId, DEV_B, "20000001");
 
   await assert.rejects(
     () => ops.startAddEmployeeToDevice(DEV_B, { employeeId, userName: "Nueva" }),
     /ya está vinculada a este equipo/
   );
+  const bg = await ops.startAddEmployeeToDevice(DEV_B, { employeeId, userName: "Nueva" }, { background: true });
+  const row = await db.getAsync<{ priority: number }>(`SELECT priority FROM operations WHERE id = ?`, [bg.id]);
+  assert.equal(row!.priority, 200, "reconciler work runs at background priority");
 });
 
 test("startAddEmployeeToDevice - a second call while one is in flight returns the same operation", async () => {
@@ -900,32 +881,23 @@ test("ADD_EMPLOYEE_TO_DEVICE - uses the employee's cédula (digits only) as the 
 
   const { id: opId } = await ops.startAddEmployeeToDevice(DEV_B, { employeeId, userName: "Nueva" });
 
-  // Probe: GET_USER_INFO fails/empty — the cédula-derived id is free.
   let cmd = await currentCommand(opId);
   assert.equal(cmd.cmd_code, "GET_USER_INFO");
   assert.equal(JSON.parse(cmd.cmd_param ?? "{}").user_id, "20000003", "id must be the cédula, not a sequential number");
   await completeCurrentStep(opId, { ok: false, returnCode: "Error" });
   await completeCurrentStep(opId, idListResult([1])); // cross-check: not listed → free
 
-  let op = await ops.getOperation(opId);
-  assert.equal(op?.stage, "waiting");
   cmd = await currentCommand(opId);
   assert.equal(cmd.cmd_code, "SET_USER_INFO");
   assert.equal(JSON.parse(cmd.cmd_param ?? "{}").user_id, "20000003");
 
-  // Apply: not trusted on its own — verifies next, same as CREATE_USER.
   await completeCurrentStep(opId, { ok: true, resultJson: null });
-  op = await ops.getOperation(opId);
-  assert.equal(op?.stage, "verifying");
-  cmd = await currentCommand(opId);
-  assert.equal(cmd.cmd_code, "GET_USER_INFO");
-
-  // Verify: the device now confirms the new user.
+  assert.equal((await ops.getOperation(opId))?.stage, "verifying");
   await completeCurrentStep(opId, {
     ok: true,
     resultJson: { user_id: "20000003", user_name: "Nueva", user_privilege: "USER" },
   });
-  op = await ops.getOperation(opId);
+  const op = await ops.getOperation(opId);
   assert.equal(op?.stage, "done");
   assert.match(op!.note ?? "", /Sin huellas capturadas todavía/);
 
@@ -937,42 +909,39 @@ test("ADD_EMPLOYEE_TO_DEVICE - uses the employee's cédula (digits only) as the 
   assert.equal(enrollment?.status, "active");
 });
 
-test("ADD_EMPLOYEE_TO_DEVICE - the cédula is already taken by someone else on the device: fails immediately, no retry", async () => {
+test("ADD_EMPLOYEE_TO_DEVICE - the cédula already exists on the device: links it by cédula, never SET_USER_INFO, keeps its fingerprints", async () => {
   await freshDomainDb();
   const employeeId = await makeEmployee("V20000004");
 
   const { id: opId } = await ops.startAddEmployeeToDevice(DEV_B, { employeeId, userName: "Nueva" });
 
-  // Probe: the cédula-derived id is already assigned to a different, real person.
+  // Probe: the device already has this cédula, with its own physical fingerprint.
   await completeCurrentStep(opId, {
     ok: true,
-    resultJson: { user_id: "20000004", user_name: "Otra Persona", user_privilege: "USER" },
+    resultJson: {
+      user_id: "20000004",
+      user_name: "Nombre Viejo",
+      user_privilege: "USER",
+      enroll_data_array: [{ backup_number: 0, enroll_data: "BIN_1" }],
+    },
+    binaries: [fakeTemplate(20000004)],
   });
 
   const op = await ops.getOperation(opId);
-  assert.equal(op?.stage, "error");
-  assert.match(op!.note ?? "", /ya está en uso en este equipo por "Otra Persona"/);
-
-  const enrollment = await db.getAsync(
-    `SELECT 1 FROM employee_device_enrollment WHERE employee_id = ? AND dev_id = ?`,
-    [employeeId, DEV_B]
-  );
-  assert.equal(enrollment, undefined, "must never link an enrollment when the cédula id was already taken by someone else");
+  assert.equal(op?.stage, "done");
+  assert.match(op!.note ?? "", /ya existía en el equipo \("Nombre Viejo"\): vinculado por cédula/);
+  const commands = await ops.getOperationCommands(opId);
+  assert.ok(!commands.some((c) => c.cmd_code === "SET_USER_INFO"), "must never SET_USER_INFO over an existing user");
+  const link = await db.getAsync(`SELECT 1 FROM employee_device_enrollment WHERE employee_id = ? AND dev_id = ? AND status = 'active'`, [employeeId, DEV_B]);
+  assert.ok(link);
+  assert.deepEqual((await slotsOf(DEV_B, "20000004")).map((x) => x.origin), ["physical"], "its own fingerprint was ingested, not overwritten");
 });
 
-test("ADD_EMPLOYEE_TO_DEVICE - copies already-captured fingerprints, tolerating one that fails to verify", async () => {
+test("ADD_EMPLOYEE_TO_DEVICE - copies the canonical fingerprints into free slots, tolerating one that fails to verify", async () => {
   await freshDomainDb();
   const employeeId = await makeEmployee("V20000006");
-  await db.runAsync(
-    `INSERT INTO employee_fingerprint (employee_id, finger_index, template, source_dev_id, updated_at)
-     VALUES (?, 0, ?, ?, now())`,
-    [employeeId, fakeTemplate(999), DEV_A]
-  );
-  await db.runAsync(
-    `INSERT INTO employee_fingerprint (employee_id, finger_index, template, source_dev_id, updated_at)
-     VALUES (?, 1, ?, ?, now())`,
-    [employeeId, fakeTemplate(999), DEV_A]
-  );
+  await makeFingerprint(employeeId, fakeTemplate(999), 0);
+  await makeFingerprint(employeeId, fakeTemplate(999), 0);
 
   const { id: opId, warning } = await ops.startAddEmployeeToDevice(DEV_B, { employeeId, userName: "Nueva" });
   assert.match(warning ?? "", /2 huella\(s\) capturada\(s\)/);
@@ -980,29 +949,17 @@ test("ADD_EMPLOYEE_TO_DEVICE - copies already-captured fingerprints, tolerating 
   await completeCurrentStep(opId, { ok: false, returnCode: "Error" }); // probe: no answer
   await completeCurrentStep(opId, idListResult([])); // cross-check: not listed → free
   await completeCurrentStep(opId, { ok: true, resultJson: null }); // create apply
-
-  // Verify create: since there are pending fingers, this same step must
-  // chain straight into pushing the first one (finger 0) without an extra
-  // round trip waiting on user input.
   await completeCurrentStep(opId, {
     ok: true,
     resultJson: { user_id: "20000006", user_name: "Nueva", user_privilege: "USER" },
-  });
-  let op = await ops.getOperation(opId);
-  assert.equal(op?.stage, "waiting");
+  }); // verify create → chains into the first push
+
   let cmd = await currentCommand(opId);
   assert.equal(cmd.cmd_code, "SET_ENROLL_DATA");
-  const firstBinary = await db.getAsync<{ cmd_binary: Buffer }>(
-    `SELECT cmd_binary FROM commands WHERE trans_id = ?`,
-    [cmd.trans_id]
-  );
-  assert.equal(
-    firstBinary!.cmd_binary.readUInt32LE(608),
-    20000006,
-    "user_id at offset 608 patched to the employee's cédula"
-  );
+  assert.equal(JSON.parse(cmd.cmd_param ?? "{}").backup_number, 0);
+  const firstBinary = await db.getAsync<{ cmd_binary: Buffer }>(`SELECT cmd_binary FROM commands WHERE trans_id = ?`, [cmd.trans_id]);
+  assert.equal(firstBinary!.cmd_binary.readUInt32LE(608), 20000006, "user_id at offset 608 patched to the cédula");
 
-  // Apply finger 0, then verify it landed.
   await completeCurrentStep(opId, { ok: true, resultJson: null });
   await completeCurrentStep(opId, {
     ok: true,
@@ -1015,23 +972,27 @@ test("ADD_EMPLOYEE_TO_DEVICE - copies already-captured fingerprints, tolerating 
     binaries: [fakeTemplate(20000006)],
   });
 
-  // Chain moves on to finger 1 on its own.
-  op = await ops.getOperation(opId);
-  assert.equal(op?.stage, "waiting");
+  // Second copy goes to the next free slot (1).
   cmd = await currentCommand(opId);
   assert.equal(cmd.cmd_code, "SET_ENROLL_DATA");
-
-  // Apply finger 1, then verify comes back WITHOUT it (device lied about OK).
+  assert.equal(JSON.parse(cmd.cmd_param ?? "{}").backup_number, 1);
   await completeCurrentStep(opId, { ok: true, resultJson: null });
   await completeCurrentStep(opId, {
     ok: true,
-    resultJson: { user_id: "20000006", user_name: "Nueva", user_privilege: "USER", enroll_data_array: [] },
-  });
+    resultJson: {
+      user_id: "20000006",
+      user_name: "Nueva",
+      user_privilege: "USER",
+      enroll_data_array: [{ backup_number: 0, enroll_data: "BIN_1" }],
+    },
+    binaries: [fakeTemplate(20000006)],
+  }); // device "OK" but slot 1 never showed up
 
-  op = await ops.getOperation(opId);
-  assert.equal(op?.stage, "done", "at least one finger landed, so this is done, not mismatch");
+  const op = await ops.getOperation(opId);
+  assert.equal(op?.stage, "done", "at least one landed, so this is done, not mismatch");
   assert.match(op!.note ?? "", /1 de 2 huella\(s\) copiada\(s\)/);
-  assert.match(op!.note ?? "", /Fallaron: dedo\(s\) 1/);
+  assert.match(op!.note ?? "", /no reportada en el slot 1/);
+  assert.deepEqual((await slotsOf(DEV_B, "20000006")).map((x) => [x.backup_number, x.origin]), [[0, "propagated"]]);
 });
 
 // --- ADD_EMPLOYEE_TO_DEVICE: elevated privilege only applies once the user
@@ -1046,44 +1007,29 @@ test("ADD_EMPLOYEE_TO_DEVICE - MANAGER without any fingerprint ends in mismatch 
   await freshDomainDb();
   const employeeId = await makeEmployee("V20000008");
 
-  const { id: opId } = await ops.startAddEmployeeToDevice(DEV_B, {
-    employeeId,
-    userName: "Nueva",
-    privilege: "MANAGER",
-  });
+  const { id: opId } = await ops.startAddEmployeeToDevice(DEV_B, { employeeId, userName: "Nueva", privilege: "MANAGER" });
 
   await completeCurrentStep(opId, { ok: false, returnCode: "Error" }); // probe: no answer
   await completeCurrentStep(opId, idListResult([])); // cross-check: not listed → free
   await completeCurrentStep(opId, { ok: true, resultJson: null }); // create apply
-
-  // Verify create: the device only ever reports USER for a fingerprint-less
-  // user, regardless of what was requested at creation.
   await completeCurrentStep(opId, {
     ok: true,
-    resultJson: { user_id: "1", user_name: "Nueva", user_privilege: "USER" },
+    resultJson: { user_id: "20000008", user_name: "Nueva", user_privilege: "USER" },
   });
 
-  // No pending fingers -> straight to applying the privilege.
-  let op = await ops.getOperation(opId);
-  assert.equal(op?.stage, "waiting");
   let cmd = await currentCommand(opId);
   assert.equal(cmd.cmd_code, "SET_USER_PRIVILEGE");
   assert.equal(JSON.parse(cmd.cmd_param ?? "{}").user_privilege, "MANAGER");
 
-  await completeCurrentStep(opId, { ok: true, resultJson: null }); // apply: OK, empty body
-  op = await ops.getOperation(opId);
-  assert.equal(op?.stage, "verifying");
+  await completeCurrentStep(opId, { ok: true, resultJson: null });
   cmd = await currentCommand(opId);
   assert.equal(cmd.cmd_code, "GET_USER_INFO");
-
-  // Verify: still USER — this firmware ignores elevated privilege without a
-  // fingerprint on file.
   await completeCurrentStep(opId, {
     ok: true,
-    resultJson: { user_id: "1", user_name: "Nueva", user_privilege: "USER" },
+    resultJson: { user_id: "20000008", user_name: "Nueva", user_privilege: "USER" },
   });
 
-  op = await ops.getOperation(opId);
+  const op = await ops.getOperation(opId);
   assert.equal(op?.stage, "mismatch");
   assert.match(op!.note ?? "", /al menos una huella registrada/);
 });
@@ -1091,60 +1037,46 @@ test("ADD_EMPLOYEE_TO_DEVICE - MANAGER without any fingerprint ends in mismatch 
 test("ADD_EMPLOYEE_TO_DEVICE - MANAGER with a fingerprint pushed in the same chain ends in done", async () => {
   await freshDomainDb();
   const employeeId = await makeEmployee("V20000009");
-  await db.runAsync(
-    `INSERT INTO employee_fingerprint (employee_id, finger_index, template, source_dev_id, updated_at)
-     VALUES (?, 0, ?, ?, now())`,
-    [employeeId, fakeTemplate(999), DEV_A]
-  );
+  await makeFingerprint(employeeId, fakeTemplate(999));
 
-  const { id: opId } = await ops.startAddEmployeeToDevice(DEV_B, {
-    employeeId,
-    userName: "Nueva",
-    privilege: "MANAGER",
-  });
+  const { id: opId } = await ops.startAddEmployeeToDevice(DEV_B, { employeeId, userName: "Nueva", privilege: "MANAGER" });
 
   await completeCurrentStep(opId, { ok: false, returnCode: "Error" }); // probe: no answer
   await completeCurrentStep(opId, idListResult([])); // cross-check: not listed → free
   await completeCurrentStep(opId, { ok: true, resultJson: null }); // create apply
   await completeCurrentStep(opId, {
     ok: true,
-    resultJson: { user_id: "1", user_name: "Nueva", user_privilege: "USER" },
-  }); // verify create -> chains straight into pushing finger 0
+    resultJson: { user_id: "20000009", user_name: "Nueva", user_privilege: "USER" },
+  }); // verify create → push
 
   await completeCurrentStep(opId, { ok: true, resultJson: null }); // push apply
   await completeCurrentStep(opId, {
     ok: true,
     resultJson: {
-      user_id: "1",
+      user_id: "20000009",
       user_name: "Nueva",
       user_privilege: "USER",
       enroll_data_array: [{ backup_number: 0, enroll_data: "BIN_1" }],
     },
-    binaries: [fakeTemplate(1)],
-  }); // verify push -> fingerprint landed -> chains into applying the privilege
+    binaries: [fakeTemplate(20000009)],
+  }); // verify push → privilege
 
-  let op = await ops.getOperation(opId);
-  assert.equal(op?.stage, "waiting");
   let cmd = await currentCommand(opId);
   assert.equal(cmd.cmd_code, "SET_USER_PRIVILEGE");
-
-  await completeCurrentStep(opId, { ok: true, resultJson: null }); // apply privilege
-  op = await ops.getOperation(opId);
-  assert.equal(op?.stage, "verifying");
-
-  // Verify: now that a fingerprint exists, the device actually applies it.
+  await completeCurrentStep(opId, { ok: true, resultJson: null });
+  assert.equal((await ops.getOperation(opId))?.stage, "verifying");
   await completeCurrentStep(opId, {
     ok: true,
     resultJson: {
-      user_id: "1",
+      user_id: "20000009",
       user_name: "Nueva",
       user_privilege: "MANAGER",
       enroll_data_array: [{ backup_number: 0, enroll_data: "BIN_1" }],
     },
-    binaries: [fakeTemplate(1)],
+    binaries: [fakeTemplate(20000009)],
   });
 
-  op = await ops.getOperation(opId);
+  const op = await ops.getOperation(opId);
   assert.equal(op?.stage, "done");
   assert.match(op!.note ?? "", /Privilegio "MANAGER" verificado en el dispositivo/);
 });

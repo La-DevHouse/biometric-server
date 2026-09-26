@@ -15,9 +15,8 @@ import { captureFingerprintAction } from "@/app/admin/actions";
  * No pide elegir un número de dedo: el slot que usa el equipo es solo orden
  * de registro, no identidad de dedo (verificado contra hardware real — un
  * índice derecho quedó en el mismo slot 0 que antes se documentaba como
- * "pulgar derecho"). Una vez capturada, se empuja sola a cualquier otro
- * equipo donde esta persona ya tenga cuenta (fan-out de captura, ver
- * lib/enrollment.ts) — típicamente los que el alta al grupo ya creó vacíos.
+ * "pulgar derecho"). Una vez capturada, el reconciliador la propaga sola a
+ * los demás equipos del alcance de la persona (lib/sync/reconcile.ts).
  */
 export function CaptureFingerprintDialog({
   employeeId,
