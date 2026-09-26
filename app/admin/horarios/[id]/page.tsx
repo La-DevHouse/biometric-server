@@ -6,11 +6,11 @@ import { Table, Th, Td, Tr } from "@/components/ui/Table";
 import { MobileList, MobileRow } from "@/components/ui/MobileRow";
 import { Tag } from "@/components/ui/Tag";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { GroupFormDialog, type GroupValues } from "@/components/admin/GroupFormDialog";
+import { ScheduleFormDialog, type ScheduleValues } from "@/components/admin/ScheduleFormDialog";
 import { ShiftFormDialog, type ShiftValues } from "@/components/admin/ShiftFormDialog";
 import { RecordStatusButton } from "@/components/admin/RecordStatusButton";
 import { DeleteButton } from "@/components/admin/DeleteButton";
-import { setGroupStatusAction, deleteShiftAction } from "@/app/admin/grupos/actions";
+import { setScheduleStatusAction, deleteShiftAction } from "@/app/admin/horarios/actions";
 
 export const dynamic = "force-dynamic";
 
@@ -23,7 +23,7 @@ function fmtDate(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
-export default async function GrupoDetailPage({
+export default async function ScheduleDetailPage({
   params,
 }: {
   params: Promise<{ id: string }>;
@@ -32,7 +32,7 @@ export default async function GrupoDetailPage({
   const id = Number((await params).id);
   if (!Number.isFinite(id)) notFound();
 
-  const group = await prisma.employee_group.findUnique({
+  const schedule = await prisma.schedule_group.findUnique({
     where: { id },
     include: {
       company: { select: { id: true, name: true, late_tolerance_min: true, early_leave_tolerance_min: true, absence_rule: true } },
@@ -40,7 +40,7 @@ export default async function GrupoDetailPage({
       _count: { select: { employments: true } },
     },
   });
-  if (!group) notFound();
+  if (!schedule) notFound();
 
   const companies = await prisma.client_company.findMany({
     where: { status: "active" },
@@ -48,15 +48,15 @@ export default async function GrupoDetailPage({
     orderBy: { name: "asc" },
   });
 
-  const groupForm: GroupValues = {
-    id: group.id,
-    company_id: group.company_id,
-    name: group.name,
-    code: group.code,
-    late_tolerance_min: group.late_tolerance_min,
-    early_leave_tolerance_min: group.early_leave_tolerance_min,
-    absence_rule: group.absence_rule,
-    absence_min_hours: group.absence_min_hours,
+  const scheduleForm: ScheduleValues = {
+    id: schedule.id,
+    company_id: schedule.company_id,
+    name: schedule.name,
+    code: schedule.code,
+    late_tolerance_min: schedule.late_tolerance_min,
+    early_leave_tolerance_min: schedule.early_leave_tolerance_min,
+    absence_rule: schedule.absence_rule,
+    absence_min_hours: schedule.absence_min_hours,
   };
 
   const eff = (v: number | null, fb: number | null) =>
@@ -65,52 +65,52 @@ export default async function GrupoDetailPage({
   return (
     <div className="flex max-w-4xl flex-col gap-6">
       <div>
-        <Link href="/admin/grupos" className="text-xs text-accent no-underline hover:underline">
-          ← Grupos y turnos
+        <Link href="/admin/horarios" className="text-xs text-accent no-underline hover:underline">
+          ← Horarios y turnos
         </Link>
         <div className="mt-1 flex items-center gap-3">
-          <h2 className="font-heading text-2xl font-semibold tracking-tight m-0">{group.name}</h2>
-          <Tag variant={group.status === "active" ? "accent" : "neutral"}>
-            {group.status === "active" ? "Activo" : "Inactivo"}
+          <h2 className="font-heading text-2xl font-semibold tracking-tight m-0">{schedule.name}</h2>
+          <Tag variant={schedule.status === "active" ? "accent" : "neutral"}>
+            {schedule.status === "active" ? "Activo" : "Inactivo"}
           </Tag>
         </div>
         <p className="m-0 mt-1 text-sm text-text/75">
           Empresa:{" "}
-          <Link href={`/admin/empresas/${group.company.id}`} className="text-accent no-underline hover:underline">
-            {group.company.name}
+          <Link href={`/admin/empresas/${schedule.company.id}`} className="text-accent no-underline hover:underline">
+            {schedule.company.name}
           </Link>
         </p>
       </div>
 
       <section className="flex flex-col gap-2 border border-divider p-4 text-sm">
         <div className="flex flex-col gap-0.5 sm:flex-row sm:gap-3">
-          <span className="sm:w-56 sm:flex-none text-text/70">Empleos en el grupo</span>
-          <span>{group._count.employments}</span>
+          <span className="sm:w-56 sm:flex-none text-text/70">Empleos en el horario</span>
+          <span>{schedule._count.employments}</span>
         </div>
         <div className="flex flex-col gap-0.5 sm:flex-row sm:gap-3">
           <span className="sm:w-56 sm:flex-none text-text/70">Tolerancia tardanza</span>
-          <span>{eff(group.late_tolerance_min, group.company.late_tolerance_min)} min</span>
+          <span>{eff(schedule.late_tolerance_min, schedule.company.late_tolerance_min)} min</span>
         </div>
         <div className="flex flex-col gap-0.5 sm:flex-row sm:gap-3">
           <span className="sm:w-56 sm:flex-none text-text/70">Tolerancia salida anticipada</span>
-          <span>{eff(group.early_leave_tolerance_min, group.company.early_leave_tolerance_min)} min</span>
+          <span>{eff(schedule.early_leave_tolerance_min, schedule.company.early_leave_tolerance_min)} min</span>
         </div>
         <div className="flex flex-col gap-0.5 sm:flex-row sm:gap-3">
           <span className="sm:w-56 sm:flex-none text-text/70">Regla de ausencia</span>
-          <span>{group.absence_rule ?? group.company.absence_rule ?? "—"}</span>
+          <span>{schedule.absence_rule ?? schedule.company.absence_rule ?? "—"}</span>
         </div>
         <div className="mt-1 flex gap-2">
-          <GroupFormDialog group={groupForm} companies={companies} />
-          <RecordStatusButton id={group.id} active={group.status === "active"} label="grupo" action={setGroupStatusAction} />
+          <ScheduleFormDialog schedule={scheduleForm} companies={companies} />
+          <RecordStatusButton id={schedule.id} active={schedule.status === "active"} label="horario" action={setScheduleStatusAction} />
         </div>
       </section>
 
       <section>
         <div className="mb-2 flex items-center justify-between">
           <h3 className="m-0 text-sm font-semibold uppercase tracking-wide text-text/75">Turnos</h3>
-          <ShiftFormDialog groupId={group.id} />
+          <ShiftFormDialog scheduleGroupId={schedule.id} />
         </div>
-        {group.shifts.length === 0 ? (
+        {schedule.shifts.length === 0 ? (
           <EmptyState title="Sin turnos" description="Agregá al menos un turno con su horario y días de trabajo." />
         ) : (
           <>
@@ -127,7 +127,7 @@ export default async function GrupoDetailPage({
                   </tr>
                 </thead>
                 <tbody>
-                  {group.shifts.map((s) => {
+                  {schedule.shifts.map((s) => {
                     const shiftForm: ShiftValues = shiftFormValues(s);
                     return (
                       <Tr key={s.id}>
@@ -155,7 +155,7 @@ export default async function GrupoDetailPage({
                         </Td>
                         <Td>
                           <span className="inline-flex items-center gap-1">
-                            <ShiftFormDialog groupId={group.id} shift={shiftForm} />
+                            <ShiftFormDialog scheduleGroupId={schedule.id} shift={shiftForm} />
                             <DeleteButton id={s.id} label="turno" action={deleteShiftAction} />
                           </span>
                         </Td>
@@ -166,7 +166,7 @@ export default async function GrupoDetailPage({
               </Table>
             </div>
             <MobileList>
-              {group.shifts.map((s) => (
+              {schedule.shifts.map((s) => (
                 <MobileRow
                   key={s.id}
                   title={s.name}
@@ -188,7 +188,7 @@ export default async function GrupoDetailPage({
                   ]}
                   actions={
                     <>
-                      <ShiftFormDialog groupId={group.id} shift={shiftFormValues(s)} />
+                      <ShiftFormDialog scheduleGroupId={schedule.id} shift={shiftFormValues(s)} />
                       <DeleteButton id={s.id} label="turno" action={deleteShiftAction} />
                     </>
                   }

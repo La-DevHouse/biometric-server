@@ -7,7 +7,7 @@ import { FIELD_INPUT as INPUT, FIELD_LABEL as LABEL } from "@/components/ui/fiel
 export interface EmploymentDefaults {
   company_id?: number | null;
   site_id?: number | null;
-  employee_group_id?: number | null;
+  schedule_group_id?: number | null;
   position_id?: number | null;
   department_id?: number | null;
   payroll_ref?: string | null;
@@ -16,7 +16,7 @@ export interface EmploymentDefaults {
 }
 
 /**
- * Campos de un empleo: empresa + sede/grupo (filtrados por empresa, client-side)
+ * Campos de un empleo: empresa + sede/horario (filtrados por empresa, client-side)
  * + departamento/puesto + inicio + ref nómina. Reusado por alta de empleo y por
  * traslado. Los `name` son fijos (`company_id`, `site_id`, …).
  */
@@ -34,7 +34,7 @@ export function EmploymentFields({
     defaults?.position_id != null ? String(defaults.position_id) : ""
   );
   const sites = lookups.sites.filter((s) => s.company_id === companyId);
-  const groups = lookups.groups.filter((g) => g.company_id === companyId);
+  const schedules = lookups.schedules.filter((g) => g.company_id === companyId);
 
   // modelo de negocio efectivo de la empresa elegida → filtra los puestos
   const effectiveBm =
@@ -80,15 +80,15 @@ export function EmploymentFields({
       </label>
 
       <label className={LABEL}>
-        Grupo (horario)
+        Horario
         <select
-          name="employee_group_id"
+          name="schedule_group_id"
           className={INPUT}
-          defaultValue={defaults?.employee_group_id ?? ""}
+          defaultValue={defaults?.schedule_group_id ?? ""}
           disabled={!companyId}
         >
-          <option value="">— sin grupo —</option>
-          {groups.map((g) => (
+          <option value="">— sin horario —</option>
+          {schedules.map((g) => (
             <option key={g.id} value={g.id}>
               {g.name}
             </option>

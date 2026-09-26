@@ -276,7 +276,7 @@ model client_company {
 
   sites           site[]
   employments     employment[]
-  employee_groups employee_group[]
+  schedule_groups schedule_group[]
   devices         devices[]
   export_runs     export_run[]
 
@@ -336,8 +336,8 @@ model employment {
   company           client_company    @relation(fields: [company_id], references: [id], onDelete: Restrict)
   site_id           Int?
   site              site?             @relation(fields: [site_id], references: [id], onDelete: SetNull)
-  employee_group_id Int?
-  employee_group    employee_group?   @relation(fields: [employee_group_id], references: [id], onDelete: SetNull)
+  schedule_group_id Int?
+  schedule_group    schedule_group?   @relation(fields: [schedule_group_id], references: [id], onDelete: SetNull)
   position_id       Int?
   position          position?         @relation(fields: [position_id], references: [id], onDelete: SetNull)
   department_id     Int?
@@ -354,7 +354,7 @@ model employment {
 
   @@index([employee_id])
   @@index([company_id, status])
-  @@index([employee_group_id])
+  @@index([schedule_group_id])
 }
 
 model department {
@@ -418,7 +418,7 @@ model position_business_model {
 
 /// Grupo de empleados con horario común. El shift cuelga de acá (ALCO: el
 /// horario se define por grupo).
-model employee_group {
+model schedule_group {
   id         Int            @id @default(autoincrement())
   company_id Int
   company    client_company @relation(fields: [company_id], references: [id], onDelete: Cascade)
@@ -443,8 +443,8 @@ model employee_group {
 
 model shift {
   id                Int            @id @default(autoincrement())
-  employee_group_id Int
-  employee_group    employee_group @relation(fields: [employee_group_id], references: [id], onDelete: Cascade)
+  schedule_group_id Int
+  schedule_group    schedule_group @relation(fields: [schedule_group_id], references: [id], onDelete: Cascade)
   code              String?
   name              String
   start_time        String // "HH:MM" 24h, hora local de sede
@@ -462,7 +462,7 @@ model shift {
 
   attendance_days attendance_day[]
 
-  @@index([employee_group_id, effective_from])
+  @@index([schedule_group_id, effective_from])
 }
 
 /// Vínculo empleado ↔ slot de un equipo. Unique parcial (activo) en la migración.

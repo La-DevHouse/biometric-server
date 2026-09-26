@@ -189,7 +189,7 @@ function employmentData(fd: FormData) {
   return {
     company_id: Number(str(fd, "company_id")),
     site_id: optId(fd, "site_id"),
-    employee_group_id: optId(fd, "employee_group_id"),
+    schedule_group_id: optId(fd, "schedule_group_id"),
     // "__new__" → null acá; lo resuelve resolvePositionId() creando el puesto
     position_id: posRaw === "" || posRaw === "__new__" ? null : Number(posRaw),
     department_id: optId(fd, "department_id"),
@@ -313,7 +313,7 @@ export async function transferEmployeeAction(
 ): Promise<AdminActionState> {
   const user = await requireUser();
   const from_employment_id = Number(str(fd, "from_employment_id"));
-  const d = employmentData(fd); // company/site/group/position/department destino + start_date = fecha del traslado
+  const d = employmentData(fd); // company/site/schedule/position/department destino + start_date = fecha del traslado
   const transferDate = d.start_date;
   if (!Number.isFinite(from_employment_id)) return { status: "error", error: "Empleo origen inválido." };
   if (!transferDate) return { status: "error", error: "La fecha del traslado es obligatoria." };
@@ -340,7 +340,7 @@ export async function transferEmployeeAction(
           employee_id: from.employee_id,
           company_id: d.company_id,
           site_id: d.site_id,
-          employee_group_id: d.employee_group_id,
+          schedule_group_id: d.schedule_group_id,
           position_id: d.position_id,
           department_id: d.department_id,
           payroll_ref: d.payroll_ref,

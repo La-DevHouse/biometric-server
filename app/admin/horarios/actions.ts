@@ -30,10 +30,10 @@ function thresholds(fd: FormData) {
 }
 
 // --------------------------------------------------------------------------
-// Grupos de empleados
+// Horarios (schedule_group)
 // --------------------------------------------------------------------------
 
-function groupData(fd: FormData) {
+function scheduleData(fd: FormData) {
   return {
     company_id: Number(str(fd, "company_id")),
     name: str(fd, "name"),
@@ -42,69 +42,69 @@ function groupData(fd: FormData) {
   };
 }
 
-export async function createGroupAction(
+export async function createScheduleAction(
   _prev: AdminActionState,
   fd: FormData
 ): Promise<AdminActionState> {
   const user = await requireUser();
-  const d = groupData(fd);
+  const d = scheduleData(fd);
   if (!Number.isFinite(d.company_id)) return { status: "error", error: "Seleccioná una empresa." };
   if (!d.name) return { status: "error", error: "El nombre es obligatorio." };
 
   try {
-    const created = await prisma.employee_group.create({ data: d });
-    await writeAudit({ actorId: user.id, action: "group.create", entityType: "employee_group", entityId: created.id, after: created });
-    revalidatePath("/admin/grupos");
-    return { status: "ok", message: `Grupo "${d.name}" creado.` };
+    const created = await prisma.schedule_group.create({ data: d });
+    await writeAudit({ actorId: user.id, action: "schedule.create", entityType: "schedule_group", entityId: created.id, after: created });
+    revalidatePath("/admin/horarios");
+    return { status: "ok", message: `Horario "${d.name}" creado.` };
   } catch (e) {
     return { status: "error", error: e instanceof Error ? e.message : String(e) };
   }
 }
 
-export async function updateGroupAction(
+export async function updateScheduleAction(
   _prev: AdminActionState,
   fd: FormData
 ): Promise<AdminActionState> {
   const user = await requireUser();
   const id = Number(str(fd, "id"));
   if (!Number.isFinite(id)) return { status: "error", error: "ID inválido." };
-  const before = await prisma.employee_group.findUnique({ where: { id } });
-  if (!before) return { status: "error", error: "El grupo no existe." };
+  const before = await prisma.schedule_group.findUnique({ where: { id } });
+  if (!before) return { status: "error", error: "El horario no existe." };
 
-  const d = groupData(fd);
+  const d = scheduleData(fd);
   if (!d.name) return { status: "error", error: "El nombre es obligatorio." };
-  // no se permite mover un grupo de empresa (arrastraría turnos y empleos)
+  // no se permite mover un horario de empresa (arrastraría turnos y empleos)
   const { company_id: _ignore, ...patch } = d;
 
   try {
-    const updated = await prisma.employee_group.update({ where: { id }, data: patch });
-    await writeAudit({ actorId: user.id, action: "group.update", entityType: "employee_group", entityId: id, before, after: updated });
-    revalidatePath("/admin/grupos");
-    revalidatePath(`/admin/grupos/${id}`);
-    return { status: "ok", message: "Grupo actualizado." };
+    const updated = await prisma.schedule_group.update({ where: { id }, data: patch });
+    await writeAudit({ actorId: user.id, action: "schedule.update", entityType: "schedule_group", entityId: id, before, after: updated });
+    revalidatePath("/admin/horarios");
+    revalidatePath(`/admin/horarios/${id}`);
+    return { status: "ok", message: "Horario actualizado." };
   } catch (e) {
     return { status: "error", error: e instanceof Error ? e.message : String(e) };
   }
 }
 
-export async function setGroupStatusAction(
+export async function setScheduleStatusAction(
   id: number,
   active: boolean
 ): Promise<{ ok: boolean; error?: string }> {
   const user = await requireUser();
-  const before = await prisma.employee_group.findUnique({ where: { id } });
-  if (!before) return { ok: false, error: "El grupo no existe." };
-  await prisma.employee_group.update({ where: { id }, data: { status: active ? "active" : "inactive" } });
+  const before = await prisma.schedule_group.findUnique({ where: { id } });
+  if (!before) return { ok: false, error: "El horario no existe." };
+  await prisma.schedule_group.update({ where: { id }, data: { status: active ? "active" : "inactive" } });
   await writeAudit({
     actorId: user.id,
-    action: active ? "group.reactivate" : "group.deactivate",
-    entityType: "employee_group",
+    action: active ? "schedule.reactivate" : "schedule.deactivate",
+    entityType: "schedule_group",
     entityId: id,
     before: { status: before.status },
     after: { status: active ? "active" : "inactive" },
   });
-  revalidatePath("/admin/grupos");
-  revalidatePath(`/admin/grupos/${id}`);
+  revalidatePath("/admin/horarios");
+  revalidatePath(`/admin/horarios/${id}`);
   return { ok: true };
 }
 
@@ -114,7 +114,7 @@ export async function setGroupStatusAction(
 
 type ShiftFields = Omit<
   Prisma.shiftUncheckedCreateInput,
-  "id" | "employee_group_id" | "created_at" | "updated_at" | "attendance_days"
+  "id" | "schedule_group_id" | "created_at" | "updated_at" | "attendance_days"
 >;
 
 function shiftData(fd: FormData): { data?: ShiftFields; error?: string } {
@@ -164,17 +164,17 @@ export async function createShiftAction(
   fd: FormData
 ): Promise<AdminActionState> {
   const user = await requireUser();
-  const group_id = Number(str(fd, "employee_group_id"));
-  if (!Number.isFinite(group_id)) return { status: "error", error: "Grupo inválido." };
+  const schedule_group_id = Number(str(fd, "schedule_group_id"));
+  if (!Number.isFinite(schedule_group_id)) return { status: "error", error: "Horario inválido." };
   const parsed = shiftData(fd);
   if (parsed.error) return { status: "error", error: parsed.error };
 
   try {
     const created = await prisma.shift.create({
-      data: { ...parsed.data!, employee_group_id: group_id },
+      data: { ...parsed.data!, schedule_group_id },
     });
     await writeAudit({ actorId: user.id, action: "shift.create", entityType: "shift", entityId: created.id, after: created });
-    revalidatePath(`/admin/grupos/${group_id}`);
+    revalidatePath(`/admin/horarios/${schedule_group_id}`);
     return { status: "ok", message: `Turno "${parsed.data!.name}" creado.` };
   } catch (e) {
     return { status: "error", error: e instanceof Error ? e.message : String(e) };
@@ -196,7 +196,7 @@ export async function updateShiftAction(
   try {
     const updated = await prisma.shift.update({ where: { id }, data: parsed.data! });
     await writeAudit({ actorId: user.id, action: "shift.update", entityType: "shift", entityId: id, before, after: updated });
-    revalidatePath(`/admin/grupos/${before.employee_group_id}`);
+    revalidatePath(`/admin/horarios/${before.schedule_group_id}`);
     return { status: "ok", message: "Turno actualizado." };
   } catch (e) {
     return { status: "error", error: e instanceof Error ? e.message : String(e) };
@@ -210,6 +210,6 @@ export async function deleteShiftAction(id: number): Promise<{ ok: boolean; erro
   // attendance_day.shift_id es SetNull -> borrar es seguro
   await prisma.shift.delete({ where: { id } });
   await writeAudit({ actorId: user.id, action: "shift.delete", entityType: "shift", entityId: id, before });
-  revalidatePath(`/admin/grupos/${before.employee_group_id}`);
+  revalidatePath(`/admin/horarios/${before.schedule_group_id}`);
   return { ok: true };
 }

@@ -1,8 +1,8 @@
-// Listas de opciones para los formularios de empleo (empresa/sede/grupo/depto/puesto).
+// Listas de opciones para los formularios de empleo (empresa/sede/horario/depto/puesto).
 import { prisma } from "@/lib/db";
 
 export async function loadEmploymentLookups() {
-  const [companiesRaw, allForBm, sites, groups, departments, positionsRaw] = await Promise.all([
+  const [companiesRaw, allForBm, sites, schedules, departments, positionsRaw] = await Promise.all([
     prisma.client_company.findMany({
       where: { status: "active" },
       select: { id: true, name: true, parent_id: true, business_model_id: true },
@@ -16,7 +16,7 @@ export async function loadEmploymentLookups() {
       select: { id: true, name: true, company_id: true },
       orderBy: { name: "asc" },
     }),
-    prisma.employee_group.findMany({
+    prisma.schedule_group.findMany({
       where: { status: "active" },
       select: { id: true, name: true, company_id: true },
       orderBy: { name: "asc" },
@@ -48,7 +48,7 @@ export async function loadEmploymentLookups() {
     business_model_ids: p.business_models.map((x) => x.business_model_id),
   }));
 
-  return { companies, sites, groups, departments, positions };
+  return { companies, sites, schedules, departments, positions };
 }
 
 export type EmploymentLookups = Awaited<ReturnType<typeof loadEmploymentLookups>>;

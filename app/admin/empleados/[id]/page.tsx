@@ -37,7 +37,7 @@ export default async function EmpleadoDetailPage({
           include: {
             company: { select: { name: true } },
             site: { select: { name: true } },
-            employee_group: { select: { name: true } },
+            schedule_group: { select: { name: true } },
             position: { select: { name: true } },
             department: { select: { name: true } },
           },
@@ -138,7 +138,7 @@ export default async function EmpleadoDetailPage({
               <tr>
                 <Th>Empresa</Th>
                 <Th>Sede</Th>
-                <Th>Grupo</Th>
+                <Th>Horario</Th>
                 <Th>Puesto / Depto</Th>
                 <Th>Nómina</Th>
                 <Th>Período</Th>
@@ -151,7 +151,7 @@ export default async function EmpleadoDetailPage({
                 <Tr key={em.id}>
                   <Td className="font-medium">{em.company.name}</Td>
                   <Td>{em.site?.name ?? <span className="text-text/60">—</span>}</Td>
-                  <Td>{em.employee_group?.name ?? <span className="text-text/60">—</span>}</Td>
+                  <Td>{em.schedule_group?.name ?? <span className="text-text/60">—</span>}</Td>
                   <Td>
                     {em.position?.name ?? "—"}
                     {em.department?.name && (

@@ -137,7 +137,7 @@ model client_company {
 
   sites           site[]
   employments     employment[]
-  employee_groups employee_group[]
+  schedule_groups schedule_group[]
   devices         device[]
 
   @@index([parent_id])
@@ -193,8 +193,8 @@ model employment {
   company           client_company    @relation(fields: [company_id], references: [id], onDelete: Restrict)
   site_id           Int?
   site              site?             @relation(fields: [site_id], references: [id], onDelete: SetNull)
-  employee_group_id Int?
-  employee_group    employee_group?   @relation(fields: [employee_group_id], references: [id], onDelete: SetNull)
+  schedule_group_id Int?
+  schedule_group    schedule_group?   @relation(fields: [schedule_group_id], references: [id], onDelete: SetNull)
   position_id       Int?
   position          position?         @relation(fields: [position_id], references: [id], onDelete: SetNull)
   department_id     Int?
@@ -211,7 +211,7 @@ model employment {
 
   @@index([employee_id])
   @@index([company_id, status])
-  @@index([employee_group_id])
+  @@index([schedule_group_id])
 }
 ```
 
@@ -286,10 +286,16 @@ model position_business_model {
 }
 ```
 
-### 4.4 Grupos de horario y turnos
+### 4.4 Horarios y turnos
+
+> Renombrado 2026-09-26: `employee_group` → `schedule_group` (UI: "Horario"). Motivo:
+> la palabra "Grupo" ya se usa en la UI para `client_company.is_group` (grupos de
+> empresa, ej. "Grupo Farmalido") — mantenerla acá también colisionaba con ese
+> concepto. Es un rename puro (migración `ALTER TABLE/COLUMN ... RENAME`), sin
+> cambio de comportamiento ni pérdida de datos.
 
 ```prisma
-model employee_group {
+model schedule_group {
   id         Int            @id @default(autoincrement())
   company_id Int
   company    client_company @relation(fields: [company_id], references: [id], onDelete: Cascade)
@@ -314,8 +320,8 @@ model employee_group {
 
 model shift {
   id                Int             @id @default(autoincrement())
-  employee_group_id Int
-  employee_group    employee_group  @relation(fields: [employee_group_id], references: [id], onDelete: Cascade)
+  schedule_group_id Int
+  schedule_group    schedule_group  @relation(fields: [schedule_group_id], references: [id], onDelete: Cascade)
   code              String?
   name              String
   start_time        String          // "HH:MM" 24h, hora local de sede
@@ -333,7 +339,7 @@ model shift {
 
   attendance_days   attendance_day[]
 
-  @@index([employee_group_id, effective_from])
+  @@index([schedule_group_id, effective_from])
 }
 ```
 
@@ -518,7 +524,7 @@ client_company ──(parent_id, self, 2 niveles, mutable)──┐
    │        │            └──< enroll_data*      (por dispositivo)
    │        │            └──< employee_fingerprint (source)
    │        └──< employment
-   ├──< employee_group ──< shift
+   ├──< schedule_group ──< shift
    │            └──< employment
    └──< employment >── employee
           ├── position >── department
@@ -566,7 +572,7 @@ entrar al panel una vez que exista auth.
 ## 8. Alcance del cálculo de asistencia (de `07` §8) — DECIDIDO
 
 **Fase 1 incluye el motor de cálculo de asistencia.** `attendance_day`,
-`attendance_correction` y las columnas de umbral en `employee_group` /
+`attendance_correction` y las columnas de umbral en `schedule_group` /
 `client_company` se pueblan y usan en Fase 1. El detalle de qué calcula el motor
 y qué queda para Fase 2 (valoración legal, feriados) está en `07-admin-ux-spec.md`
 §8. No hay cambios de schema por esta decisión — el diseño de §4 ya lo contempla.
@@ -577,8 +583,8 @@ y qué queda para Fase 2 (valoración legal, feriados) está en `07-admin-ux-spe
 
 - [x] Jerarquía de empresas: adjacency list `parent_id`, 2 niveles, mutable, sin historia
 - [x] `employee` (persona) + `employment` (N, sin constraint de exclusividad)
-- [x] `site` y `employee_group` como entidades propias
-- [x] Umbrales de tardanza/ausencia en `employee_group` con fallback a `client_company`
+- [x] `site` y `schedule_group` (antes `employee_group`) como entidades propias
+- [x] Umbrales de tardanza/ausencia en `schedule_group` con fallback a `client_company`
 - [x] `app_user` con `role` pero sin matriz de permisos en Fase 1
 - [x] `employee_fingerprint` (copia canónica por empleado) separada de `enroll_data` (por dispositivo)
 - [x] Timestamps: protocolo `bigint` millis, dominio `timestamptz`

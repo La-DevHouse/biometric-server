@@ -111,7 +111,7 @@ Origen: **Contrato de Empleado** de Adempiere (sub-tab de Socio de Negocio, `1/N
 | `employee_id` | FK a `employee` (la persona) |
 | `company_id` | FK a `client_company` |
 | `site_id` | FK a `site`, opcional — sede donde trabaja |
-| `employee_group_id` | FK a `employee_group`, opcional — grupo que define su horario (ver 1.9) |
+| `schedule_group_id` | FK a `schedule_group`, opcional — horario asignado (ver 1.9) |
 | `position_id` | FK a `position` (cargo/puesto), opcional |
 | `department_id` | FK a `department`, opcional |
 | `payroll_ref` | "Empleado Nómina" de Adempiere — id numérico del sistema de nómina, distinto de la cédula. Opcional; probablemente necesario para el export de Fase 2. |
@@ -148,7 +148,7 @@ Tipo de Habilidad, Tipo de Empleado, Carrera, Grado, Nivel de Estudio).
 **Categorías configurables futuras:** ALCO listó "departamento, cargo/puesto, tipo
 de jornada, sede" como el set inicial y pidió que sea configurable. `department`,
 `position` y `site` son entidades explícitas. "Tipo de jornada" se resuelve vía
-`employee_group` + `shift` (1.9). Si ALCO más adelante quiere agregar tipos de
+`schedule_group` + `shift` (1.9). Si ALCO más adelante quiere agregar tipos de
 etiqueta arbitrarios, se añade un mecanismo genérico `employee_attribute`
 entonces — no ahora, para no sobre-diseñar.
 
@@ -218,13 +218,18 @@ Distinta de `enroll_data` actual (copia **por dispositivo**). Esta es la copia
 `docs/02-architecture.md`; ALCO C9 no tiene aporte técnico). El modelo se deja
 listo; la funcionalidad es trabajo aparte. Ver flujo 5.5.
 
-### 1.9 `employee_group` y `shift` — grupos de horario y turnos
+### 1.9 `schedule_group` y `shift` — horarios y turnos
+
+> Renombrado 2026-09-26: `employee_group` → `schedule_group` (UI: "Horario"). La
+> palabra "Grupo" ya se usa para `client_company.is_group` (grupos de empresa) —
+> mantenerla acá también colisionaba con ese concepto. Rename puro, sin cambio de
+> comportamiento.
 
 ALCO (E14): **el horario se define por grupo de empleados**. Origen: Adempiere
 tenía "Grupo de Trabajo" y "Grupo de Turnos" — ALCO pidió **colapsar a un solo
 concepto**.
 
-**`employee_group`** — grupo de empleados con un horario común (ej. "Administrativo",
+**`schedule_group`** — grupo de empleados con un horario común (ej. "Administrativo",
 "Planta", "Docentes").
 
 | Campo | Notas |
@@ -234,13 +239,13 @@ concepto**.
 | `name`, `code` | |
 | `status` | |
 
-**`shift`** — turno de trabajo, asignado a un `employee_group` con vigencia.
+**`shift`** — turno de trabajo, asignado a un `schedule_group` con vigencia.
 Origen: "Turno de Trabajo" de Adempiere.
 
 | Campo | Notas |
 | --- | --- |
 | `id` | interno |
-| `employee_group_id` | FK a `employee_group` |
+| `schedule_group_id` | FK a `schedule_group` |
 | `code`, `name` | ej. `8/12-2/6`, `"6:30 AM ~ 1:30 PM"` |
 | `start_time`, `end_time` | |
 | `break_start`, `break_end` | descanso |
@@ -252,10 +257,10 @@ Origen: "Turno de Trabajo" de Adempiere.
 
 **Umbrales configurables** (tardanza, salida anticipada, definición de ausencia):
 ALCO (E16–E18) los quiere **configurables por empresa y grupo de empleados**.
-Viven como columnas de config en `employee_group` (con fallback a un default de
+Viven como columnas de config en `schedule_group` (con fallback a un default de
 `client_company`):
 
-| Campo (en `employee_group`, nullable → hereda de company) | |
+| Campo (en `schedule_group`, nullable → hereda de company) | |
 | --- | --- |
 | `late_tolerance_min` | minutos de atraso tolerados antes de tardanza |
 | `early_leave_tolerance_min` | minutos de salida anticipada tolerados |
@@ -358,7 +363,7 @@ client_company ──┐ (parent_id, self, 2 niveles, mutable)
    │      │         └──< enroll_data          (por dispositivo, ya existe)
    │      │         └──< attendance_log >── employee (nullable)
    │      └──< employment
-   ├──< employee_group ──< shift
+   ├──< schedule_group ──< shift
    │      └──< employment
    └──< employment >── employee
           ├── position >── department
@@ -382,7 +387,7 @@ suman las de dominio.
 | **Empresas** (Organización) | Árbol de empresas con jerarquía padre/hija; sedes por empresa | Alta / editar / dar de baja; mover de grupo; marcar `is_group` / `shared_employees`; gestionar sedes |
 | **Empleados** (Socio de Negocio + Contrato) | Listado filtrable por empresa / sede / grupo / departamento / puesto / estado; y el **pool de reclutamiento** (personas sin empleo activo) | Alta de persona; abrir/cerrar `employment`; **Trasladar**; baja; ver marcajes; gestionar enrollments |
 | **Departamentos y Puestos** | CRUD de categorías | Alta / editar / desactivar |
-| **Grupos y Turnos** | CRUD de `employee_group` + `shift` por empresa; umbrales de tardanza/ausencia por grupo | Alta / editar; asignar empleados al grupo |
+| **Horarios y Turnos** | CRUD de `schedule_group` + `shift` por empresa; umbrales de tardanza/ausencia por horario | Alta / editar; asignar empleados al horario |
 | **Dispositivos** (Dispositivos de Asistencia) | La vista actual + asignación a empresa/sede | Asignar a empresa y sede; ver `last_sync_at`; (lo que ya hace) |
 | **Enrolamiento** (nueva) | Enrolados de un equipo y su vínculo con empleados | Mapear `device_user_id` → empleado; desvincular; **copiar huella a otro equipo** (flujo 5.5) |
 | **Asistencia** | La vista actual de marcajes + capa procesada (`attendance_day`) | Filtrar; **corregir un marcaje** (con motivo, auditado); ver día procesado |
@@ -433,7 +438,7 @@ Crear `client_company` → si es grupo, marcar `is_group` y crear las hijas con
 ### 5.2 Alta de empleado
 Crear `employee` (persona, por documento) → crear `employment` en su empresa con
 sede / grupo / departamento / puesto / fecha de inicio → el turno lo hereda del
-`employee_group` → vincular su huella a un equipo (flujo 5.3).
+`schedule_group` → vincular su huella a un equipo (flujo 5.3).
 
 ### 5.3 Vincular empleado ↔ enrolado de equipo
 Desde **Enrolamiento**: el equipo reporta sus `user_id`; el operador asocia cada
@@ -485,7 +490,7 @@ CSV/Excel con columnas claras del consolidado; estructura parametrizable.
 1. Empleado es entidad propia y simple, no un rol sobre "Business Partner".
 2. Se descarta toda la capa de nómina venezolana (aportes, deducciones, SSO,
    INCES, FAOV, estructura salarial) — fuera de Fase 1.
-3. "Grupo de Trabajo" y "Grupo de Turnos" se colapsan en `employee_group` + `shift`.
+3. "Grupo de Trabajo" y "Grupo de Turnos" se colapsan en `schedule_group` + `shift` (llamado `employee_group` hasta el rename de 2026-09-26).
 4. `site` (sede) es entidad propia — Adempiere no la exponía clara y es central
    para el caso de empleados compartidos multi-sede.
 5. El vínculo empleado ↔ huella de equipo se modela explícitamente
@@ -524,11 +529,11 @@ Implicaciones para el diseño de Fase 1:
 **Dentro de Fase 1:**
 - Resolver cada `attendance_log` a su `employee` vía `employee_device_enrollment`.
 - Por empleado y día, determinar el `shift` vigente (vía `employment` →
-  `employee_group` → `shift` con `effective_from/to` y `workdays`).
+  `schedule_group` → `shift` con `effective_from/to` y `workdays`).
 - Calcular `first_in`, `last_out`, `worked_minutes`, `overtime_minutes` (horas
   por encima de la jornada, **como referencia, sin recargo**).
 - Clasificar `status`: `present` / `late` / `early_leave` / `absent`, aplicando
-  los umbrales de `employee_group` (`late_tolerance_min`,
+  los umbrales de `schedule_group` (`late_tolerance_min`,
   `early_leave_tolerance_min`, `absence_rule` + `absence_min_hours`), con fallback
   a `client_company`.
 - Persistir en `attendance_day`. Recalculable (idempotente) al llegar marcajes

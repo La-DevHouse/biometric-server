@@ -5,14 +5,14 @@ import { MobileList, MobileRow } from "@/components/ui/MobileRow";
 import { Tag } from "@/components/ui/Tag";
 import { LinkBtn } from "@/components/ui/Btn";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { GroupFormDialog } from "@/components/admin/GroupFormDialog";
+import { ScheduleFormDialog } from "@/components/admin/ScheduleFormDialog";
 
 export const dynamic = "force-dynamic";
 
-export default async function GruposPage() {
+export default async function HorariosPage() {
   await requireUser();
-  const [groups, companies] = await Promise.all([
-    prisma.employee_group.findMany({
+  const [schedules, companies] = await Promise.all([
+    prisma.schedule_group.findMany({
       orderBy: [{ company: { name: "asc" } }, { name: "asc" }],
       include: {
         company: { select: { name: true } },
@@ -30,15 +30,15 @@ export default async function GruposPage() {
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between">
         <p className="m-0 text-sm text-text/75">
-          {groups.length} {groups.length === 1 ? "grupo" : "grupos"}
+          {schedules.length} {schedules.length === 1 ? "horario" : "horarios"}
         </p>
-        <GroupFormDialog companies={companies} />
+        <ScheduleFormDialog companies={companies} />
       </div>
 
-      {groups.length === 0 ? (
+      {schedules.length === 0 ? (
         <EmptyState
-          title="Todavía no hay grupos"
-          description="Un grupo de empleados define el horario común (turnos) de un conjunto de gente en una empresa."
+          title="Todavía no hay horarios"
+          description="Un horario define el/los turnos comunes de un conjunto de empleados en una empresa."
         />
       ) : (
         <>
@@ -46,7 +46,7 @@ export default async function GruposPage() {
             <Table>
               <thead>
                 <tr>
-                  <Th>Grupo</Th>
+                  <Th>Horario</Th>
                   <Th>Empresa</Th>
                   <Th>Código</Th>
                   <Th>Turnos</Th>
@@ -56,7 +56,7 @@ export default async function GruposPage() {
                 </tr>
               </thead>
               <tbody>
-                {groups.map((g) => (
+                {schedules.map((g) => (
                   <Tr key={g.id}>
                     <Td className="font-medium">{g.name}</Td>
                     <Td>{g.company.name}</Td>
@@ -69,7 +69,7 @@ export default async function GruposPage() {
                       </Tag>
                     </Td>
                     <Td>
-                      <LinkBtn href={`/admin/grupos/${g.id}`} variant="ghost">
+                      <LinkBtn href={`/admin/horarios/${g.id}`} variant="ghost">
                         Detalle →
                       </LinkBtn>
                     </Td>
@@ -79,10 +79,10 @@ export default async function GruposPage() {
             </Table>
           </div>
           <MobileList>
-            {groups.map((g) => (
+            {schedules.map((g) => (
               <MobileRow
                 key={g.id}
-                href={`/admin/grupos/${g.id}`}
+                href={`/admin/horarios/${g.id}`}
                 title={g.name}
                 tags={
                   <Tag variant={g.status === "active" ? "accent" : "neutral"}>

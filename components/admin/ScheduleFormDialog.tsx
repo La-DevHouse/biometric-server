@@ -7,11 +7,11 @@ import { IconBtn } from "@/components/ui/IconBtn";
 import { Icon } from "@/components/ui/icons";
 import { Collapsible } from "@/components/ui/Collapsible";
 import { useToast } from "./Toaster";
-import { createGroupAction, updateGroupAction } from "@/app/admin/grupos/actions";
+import { createScheduleAction, updateScheduleAction } from "@/app/admin/horarios/actions";
 import { ADMIN_ACTION_INITIAL } from "@/lib/adminActionState";
 import { FIELD_INPUT as INPUT, FIELD_LABEL as LABEL } from "@/components/ui/fieldStyles";
 
-export interface GroupValues {
+export interface ScheduleValues {
   id: number;
   company_id: number;
   name: string;
@@ -22,17 +22,17 @@ export interface GroupValues {
   absence_min_hours: number | null;
 }
 
-export function GroupFormDialog({
-  group,
+export function ScheduleFormDialog({
+  schedule,
   companies,
 }: {
-  group?: GroupValues;
+  schedule?: ScheduleValues;
   companies: { id: number; name: string }[];
 }) {
-  const editing = !!group;
+  const editing = !!schedule;
   const [open, setOpen] = useState(false);
   const [state, formAction, pending] = useActionState(
-    editing ? updateGroupAction : createGroupAction,
+    editing ? updateScheduleAction : createScheduleAction,
     ADMIN_ACTION_INITIAL
   );
   const { push } = useToast();
@@ -48,22 +48,22 @@ export function GroupFormDialog({
   return (
     <>
       {editing ? (
-        <IconBtn icon={Icon.edit} label="Editar grupo" onClick={() => setOpen(true)} />
+        <IconBtn icon={Icon.edit} label="Editar horario" onClick={() => setOpen(true)} />
       ) : (
-        <IconBtn icon={Icon.add} label="Nuevo grupo" onClick={() => setOpen(true)} />
+        <IconBtn icon={Icon.add} label="Nuevo horario" onClick={() => setOpen(true)} />
       )}
       <Dialog
         open={open}
         onClose={() => setOpen(false)}
-        title={editing ? "Editar grupo" : "Nuevo grupo de empleados"}
+        title={editing ? "Editar horario" : "Nuevo horario"}
         footer={
           <Btn type="submit" form={formId} variant="primary" disabled={pending}>
-            {pending ? "Guardando…" : editing ? "Guardar" : "Crear grupo"}
+            {pending ? "Guardando…" : editing ? "Guardar" : "Crear horario"}
           </Btn>
         }
       >
         <form id={formId} action={formAction} className="flex flex-col gap-3">
-          {editing && <input type="hidden" name="id" value={group.id} />}
+          {editing && <input type="hidden" name="id" value={schedule.id} />}
 
           <label className={LABEL}>
             Empresa *
@@ -71,7 +71,7 @@ export function GroupFormDialog({
               <input
                 className={INPUT}
                 disabled
-                value={companies.find((c) => c.id === group.company_id)?.name ?? "—"}
+                value={companies.find((c) => c.id === schedule.company_id)?.name ?? "—"}
               />
             ) : (
               <select name="company_id" required className={INPUT} defaultValue="">
@@ -89,26 +89,26 @@ export function GroupFormDialog({
 
           <label className={LABEL}>
             Nombre * <span className="text-text/60">(ej. Administrativo, Planta, Docentes)</span>
-            <input name="name" required defaultValue={group?.name ?? ""} className={INPUT} autoFocus />
+            <input name="name" required defaultValue={schedule?.name ?? ""} className={INPUT} autoFocus />
           </label>
           <label className={LABEL}>
             Código <span className="text-text/60">(opcional — identificador corto de ALCO para reportes)</span>
-            <input name="code" defaultValue={group?.code ?? ""} className={INPUT} />
+            <input name="code" defaultValue={schedule?.code ?? ""} className={INPUT} />
           </label>
 
           <Collapsible title="Umbrales de asistencia (vacío = hereda de la empresa)">
             <div className="flex flex-col sm:grid sm:grid-cols-2 gap-2">
               <label className={LABEL}>
                 Tolerancia tardanza (min)
-                <input name="late_tolerance_min" type="number" min={0} defaultValue={group?.late_tolerance_min ?? ""} className={INPUT} />
+                <input name="late_tolerance_min" type="number" min={0} defaultValue={schedule?.late_tolerance_min ?? ""} className={INPUT} />
               </label>
               <label className={LABEL}>
                 Tolerancia salida antic. (min)
-                <input name="early_leave_tolerance_min" type="number" min={0} defaultValue={group?.early_leave_tolerance_min ?? ""} className={INPUT} />
+                <input name="early_leave_tolerance_min" type="number" min={0} defaultValue={schedule?.early_leave_tolerance_min ?? ""} className={INPUT} />
               </label>
               <label className={LABEL}>
                 Regla de ausencia
-                <select name="absence_rule" defaultValue={group?.absence_rule ?? ""} className={INPUT}>
+                <select name="absence_rule" defaultValue={schedule?.absence_rule ?? ""} className={INPUT}>
                   <option value="">— sin definir —</option>
                   <option value="no_check_in">No marcó entrada</option>
                   <option value="no_marks">No marcó nada</option>
@@ -117,7 +117,7 @@ export function GroupFormDialog({
               </label>
               <label className={LABEL}>
                 Horas mínimas (si aplica)
-                <input name="absence_min_hours" type="number" min={0} defaultValue={group?.absence_min_hours ?? ""} className={INPUT} />
+                <input name="absence_min_hours" type="number" min={0} defaultValue={schedule?.absence_min_hours ?? ""} className={INPUT} />
               </label>
             </div>
           </Collapsible>

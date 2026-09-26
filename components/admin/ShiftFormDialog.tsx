@@ -6,7 +6,7 @@ import { Btn } from "@/components/ui/Btn";
 import { IconBtn } from "@/components/ui/IconBtn";
 import { Icon } from "@/components/ui/icons";
 import { useToast } from "./Toaster";
-import { createShiftAction, updateShiftAction } from "@/app/admin/grupos/actions";
+import { createShiftAction, updateShiftAction } from "@/app/admin/horarios/actions";
 import { ADMIN_ACTION_INITIAL } from "@/lib/adminActionState";
 import { FIELD_INPUT as INPUT, FIELD_LABEL as LABEL } from "@/components/ui/fieldStyles";
 
@@ -37,10 +37,10 @@ export interface ShiftValues {
 }
 
 export function ShiftFormDialog({
-  groupId,
+  scheduleGroupId,
   shift,
 }: {
-  groupId: number;
+  scheduleGroupId: number;
   shift?: ShiftValues;
 }) {
   const editing = !!shift;
@@ -80,7 +80,7 @@ export function ShiftFormDialog({
           {editing ? (
             <input type="hidden" name="id" value={shift.id} />
           ) : (
-            <input type="hidden" name="employee_group_id" value={groupId} />
+            <input type="hidden" name="schedule_group_id" value={scheduleGroupId} />
           )}
 
           <div className="flex flex-col sm:grid sm:grid-cols-2 gap-2">
