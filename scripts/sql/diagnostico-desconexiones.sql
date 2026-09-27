@@ -1,7 +1,8 @@
 -- =============================================================================
 -- Diagnóstico: "el equipo aparece desconectado mientras copia usuarios"
 -- Solo lectura. Correr en DBeaver contra la base donde apuntan los equipos.
--- Cambiá el dev_id y el rango de horas (por defecto: últimas 24 h) en cada consulta.
+-- Cubre los dos equipos de prueba (columna "equipo"). Para otro rango, buscar y
+-- reemplazar el interval (24 hours / 6 hours) en todo el archivo.
 --
 -- Contexto: el panel marca "Desconectado" si el equipo lleva > 30 s sin PEDIR
 -- comandos (receive_cmd); entregar un resultado (send_cmd_result) no cuenta.
@@ -19,10 +20,11 @@ WITH ins AS (
          LAG(id)         OVER (PARTITION BY dev_id ORDER BY id) AS prev_id
     FROM raw_traffic
    WHERE direction = 'in'
-     AND dev_id = '2023081158'                                                  -- ← equipo
+     AND dev_id IN ('2023081133', '2023081158')                                                  -- ← equipo
      AND created_at > (extract(epoch FROM now() - interval '24 hours') * 1000)  -- ← rango
 )
-SELECT to_timestamp(ins.prev_at / 1000) AT TIME ZONE 'America/Caracas'   AS ultimo_contacto,
+SELECT ins.dev_id AS equipo,
+       to_timestamp(ins.prev_at / 1000) AT TIME ZONE 'America/Caracas'   AS ultimo_contacto,
        to_timestamp(ins.created_at / 1000) AT TIME ZONE 'America/Caracas' AS volvio,
        round((ins.created_at - ins.prev_at) / 1000.0)                    AS silencio_s,
        p.request_code                                                    AS ultimo_request,
@@ -68,16 +70,16 @@ WITH t AS (
          LEAD(direction)  OVER w AS next_dir,
          LEAD(created_at) OVER w AS next_at
     FROM raw_traffic
-   WHERE dev_id = '2023081158'
+   WHERE dev_id IN ('2023081133', '2023081158')
      AND created_at > (extract(epoch FROM now() - interval '24 hours') * 1000)
   WINDOW w AS (PARTITION BY dev_id, request_code ORDER BY id)
 )
-SELECT request_code, count(*) AS requests,
+SELECT dev_id AS equipo, request_code, count(*) AS requests,
        round(avg(next_at - created_at))                                        AS prom_ms,
        percentile_cont(0.95) WITHIN GROUP (ORDER BY next_at - created_at)      AS p95_ms,
        max(next_at - created_at)                                               AS max_ms
   FROM t WHERE direction = 'in' AND next_dir = 'out'
- GROUP BY request_code ORDER BY max_ms DESC;
+ GROUP BY dev_id, request_code ORDER BY dev_id, max_ms DESC;
 
 
 -- 3. LOS 20 REQUESTS MÁS LENTOS DEL SERVIDOR, con el comando al que respondían.
@@ -87,11 +89,11 @@ WITH t AS (
          LEAD(direction)  OVER w AS next_dir,
          LEAD(created_at) OVER w AS next_at
     FROM raw_traffic
-   WHERE dev_id = '2023081158'
+   WHERE dev_id IN ('2023081133', '2023081158')
      AND created_at > (extract(epoch FROM now() - interval '24 hours') * 1000)
   WINDOW w AS (PARTITION BY dev_id, request_code ORDER BY id)
 )
-SELECT to_timestamp(t.created_at / 1000) AT TIME ZONE 'America/Caracas' AS cuando,
+SELECT t.dev_id AS equipo, to_timestamp(t.created_at / 1000) AT TIME ZONE 'America/Caracas' AS cuando,
        t.request_code, t.next_at - t.created_at AS servidor_ms,
        t.trans_id, c.cmd_code, c.op_id
   FROM t LEFT JOIN commands c ON c.trans_id::text = t.trans_id
@@ -102,18 +104,18 @@ SELECT to_timestamp(t.created_at / 1000) AT TIME ZONE 'America/Caracas' AS cuand
 -- 4. CUÁNTO TARDA EL EQUIPO EN EJECUTAR CADA TIPO DE COMANDO
 --    (desde que se lo entregamos hasta que manda el resultado).
 WITH entregas AS (
-  SELECT (headers_json::json->>'trans_id') AS trans_id, created_at AS entregado_at
+  SELECT dev_id, (headers_json::json->>'trans_id') AS trans_id, created_at AS entregado_at
     FROM raw_traffic
-   WHERE direction = 'out' AND request_code = 'receive_cmd' AND dev_id = '2023081158'
+   WHERE direction = 'out' AND request_code = 'receive_cmd' AND dev_id IN ('2023081133', '2023081158')
      AND headers_json::json->>'trans_id' IS NOT NULL
      AND created_at > (extract(epoch FROM now() - interval '24 hours') * 1000)
 ), resultados AS (
   SELECT (headers_json::json->>'trans_id') AS trans_id, min(created_at) AS resultado_at
     FROM raw_traffic
-   WHERE direction = 'in' AND request_code = 'send_cmd_result' AND dev_id = '2023081158'
+   WHERE direction = 'in' AND request_code = 'send_cmd_result' AND dev_id IN ('2023081133', '2023081158')
    GROUP BY 1
 )
-SELECT c.cmd_code, count(*) AS veces,
+SELECT e.dev_id AS equipo, c.cmd_code, count(*) AS veces,
        round(avg(r.resultado_at - e.entregado_at))                                       AS prom_ms,
        percentile_cont(0.95) WITHIN GROUP (ORDER BY r.resultado_at - e.entregado_at)     AS p95_ms,
        max(r.resultado_at - e.entregado_at)                                              AS max_ms,
@@ -121,7 +123,7 @@ SELECT c.cmd_code, count(*) AS veces,
   FROM entregas e
   LEFT JOIN resultados r ON r.trans_id = e.trans_id
   LEFT JOIN commands c ON c.trans_id::text = e.trans_id
- GROUP BY c.cmd_code ORDER BY max_ms DESC NULLS FIRST;
+ GROUP BY e.dev_id, c.cmd_code ORDER BY e.dev_id, max_ms DESC NULLS FIRST;
 
 
 -- 5. CADA GET_USER_INFO QUE NO VOLVIÓ, y el silencio que vino después.
@@ -135,10 +137,10 @@ WITH entregas AS (
     FROM raw_traffic
    WHERE direction = 'out' AND request_code = 'receive_cmd'
      AND headers_json::json->>'cmd_code' = 'GET_USER_INFO'
-     AND dev_id = '2023081158'                                                  -- ← equipo
+     AND dev_id IN ('2023081133', '2023081158')                                                  -- ← equipo
      AND created_at > (extract(epoch FROM now() - interval '24 hours') * 1000)  -- ← rango
 )
-SELECT to_timestamp(e.created_at / 1000) AT TIME ZONE 'America/Caracas' AS entregado,
+SELECT e.dev_id AS equipo, to_timestamp(e.created_at / 1000) AT TIME ZONE 'America/Caracas' AS entregado,
        c.cmd_param::json->>'user_id'                                    AS user_id,
        u.user_name, u.user_privilege,
        EXISTS (SELECT 1 FROM employee x

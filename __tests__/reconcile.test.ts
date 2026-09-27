@@ -91,17 +91,18 @@ const P = `REC_${Date.now()}_`;
 const DEV = P + "DEV";
 const DEV_FROZEN = P + "FROZEN";
 const DEV_AUD = P + "AUD";
+const DEV_STALE = P + "STALE";
 const made = { companies: [] as number[], employees: [] as number[], appUsers: [] as number[] };
 
 after(async () => {
   await prisma.employment.deleteMany({ where: { employee_id: { in: made.employees } } });
   await prisma.employee.deleteMany({ where: { id: { in: made.employees } } });
-  await db.runAsync(`DELETE FROM commands WHERE dev_id IN (?, ?, ?)`, [DEV, DEV_FROZEN, DEV_AUD]);
-  await db.runAsync(`DELETE FROM operations WHERE dev_id IN (?, ?, ?)`, [DEV, DEV_FROZEN, DEV_AUD]);
-  await db.runAsync(`DELETE FROM users WHERE dev_id IN (?, ?, ?)`, [DEV, DEV_FROZEN, DEV_AUD]);
-  await db.runAsync(`DELETE FROM enroll_data WHERE dev_id IN (?, ?, ?)`, [DEV, DEV_FROZEN, DEV_AUD]);
+  await db.runAsync(`DELETE FROM commands WHERE dev_id IN (?, ?, ?, ?)`, [DEV, DEV_FROZEN, DEV_AUD, DEV_STALE]);
+  await db.runAsync(`DELETE FROM operations WHERE dev_id IN (?, ?, ?, ?)`, [DEV, DEV_FROZEN, DEV_AUD, DEV_STALE]);
+  await db.runAsync(`DELETE FROM users WHERE dev_id IN (?, ?, ?, ?)`, [DEV, DEV_FROZEN, DEV_AUD, DEV_STALE]);
+  await db.runAsync(`DELETE FROM enroll_data WHERE dev_id IN (?, ?, ?, ?)`, [DEV, DEV_FROZEN, DEV_AUD, DEV_STALE]);
   await prisma.audit_log.deleteMany({ where: { entity_id: DEV_AUD } });
-  await prisma.devices.deleteMany({ where: { dev_id: { in: [DEV, DEV_FROZEN, DEV_AUD] } } });
+  await prisma.devices.deleteMany({ where: { dev_id: { in: [DEV, DEV_FROZEN, DEV_AUD, DEV_STALE] } } });
   await prisma.client_company.deleteMany({ where: { id: { in: made.companies } } });
   await prisma.audit_log.deleteMany({ where: { actor_app_user_id: { in: made.appUsers } } });
   await prisma.app_user.deleteMany({ where: { id: { in: made.appUsers } } });
@@ -342,4 +343,40 @@ test("reconcile - revisión nocturna: quien fue borrado desde el teclado sale de
   assert.ok(readd, "sigue en el alcance → se lo vuelve a crear en el equipo");
   const keep = await db.getAsync(`SELECT 1 FROM operations WHERE dev_id = ? AND kind = 'ADD_EMPLOYEE_TO_DEVICE' AND user_id = ?`, [DEV_AUD, `emp:${sigue}`]);
   assert.equal(keep, undefined, "al que sigue no se lo toca");
+});
+
+test("reconcile - quien tenía huellas y ya no aparece en la lista (borrado en el teclado): se re-copian en la misma corrida", async () => {
+  const c = await prisma.client_company.create({
+    data: { name: P + "STALE", tax_id: "J-3", sites: { create: { name: "S" } } },
+    include: { sites: true },
+  });
+  made.companies.push(c.id);
+  await prisma.devices.create({ data: { dev_id: DEV_STALE, site_id: c.sites[0].id } });
+  const emp = await employee("50000021", c.id);
+  const fp = await prisma.employee_fingerprint.create({ data: { employee_id: emp, template: template(50000021) } });
+  // Antes: estaba en el equipo con su huella (caché, vínculo y registro de slot).
+  await db.runAsync(`INSERT INTO users (dev_id, user_id, user_name, user_privilege) VALUES (?, '50000021', 'x', 'USER')`, [DEV_STALE]);
+  await db.runAsync(`INSERT INTO enroll_data (dev_id, user_id, backup_number, data) VALUES (?, '50000021', 0, ?)`, [DEV_STALE, template(50000021)]);
+  await prisma.employee_device_enrollment.create({ data: { employee_id: emp, dev_id: DEV_STALE, device_user_id: "50000021" } });
+  await prisma.device_fingerprint_slot.create({
+    data: { dev_id: DEV_STALE, device_user_id: "50000021", backup_number: 0, fingerprint_id: fp.id, origin: "propagated" },
+  });
+
+  const stepS = async (opId: number, result: Parameters<typeof step>[1]) => {
+    const cmd = (await ops.getOperationCommands(opId)).at(-1)!;
+    await advance.advanceOperationForCommand({
+      opId, devId: DEV_STALE, transId: cmd.trans_id, cmdCode: cmd.cmd_code, ok: result.ok,
+      returnCode: result.returnCode ?? (result.ok ? "OK" : "Error"),
+      resultJson: (result.resultJson ?? null) as Record<string, any> | null, binaries: result.binaries ?? [],
+    });
+  };
+  // Ahora: lo borraron en el teclado → el equipo quedó vacío.
+  const opId = (await reconcile.startReconcileDevice(DEV_STALE, { trigger: "event" }))!;
+  await stepS(opId, { ok: true, resultJson: { fp_count: "0", total_user_count: "0" } });
+  await stepS(opId, { ok: true, resultJson: { user_id_count: 0 } });
+
+  assert.equal((await ops.getOperation(opId))?.stage, "done");
+  assert.equal(await prisma.device_fingerprint_slot.count({ where: { dev_id: DEV_STALE } }), 0, "registro de slots limpio");
+  const add = await db.getAsync(`SELECT 1 FROM operations WHERE dev_id = ? AND kind = 'ADD_EMPLOYEE_TO_DEVICE' AND user_id = ?`, [DEV_STALE, `emp:${emp}`]);
+  assert.ok(add, "se vuelve a copiar en esta misma corrida, sin esperar la revisión nocturna");
 });

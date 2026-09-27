@@ -268,9 +268,15 @@ export async function advanceReconcile(op: OperationRow, input: AdvanceInput): P
       hints,
       deviceFpCount: plan.fpCount ?? 0,
     });
-    // Ya no aparecen en la lista = hoy tienen 0 huellas: su caché de huellas quedó vieja.
+    // Ya no aparecen en la lista = hoy tienen 0 huellas en el equipo (la lista trae
+    // exactamente a los que tienen ≥1, T2) — p. ej. los borraron desde el teclado.
+    // Su caché de huellas Y su registro de slots quedaron viejos: se limpian, así
+    // esta misma corrida ve que les faltan huellas y las vuelve a copiar (o, si ya
+    // no existen, la creación con sonda los recrea). Sin esto esperaban a la
+    // revisión nocturna.
     if (selection.staleNoFingerprints.length) {
       await prisma.enroll_data.deleteMany({ where: { dev_id: op.dev_id, user_id: { in: selection.staleNoFingerprints } } });
+      await prisma.device_fingerprint_slot.deleteMany({ where: { dev_id: op.dev_id, device_user_id: { in: selection.staleNoFingerprints } } });
     }
     // Revisión nocturna: también se consulta a todos los que conocemos SIN huella
     // (en caché o vinculados, fuera de la lista), para cuadrarlos por conteo.

@@ -67,3 +67,7 @@ docs/adempiere/exports/**
 
 # Exports de Adempiere para la importación manual (docs/12): datos personales, nunca al repo.
 /imports/
+
+# Resultados de consultas de diagnóstico exportadas desde DBeaver (pueden tener cédulas).
+/results/
+/results.json
