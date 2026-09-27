@@ -6,6 +6,7 @@ import { Btn } from "@/components/ui/Btn";
 import { IconBtn } from "@/components/ui/IconBtn";
 import { Icon } from "@/components/ui/icons";
 import { useToast } from "./Toaster";
+import { useFormSubmit } from "@/components/ui/useFormSubmit";
 import { createGroupAction, updateGroupAction } from "@/app/admin/empresas/actions";
 import { ADMIN_ACTION_INITIAL } from "@/lib/adminActionState";
 import { FIELD_INPUT as INPUT, FIELD_LABEL as LABEL } from "@/components/ui/fieldStyles";
@@ -30,6 +31,7 @@ export function GroupFormDialog({ group }: { group?: GroupFormValues }) {
     editing ? updateGroupAction : createGroupAction,
     ADMIN_ACTION_INITIAL
   );
+  const onSubmit = useFormSubmit(formAction, state);
   const { push } = useToast();
   const formId = useId();
 
@@ -61,7 +63,7 @@ export function GroupFormDialog({ group }: { group?: GroupFormValues }) {
           </Btn>
         }
       >
-        <form id={formId} action={formAction} className="flex flex-col gap-3">
+        <form id={formId} onSubmit={onSubmit} className="flex flex-col gap-3">
           {editing && <input type="hidden" name="id" value={group.id} />}
           <label className={LABEL}>
             Nombre *

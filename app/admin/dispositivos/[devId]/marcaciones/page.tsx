@@ -1,17 +1,18 @@
 import Link from "next/link";
+import { Suspense } from "react";
 import { requireUser } from "@/lib/auth";
 import { allAsync, initDb } from "@/lib/db";
 import { Table, Th, Td, Tr } from "@/components/ui/Table";
 import { MobileList, MobileRow } from "@/components/ui/MobileRow";
 import { Tag } from "@/components/ui/Tag";
-import { Btn } from "@/components/ui/Btn";
 import { Icon } from "@/components/ui/icons";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { OpButton } from "@/components/admin/OpButton";
 import { DeviceTabs } from "@/components/admin/DeviceTabs";
 import { syncLogsAction } from "@/app/admin/actions";
 import { toDayBound, formatIoTime } from "@/lib/ioTime";
-import { FIELD_INPUT as INPUT, FIELD_LABEL as LABEL } from "@/components/ui/fieldStyles";
+import { UrlFilters } from "@/components/admin/UrlFilters";
+import { filterSummary } from "@/lib/filterSummary";
 
 export const dynamic = "force-dynamic";
 
@@ -94,33 +95,33 @@ export default async function DeviceMarcacionesPage({
     <div className="flex max-w-[1100px] flex-col gap-4">
       <DeviceTabs devId={devId} active="marcaciones" />
 
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <form method="GET" className="flex flex-wrap items-end gap-2">
-          <label className={LABEL}>
-            Desde
-            <input type="date" name="from" defaultValue={f.from ?? ""} className={INPUT} />
-          </label>
-          <label className={LABEL}>
-            Hasta
-            <input type="date" name="to" defaultValue={f.to ?? ""} className={INPUT} />
-          </label>
-          <label className={LABEL}>
-            Persona
-            <input name="q" defaultValue={q} placeholder="nombre o ID" className={INPUT} />
-          </label>
-          <Btn type="submit" variant="secondary">
-            Filtrar
-          </Btn>
-        </form>
-        <OpButton
-          action={syncLogsAction}
-          hidden={{ dev_id: devId }}
-          title="Traer historial completo"
-          description="Pide al equipo TODAS las marcaciones que tiene en memoria. Normalmente no hace falta: llegan solas en el momento, y si el equipo estuvo sin red las reenvía al reconectar."
-          variant="icon"
-        >
-          {Icon.sync}
-        </OpButton>
+      <div className="flex items-center justify-between gap-3">
+        <p className="m-0 text-sm text-text/75">{filterSummary(f.from, f.to, q)}</p>
+        <div className="flex items-center gap-[8px]">
+          <Suspense fallback={<div className="h-(--control-h) w-(--control-h)" />}>
+            <UrlFilters
+              fields={[
+                { name: "from", label: "Desde", type: "date" },
+                { name: "to", label: "Hasta", type: "date" },
+                {
+                  name: "q",
+                  label: "Persona",
+                  type: "text",
+                  placeholder: "nombre o ID",
+                },
+              ]}
+            />
+          </Suspense>
+          <OpButton
+            action={syncLogsAction}
+            hidden={{ dev_id: devId }}
+            title="Traer historial completo"
+            description="Pide al equipo TODAS las marcaciones que tiene en memoria. Normalmente no hace falta: llegan solas en el momento, y si el equipo estuvo sin red las reenvía al reconectar."
+            variant="icon"
+          >
+            {Icon.sync}
+          </OpButton>
+        </div>
       </div>
 
       {logs.length === 0 ? (
@@ -162,8 +163,8 @@ export default async function DeviceMarcacionesPage({
           </MobileList>
           <p className="m-0 text-xs text-text/70">
             {logs.length} marcación{logs.length === 1 ? "" : "es"}
-            {truncated ? ` (mostrando las ${RESULT_LIMIT} más recientes)` : ""} · llegan solas del equipo, no hace
-            falta sincronizar para verlas.
+            {truncated ? ` (mostrando las ${RESULT_LIMIT} más recientes)` : ""} · llegan solas del equipo, no hace falta
+            sincronizar para verlas.
           </p>
         </>
       )}

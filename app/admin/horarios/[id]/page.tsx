@@ -153,7 +153,7 @@ export default async function ScheduleDetailPage({
                           {" → "}
                           {s.effective_to ? fmtDate(s.effective_to) : "∞"}
                         </Td>
-                        <Td>
+                        <Td actions>
                           <span className="inline-flex items-center gap-1">
                             <ShiftFormDialog scheduleGroupId={schedule.id} shift={shiftForm} />
                             <DeleteButton id={s.id} label="turno" action={deleteShiftAction} />

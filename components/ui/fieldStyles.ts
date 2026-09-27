@@ -21,3 +21,10 @@ export const FIELD_INPUT =
 // Mono 12 / +.12em (+.10em en mobile), como "Label de campo" de la maqueta.
 export const FIELD_LABEL =
   "flex flex-col gap-[5px] font-mono text-label uppercase tracking-[0.12em] max-md:tracking-[0.1em] text-neutral-800";
+
+// "opcional" junto al label (mono, gris claro), como en la maqueta: `CÓDIGO opcional`.
+export const FIELD_OPTIONAL = "text-neutral-600 tracking-[0.08em]";
+
+// Ayuda de un campo, DEBAJO del input (no en el label): así el label queda en
+// una línea y los inputs de una misma fila de la grilla quedan alineados.
+export const FIELD_HINT = "font-sans normal-case tracking-normal text-xs text-neutral-700";

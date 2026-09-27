@@ -6,9 +6,10 @@ import { Btn } from "@/components/ui/Btn";
 import { IconBtn } from "@/components/ui/IconBtn";
 import { Icon } from "@/components/ui/icons";
 import { useToast } from "./Toaster";
+import { useFormSubmit } from "@/components/ui/useFormSubmit";
 import { createPositionAction, updatePositionAction } from "@/app/admin/categorias/actions";
 import { ADMIN_ACTION_INITIAL } from "@/lib/adminActionState";
-import { FIELD_INPUT as INPUT, FIELD_LABEL as LABEL } from "@/components/ui/fieldStyles";
+import { FIELD_INPUT as INPUT, FIELD_LABEL as LABEL, FIELD_OPTIONAL, FIELD_HINT } from "@/components/ui/fieldStyles";
 
 export interface PositionValues {
   id: number;
@@ -34,6 +35,7 @@ export function PositionFormDialog({
     editing ? updatePositionAction : createPositionAction,
     ADMIN_ACTION_INITIAL
   );
+  const onSubmit = useFormSubmit(formAction, state);
   const { push } = useToast();
   const formId = useId();
 
@@ -63,15 +65,18 @@ export function PositionFormDialog({
           </Btn>
         }
       >
-        <form id={formId} action={formAction} className="flex flex-col gap-3">
+        <form id={formId} onSubmit={onSubmit} className="flex flex-col gap-3">
           {editing && <input type="hidden" name="id" value={position.id} />}
           <label className={LABEL}>
             Nombre *
             <input name="name" required defaultValue={position?.name ?? ""} className={INPUT} autoFocus />
           </label>
           <label className={LABEL}>
-            Código <span className="text-text/60">(opcional — identificador corto de ALCO para reportes)</span>
+            <span>
+              Código <span className={FIELD_OPTIONAL}>opcional</span>
+            </span>
             <input name="code" defaultValue={position?.code ?? ""} className={INPUT} />
+            <span className={FIELD_HINT}>Identificador corto de ALCO para reportes.</span>
           </label>
           <label className={LABEL}>
             Departamento

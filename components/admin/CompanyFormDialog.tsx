@@ -8,6 +8,7 @@ import { Icon } from "@/components/ui/icons";
 import { Collapsible } from "@/components/ui/Collapsible";
 import { FileDropzone, type DropzoneState } from "@/components/ui/FileDropzone";
 import { useToast } from "./Toaster";
+import { useFormSubmit } from "@/components/ui/useFormSubmit";
 import { DocumentField } from "./DocumentField";
 import { DocumentCameraCapture } from "./DocumentCameraCapture";
 import { FileIconButton } from "./FileIconButton";
@@ -21,7 +22,7 @@ import {
 } from "@/app/admin/empresas/actions";
 import { ADMIN_ACTION_INITIAL } from "@/lib/adminActionState";
 import type { RifExtractedFields } from "@/lib/rifParser";
-import { FIELD_INPUT as INPUT, FIELD_LABEL as LABEL } from "@/components/ui/fieldStyles";
+import { FIELD_INPUT as INPUT, FIELD_LABEL as LABEL, FIELD_OPTIONAL, FIELD_HINT } from "@/components/ui/fieldStyles";
 import { COMMON_TIMEZONES, DEFAULT_TZ } from "@/lib/time";
 import { ImpactPreview } from "./ImpactPreview";
 
@@ -64,6 +65,7 @@ export function CompanyFormDialog({
     editing ? updateCompanyAction : createCompanyAction,
     ADMIN_ACTION_INITIAL
   );
+  const onSubmit = useFormSubmit(formAction, state);
   const { push } = useToast();
   const formId = useId();
   const formRef = useRef<HTMLFormElement>(null);
@@ -189,12 +191,11 @@ export function CompanyFormDialog({
           </Btn>
         }
       >
-        <form id={formId} ref={formRef} action={formAction} className="flex flex-col gap-3">
+        <form id={formId} ref={formRef} onSubmit={onSubmit} className="flex flex-col gap-3">
           {editing && <input type="hidden" name="id" value={company.id} />}
 
           <label className={LABEL}>
-            Autocompletar desde RIF{" "}
-            <span className="text-text/60">(PDF del comprobante del SENIAT o foto)</span>
+            <span>Autocompletar desde RIF</span>
             <div className="flex flex-wrap items-center gap-2">
               <FileIconButton
                 icon={Icon.upload}
@@ -212,6 +213,7 @@ export function CompanyFormDialog({
               />
               {rifParsing && <span className="text-text/60">Leyendo…</span>}
             </div>
+            <span className={FIELD_HINT}>PDF del comprobante del SENIAT o foto.</span>
           </label>
 
           <label className={LABEL}>
@@ -230,7 +232,9 @@ export function CompanyFormDialog({
           />
 
           <label className={LABEL}>
-            Grupo <span className="text-text/60">(opcional — si el grupo comparte empleados, sus sedes se comparten)</span>
+            <span>
+              Grupo <span className={FIELD_OPTIONAL}>opcional</span>
+            </span>
             <select
               name="group_id"
               value={groupId ?? ""}
@@ -244,6 +248,7 @@ export function CompanyFormDialog({
                 </option>
               ))}
             </select>
+            <span className={FIELD_HINT}>Si el grupo comparte empleados, sus sedes se comparten.</span>
           </label>
           {editing && open && groupId !== company.group_id && (
             <ImpactPreview change={{ kind: "company_group", companyId: company.id, groupId }} />
@@ -281,7 +286,9 @@ export function CompanyFormDialog({
               </label>
               <div className="flex flex-col sm:grid sm:grid-cols-2 gap-2">
                 <label className={LABEL}>
-                  Código <span className="text-text/60">(opcional)</span>
+                  <span>
+                    Código <span className={FIELD_OPTIONAL}>opcional</span>
+                  </span>
                   <input name="site_code" className={INPUT} />
                 </label>
                 <label className={LABEL}>

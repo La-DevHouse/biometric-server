@@ -133,7 +133,7 @@
 :root {
   --control-h: 40px;
   --control-px: 12px;
-  --icon-glyph: 22px;
+  --icon-glyph: 20px; /* SVG de components/ui/icons.tsx dentro de la caja de 40 */
   --checkbox: 18px;
 }
 
@@ -154,6 +154,7 @@
     --control-h: 48px;
     --control-px: 14px;
     --checkbox: 22px;
+    --icon-glyph: 22px;
   }
 }
 

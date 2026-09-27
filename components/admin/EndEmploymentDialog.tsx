@@ -6,6 +6,7 @@ import { Btn } from "@/components/ui/Btn";
 import { IconBtn } from "@/components/ui/IconBtn";
 import { Icon } from "@/components/ui/icons";
 import { useToast } from "./Toaster";
+import { useFormSubmit } from "@/components/ui/useFormSubmit";
 import { endEmploymentAction } from "@/app/admin/empleados/actions";
 import { ADMIN_ACTION_INITIAL } from "@/lib/adminActionState";
 import { FIELD_INPUT as INPUT } from "@/components/ui/fieldStyles";
@@ -20,6 +21,7 @@ export function EndEmploymentDialog({
 }) {
   const [open, setOpen] = useState(false);
   const [state, formAction, pending] = useActionState(endEmploymentAction, ADMIN_ACTION_INITIAL);
+  const onSubmit = useFormSubmit(formAction, state);
   const { push } = useToast();
 
   useEffect(() => {
@@ -33,7 +35,7 @@ export function EndEmploymentDialog({
     <>
       <IconBtn icon={Icon.power} label={`Dar de baja en ${companyName}`} tone="danger" onClick={() => setOpen(true)} />
       <Dialog open={open} onClose={() => setOpen(false)} title={`Dar de baja en ${companyName}`}>
-        <form action={formAction} className="flex flex-col gap-3">
+        <form onSubmit={onSubmit} className="flex flex-col gap-3">
           <input type="hidden" name="id" value={employmentId} />
           <p className="m-0 text-xs text-text/70">
             El contrato queda cerrado con esta fecha. La persona sigue en el sistema (pool de

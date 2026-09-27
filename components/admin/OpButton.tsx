@@ -36,7 +36,7 @@ export function OpButton({
 }) {
   const [open, setOpen] = useState(false);
   const formId = useId();
-  const { formAction, startError, busy } = useOperation(action, { onStarted: close });
+  const { onSubmit, startError, busy } = useOperation(action, { onStarted: close });
 
   function close() {
     setOpen(false);
@@ -67,7 +67,7 @@ export function OpButton({
             {description ?? "Se envía al equipo en segundo plano: podés seguir usando el panel mientras se procesa."}
           </p>
           <p className="text-xs text-text/70 m-0">El avance y el resultado aparecen en el panel “Procesando”.</p>
-          <form id={formId} action={formAction}>
+          <form id={formId} onSubmit={onSubmit}>
             {Object.entries(hidden).map(([k, v]) => (
               <input key={k} type="hidden" name={k} value={v} />
             ))}

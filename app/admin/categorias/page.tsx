@@ -24,15 +24,10 @@ type Tab = "modelos" | "puestos" | "departamentos";
  * Departamentos, en ese orden (departamentos está previsto pero sin uso en
  * Fase 1, docs/09 DC5). La pestaña va en `?tab=` — es una sola pantalla.
  */
-export default async function CategoriasPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ tab?: string }>;
-}) {
+export default async function CategoriasPage({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
   await requireUser();
   const sp = await searchParams;
-  const tab: Tab =
-    sp.tab === "puestos" || sp.tab === "departamentos" ? sp.tab : "modelos";
+  const tab: Tab = sp.tab === "puestos" || sp.tab === "departamentos" ? sp.tab : "modelos";
   const [departments, positions, businessModels] = await Promise.all([
     prisma.department.findMany({
       orderBy: { name: "asc" },
@@ -52,9 +47,7 @@ export default async function CategoriasPage({
     }),
   ]);
   const deptOptions = departments.map((d) => ({ id: d.id, name: d.name }));
-  const bmOptions = businessModels
-    .filter((b) => b.status === "active")
-    .map((b) => ({ id: b.id, name: b.name }));
+  const bmOptions = businessModels.filter((b) => b.status === "active").map((b) => ({ id: b.id, name: b.name }));
 
   return (
     <div className="flex max-w-4xl flex-col gap-4">
@@ -88,14 +81,11 @@ export default async function CategoriasPage({
             <BusinessModelFormDialog />
           </div>
           <p className="mb-2 mt-0 text-xs text-text/60">
-            Tipo de comercio de la empresa (farmacia, restaurante, colegio…).
-            Filtra qué puestos se ofrecen al crear un contrato.
+            Tipo de comercio de la empresa (farmacia, restaurante, colegio…). Filtra qué puestos se ofrecen al crear un
+            contrato.
           </p>
           {businessModels.length === 0 ? (
-            <EmptyState
-              title="Sin modelos de negocio"
-              description="Creá el primero."
-            />
+            <EmptyState title="Sin modelos de negocio" description="Creá el primero." />
           ) : (
             <>
               <div className="hidden md:block">
@@ -114,25 +104,17 @@ export default async function CategoriasPage({
                     {businessModels.map((b) => (
                       <Tr key={b.id}>
                         <Td>{b.name}</Td>
-                        <Td className="font-mono text-xs">
-                          {b.code ?? <span className="text-text/60">—</span>}
-                        </Td>
+                        <Td className="font-mono text-xs">{b.code ?? <span className="text-text/60">—</span>}</Td>
                         <Td>{b._count.companies}</Td>
                         <Td>{b._count.positions}</Td>
                         <Td>
-                          <Tag
-                            variant={
-                              b.status === "active" ? "accent" : "neutral"
-                            }
-                          >
+                          <Tag variant={b.status === "active" ? "accent" : "neutral"}>
                             {b.status === "active" ? "Activo" : "Inactivo"}
                           </Tag>
                         </Td>
-                        <Td>
+                        <Td actions>
                           <span className="inline-flex items-center gap-1">
-                            <BusinessModelFormDialog
-                              model={{ id: b.id, name: b.name, code: b.code }}
-                            />
+                            <BusinessModelFormDialog model={{ id: b.id, name: b.name, code: b.code }} />
                             <RecordStatusButton
                               id={b.id}
                               active={b.status === "active"}
@@ -152,9 +134,7 @@ export default async function CategoriasPage({
                     key={b.id}
                     title={b.name}
                     tags={
-                      <Tag
-                        variant={b.status === "active" ? "accent" : "neutral"}
-                      >
+                      <Tag variant={b.status === "active" ? "accent" : "neutral"}>
                         {b.status === "active" ? "Activo" : "Inactivo"}
                       </Tag>
                     }
@@ -165,9 +145,7 @@ export default async function CategoriasPage({
                     ]}
                     actions={
                       <>
-                        <BusinessModelFormDialog
-                          model={{ id: b.id, name: b.name, code: b.code }}
-                        />
+                        <BusinessModelFormDialog model={{ id: b.id, name: b.name, code: b.code }} />
                         <RecordStatusButton
                           id={b.id}
                           active={b.status === "active"}
@@ -189,10 +167,7 @@ export default async function CategoriasPage({
             <h3 className="m-0 text-sm font-semibold uppercase tracking-wide text-text/75">
               Puestos ({positions.length})
             </h3>
-            <PositionFormDialog
-              departments={deptOptions}
-              businessModels={bmOptions}
-            />
+            <PositionFormDialog departments={deptOptions} businessModels={bmOptions} />
           </div>
           {positions.length === 0 ? (
             <EmptyState title="Sin puestos" description="Creá el primero." />
@@ -215,14 +190,8 @@ export default async function CategoriasPage({
                     {positions.map((p) => (
                       <Tr key={p.id}>
                         <Td>{p.name}</Td>
-                        <Td className="font-mono text-xs">
-                          {p.code ?? <span className="text-text/60">—</span>}
-                        </Td>
-                        <Td>
-                          {p.department?.name ?? (
-                            <span className="text-text/60">—</span>
-                          )}
-                        </Td>
+                        <Td className="font-mono text-xs">{p.code ?? <span className="text-text/60">—</span>}</Td>
+                        <Td>{p.department?.name ?? <span className="text-text/60">—</span>}</Td>
                         <Td className="text-xs">
                           {p.business_models.length === 0 ? (
                             <span className="text-text/60">Genérico</span>
@@ -232,15 +201,11 @@ export default async function CategoriasPage({
                         </Td>
                         <Td>{p._count.employments}</Td>
                         <Td>
-                          <Tag
-                            variant={
-                              p.status === "active" ? "accent" : "neutral"
-                            }
-                          >
+                          <Tag variant={p.status === "active" ? "accent" : "neutral"}>
                             {p.status === "active" ? "Activo" : "Inactivo"}
                           </Tag>
                         </Td>
-                        <Td>
+                        <Td actions>
                           <span className="inline-flex items-center gap-1">
                             <PositionFormDialog
                               departments={deptOptions}
@@ -251,9 +216,7 @@ export default async function CategoriasPage({
                                 code: p.code,
                                 description: p.description,
                                 department_id: p.department_id,
-                                business_model_ids: p.business_models.map(
-                                  (x) => x.business_model_id,
-                                ),
+                                business_model_ids: p.business_models.map((x) => x.business_model_id),
                               }}
                             />
                             <RecordStatusButton
@@ -275,9 +238,7 @@ export default async function CategoriasPage({
                     key={p.id}
                     title={p.name}
                     tags={
-                      <Tag
-                        variant={p.status === "active" ? "accent" : "neutral"}
-                      >
+                      <Tag variant={p.status === "active" ? "accent" : "neutral"}>
                         {p.status === "active" ? "Activo" : "Inactivo"}
                       </Tag>
                     }
@@ -289,10 +250,7 @@ export default async function CategoriasPage({
                       },
                       {
                         label: "Modelos",
-                        value:
-                          p.business_models.length === 0
-                            ? "Genérico"
-                            : p.business_models.length,
+                        value: p.business_models.length === 0 ? "Genérico" : p.business_models.length,
                       },
                       { label: "Contratos", value: p._count.employments },
                     ]}
@@ -307,9 +265,7 @@ export default async function CategoriasPage({
                             code: p.code,
                             description: p.description,
                             department_id: p.department_id,
-                            business_model_ids: p.business_models.map(
-                              (x) => x.business_model_id,
-                            ),
+                            business_model_ids: p.business_models.map((x) => x.business_model_id),
                           }}
                         />
                         <RecordStatusButton
@@ -336,10 +292,7 @@ export default async function CategoriasPage({
             <DepartmentFormDialog />
           </div>
           {departments.length === 0 ? (
-            <EmptyState
-              title="Sin departamentos"
-              description="Creá el primero."
-            />
+            <EmptyState title="Sin departamentos" description="Creá el primero." />
           ) : (
             <>
               <div className="hidden md:block">
@@ -358,21 +311,15 @@ export default async function CategoriasPage({
                     {departments.map((d) => (
                       <Tr key={d.id}>
                         <Td>{d.name}</Td>
-                        <Td className="font-mono text-xs">
-                          {d.code ?? <span className="text-text/60">—</span>}
-                        </Td>
+                        <Td className="font-mono text-xs">{d.code ?? <span className="text-text/60">—</span>}</Td>
                         <Td>{d._count.positions}</Td>
                         <Td>{d._count.employments}</Td>
                         <Td>
-                          <Tag
-                            variant={
-                              d.status === "active" ? "accent" : "neutral"
-                            }
-                          >
+                          <Tag variant={d.status === "active" ? "accent" : "neutral"}>
                             {d.status === "active" ? "Activo" : "Inactivo"}
                           </Tag>
                         </Td>
-                        <Td>
+                        <Td actions>
                           <span className="inline-flex items-center gap-1">
                             <DepartmentFormDialog
                               department={{
@@ -401,9 +348,7 @@ export default async function CategoriasPage({
                     key={d.id}
                     title={d.name}
                     tags={
-                      <Tag
-                        variant={d.status === "active" ? "accent" : "neutral"}
-                      >
+                      <Tag variant={d.status === "active" ? "accent" : "neutral"}>
                         {d.status === "active" ? "Activo" : "Inactivo"}
                       </Tag>
                     }

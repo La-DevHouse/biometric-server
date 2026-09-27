@@ -35,7 +35,7 @@ export function ChangePrivilegeDialog({
 }) {
   const [open, setOpen] = useState(false);
   const [privilege, setPrivilege] = useState<Privilege>((currentPrivilege as Privilege) || "USER");
-  const { formAction, startError, busy } = useOperation(changePrivilegeAction, { onStarted: close });
+  const { onSubmit, startError, busy } = useOperation(changePrivilegeAction, { onStarted: close });
 
   function close() {
     setOpen(false);
@@ -46,7 +46,7 @@ export function ChangePrivilegeDialog({
       <IconBtn icon={Icon.rank} label={`Privilegio de usuario ${userId}`} onClick={() => setOpen(true)} />
       <Dialog open={open} onClose={close} closable={!busy} title={`Privilegio de usuario ${userId}`}>
         <div className="flex flex-col gap-3">
-          <form action={formAction} className="flex flex-col gap-3">
+          <form onSubmit={onSubmit} className="flex flex-col gap-3">
             <input type="hidden" name="dev_id" value={devId} />
             <input type="hidden" name="user_id" value={userId} />
             <input type="hidden" name="user_privilege" value={privilege} />

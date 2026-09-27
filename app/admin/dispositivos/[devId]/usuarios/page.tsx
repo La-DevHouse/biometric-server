@@ -150,8 +150,7 @@ export default async function DeviceUsersPage({ params }: { params: Promise<{ de
                   <Th>Nombre en equipo</Th>
                   <Th>Privilegio</Th>
                   <Th>Empleado</Th>
-                  <Th>Huellas (físicas / copiadas)</Th>
-                  <Th>Plantillas leídas</Th>
+                  <Th>Huellas</Th>
                   <Th />
                 </tr>
               </thead>
@@ -164,12 +163,17 @@ export default async function DeviceUsersPage({ params }: { params: Promise<{ de
                       <PrivilegeTag privilege={u.user_privilege} />
                     </Td>
                     <Td>{employeeCell(u.user_id)}</Td>
-                    <Td className="text-xs">
-                      {slotCount(u.user_id, "physical")} / {slotCount(u.user_id, "propagated")}
+                    <Td className="whitespace-nowrap">
+                      {/* físicas / copiadas (procedencia, device_fingerprint_slot) · plantillas leídas del equipo */}
+                      <span title="físicas / copiadas">
+                        {slotCount(u.user_id, "physical")} / {slotCount(u.user_id, "propagated")}
+                      </span>
+                      <span className="block text-xs text-neutral-700">
+                        {u.bio_count > 0 ? `${u.bio_count} leída${u.bio_count === 1 ? "" : "s"}` : "sin leer"}
+                      </span>
                     </Td>
-                    <Td className="text-xs">{u.bio_count > 0 ? u.bio_count : <span className="text-text/60">—</span>}</Td>
                     <Td actions>
-                      <div className="flex flex-wrap justify-end gap-1.5">{actions(u)}</div>
+                      <div className="flex flex-nowrap justify-end gap-[6px]">{actions(u)}</div>
                     </Td>
                   </Tr>
                 ))}

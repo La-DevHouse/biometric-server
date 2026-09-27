@@ -7,9 +7,10 @@ import { IconBtn } from "@/components/ui/IconBtn";
 import { Icon } from "@/components/ui/icons";
 import { Combobox } from "@/components/ui/Combobox";
 import { useToast } from "./Toaster";
+import { useFormSubmit } from "@/components/ui/useFormSubmit";
 import { assignDeviceAction } from "@/app/admin/dispositivos/actions";
 import { ADMIN_ACTION_INITIAL } from "@/lib/adminActionState";
-import { FIELD_INPUT as INPUT, FIELD_LABEL as LABEL } from "@/components/ui/fieldStyles";
+import { FIELD_INPUT as INPUT, FIELD_LABEL as LABEL, FIELD_HINT } from "@/components/ui/fieldStyles";
 import { ImpactPreview } from "./ImpactPreview";
 
 /**
@@ -32,6 +33,7 @@ export function DeviceAssignDialog({
     sites.find((s) => s.id === current.site_id)?.company_id ?? null
   );
   const [state, formAction, pending] = useActionState(assignDeviceAction, ADMIN_ACTION_INITIAL);
+  const onSubmit = useFormSubmit(formAction, state);
   const { push } = useToast();
 
   useEffect(() => {
@@ -71,7 +73,7 @@ export function DeviceAssignDialog({
         onClick={() => setOpen(true)}
       />
       <Dialog open={open} onClose={() => setOpen(false)} title="Asignar equipo">
-        <form action={formAction} className="flex flex-col gap-3">
+        <form onSubmit={onSubmit} className="flex flex-col gap-3">
           <input type="hidden" name="dev_id" value={devId} />
           <p className="m-0 text-xs text-text/70">
             El equipo pertenece a una sede, y por ella a una empresa. Define quién se enrola en él:
@@ -118,8 +120,11 @@ export function DeviceAssignDialog({
           )}
 
           <label className={LABEL}>
-            Nota interna <span className="text-text/60">(admin del equipo del lado de la empresa, texto libre)</span>
+            <span>
+              Nota interna
+            </span>
             <input name="device_admin_note" className={INPUT} defaultValue={current.note ?? ""} />
+            <span className={FIELD_HINT}>Admin del equipo del lado de la empresa, texto libre.</span>
           </label>
 
           <Btn type="submit" variant="primary" disabled={pending}>

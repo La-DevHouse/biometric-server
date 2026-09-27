@@ -185,7 +185,7 @@ export function CommandPalette() {
         aria-label="Buscar (⌘K)"
         className="ml-auto flex h-(--control-h) w-(--control-h) flex-none cursor-pointer items-center justify-center gap-[8px] border border-neutral-500 bg-surface text-sm text-neutral-700 hover:border-text md:w-[370px] md:justify-start md:px-[12px] md:text-left whitespace-nowrap"
       >
-        <span aria-hidden className="text-[20px] leading-none">⌕</span>
+        <span aria-hidden className="text-[20px] leading-none max-md:text-[35px]">⌕</span>
         <span className="hidden md:inline">Buscar empresas, empleados, equipos…</span>
         <kbd className="ml-auto hidden border border-divider px-[6px] font-mono text-2xs text-neutral-700 md:inline">
           {isMac ? "⌘K" : "Ctrl K"}

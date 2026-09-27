@@ -12,7 +12,7 @@ export function ClearEnrollDialog({ devId }: { devId: string }) {
   // Segunda confirmación (docs/10 §6): escribir el número de serie del equipo.
   const [typed, setTyped] = useState("");
   const confirmed = ack && typed.trim() === devId;
-  const { formAction, startError, busy } = useOperation(clearEnrollAction, { onStarted: close });
+  const { onSubmit, startError, busy } = useOperation(clearEnrollAction, { onStarted: close });
 
   function close() {
     setOpen(false);
@@ -27,7 +27,7 @@ export function ClearEnrollDialog({ devId }: { devId: string }) {
       </Btn>
       <Dialog open={open} onClose={close} closable={!busy} title="Borrar todos los biométricos">
         <div className="flex flex-col gap-3">
-          <form action={formAction} className="flex flex-col gap-3">
+          <form onSubmit={onSubmit} className="flex flex-col gap-3">
             <input type="hidden" name="dev_id" value={devId} />
             <p className="text-sm m-0">
               Esto borra las huellas de <strong>todos</strong> los usuarios del equipo. Tendrán que

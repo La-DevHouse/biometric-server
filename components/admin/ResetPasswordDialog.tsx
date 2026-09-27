@@ -6,6 +6,7 @@ import { Btn } from "@/components/ui/Btn";
 import { IconBtn } from "@/components/ui/IconBtn";
 import { Icon } from "@/components/ui/icons";
 import { useToast } from "./Toaster";
+import { useFormSubmit } from "@/components/ui/useFormSubmit";
 import { resetPasswordAction } from "@/app/admin/cuentas/actions";
 import { ADMIN_ACTION_INITIAL } from "@/lib/adminActionState";
 import { FIELD_INPUT as INPUT } from "@/components/ui/fieldStyles";
@@ -13,6 +14,7 @@ import { FIELD_INPUT as INPUT } from "@/components/ui/fieldStyles";
 export function ResetPasswordDialog({ id, name }: { id: number; name: string }) {
   const [open, setOpen] = useState(false);
   const [state, formAction, pending] = useActionState(resetPasswordAction, ADMIN_ACTION_INITIAL);
+  const onSubmit = useFormSubmit(formAction, state);
   const { push } = useToast();
 
   useEffect(() => {
@@ -26,7 +28,7 @@ export function ResetPasswordDialog({ id, name }: { id: number; name: string }) 
     <>
       <IconBtn icon={Icon.key} label={`Resetear contraseña — ${name}`} onClick={() => setOpen(true)} />
       <Dialog open={open} onClose={() => setOpen(false)} title={`Resetear contraseña — ${name}`}>
-        <form action={formAction} className="flex flex-col gap-3">
+        <form onSubmit={onSubmit} className="flex flex-col gap-3">
           <input type="hidden" name="id" value={id} />
           <p className="m-0 text-xs text-text/70">
             Se cierran todas las sesiones abiertas de esta cuenta. La persona deberá entrar con la

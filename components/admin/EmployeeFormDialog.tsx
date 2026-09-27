@@ -6,6 +6,7 @@ import { Btn } from "@/components/ui/Btn";
 import { IconBtn } from "@/components/ui/IconBtn";
 import { Icon } from "@/components/ui/icons";
 import { useToast } from "./Toaster";
+import { useFormSubmit } from "@/components/ui/useFormSubmit";
 import { DocumentField } from "./DocumentField";
 import { DocumentCameraCapture } from "./DocumentCameraCapture";
 import { FileIconButton } from "./FileIconButton";
@@ -35,6 +36,7 @@ export function EmployeeFormDialog({ employee }: { employee?: EmployeeValues }) 
     editing ? updateEmployeeAction : createEmployeeAction,
     ADMIN_ACTION_INITIAL
   );
+  const onSubmit = useFormSubmit(formAction, state);
   const { push } = useToast();
   const formId = useId();
   const formRef = useRef<HTMLFormElement>(null);
@@ -113,7 +115,7 @@ export function EmployeeFormDialog({ employee }: { employee?: EmployeeValues }) 
           </Btn>
         }
       >
-        <form id={formId} ref={formRef} action={formAction} className="flex flex-col gap-3">
+        <form id={formId} ref={formRef} onSubmit={onSubmit} className="flex flex-col gap-3">
           {editing && <input type="hidden" name="id" value={employee.id} />}
           <input ref={cedulaFileInputRef} type="file" name="cedula_photo" className="hidden" />
 

@@ -1,7 +1,7 @@
 "use client";
 
-import { useRef } from "react";
-import { Btn } from "@/components/ui/Btn";
+import { useRef, type ReactNode } from "react";
+import { IconBtn } from "@/components/ui/IconBtn";
 
 /**
  * Botón solo-ícono que abre el selector de archivos nativo — estandariza el
@@ -15,7 +15,7 @@ export function FileIconButton({
   disabled,
   onFile,
 }: {
-  icon: string;
+  icon: ReactNode;
   label: string;
   accept: string;
   disabled?: boolean;
@@ -25,16 +25,7 @@ export function FileIconButton({
 
   return (
     <>
-      <Btn
-        type="button"
-        variant="icon"
-        title={label}
-        aria-label={label}
-        disabled={disabled}
-        onClick={() => ref.current?.click()}
-      >
-        <span aria-hidden>{icon}</span>
-      </Btn>
+      <IconBtn type="button" icon={icon} label={label} disabled={disabled} onClick={() => ref.current?.click()} />
       <input
         ref={ref}
         type="file"

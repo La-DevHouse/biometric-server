@@ -6,9 +6,9 @@ import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { writeAudit } from "@/lib/audit";
 import type { AdminActionState } from "@/lib/adminActionState";
+import { computeShiftTimes, normalizeTime } from "@/lib/shiftTime";
 
 const ABSENCE_RULES = ["no_check_in", "no_marks", "under_hours"] as const;
-const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 function str(fd: FormData, k: string) {
   return String(fd.get(k) ?? "").trim();
@@ -119,18 +119,19 @@ type ShiftFields = Omit<
 
 function shiftData(fd: FormData): { data?: ShiftFields; error?: string } {
   const name = str(fd, "name");
-  const start_time = str(fd, "start_time");
-  const end_time = str(fd, "end_time");
-  const break_start = str(fd, "break_start") || null;
-  const break_end = str(fd, "break_end") || null;
+  // Se guardan normalizadas ("7:00" → "07:00"), como las muestra el formulario.
+  const start_time = normalizeTime(str(fd, "start_time"));
+  const end_time = normalizeTime(str(fd, "end_time"));
+  const break_start = normalizeTime(str(fd, "break_start")) || null;
+  const break_end = normalizeTime(str(fd, "break_end")) || null;
   const effRaw = str(fd, "effective_from");
   const effToRaw = str(fd, "effective_to");
 
   if (!name) return { error: "El nombre del turno es obligatorio." };
-  if (!TIME_RE.test(start_time) || !TIME_RE.test(end_time))
-    return { error: "Hora de inicio/fin inválida (formato HH:MM, 24h)." };
-  if (break_start && !TIME_RE.test(break_start)) return { error: "Hora de inicio de descanso inválida." };
-  if (break_end && !TIME_RE.test(break_end)) return { error: "Hora de fin de descanso inválida." };
+  // Horas de jornada y "cruza la medianoche" se CALCULAN de las horas (lib/shiftTime):
+  // lo que venga del formulario para esos dos campos se ignora.
+  const times = computeShiftTimes({ start: start_time, end: end_time, breakStart: break_start, breakEnd: break_end });
+  if (!times.ok) return { error: times.error };
   if (!effRaw) return { error: "La fecha de vigencia desde es obligatoria." };
   const effective_from = new Date(effRaw);
   const effective_to = effToRaw ? new Date(effToRaw) : null;
@@ -139,7 +140,6 @@ function shiftData(fd: FormData): { data?: ShiftFields; error?: string } {
     return { error: "La fecha 'hasta' no puede ser anterior a 'desde'." };
 
   const workdays = fd.getAll("workdays").map((v) => Number(v)).filter((n) => n >= 1 && n <= 7);
-  const hoursRaw = str(fd, "hours");
 
   return {
     data: {
@@ -149,9 +149,9 @@ function shiftData(fd: FormData): { data?: ShiftFields; error?: string } {
       end_time,
       break_start,
       break_end,
-      hours: hoursRaw === "" ? null : hoursRaw,
+      hours: times.hours,
       variable_in_out: fd.get("variable_in_out") === "on",
-      crosses_midnight: fd.get("crosses_midnight") === "on",
+      crosses_midnight: times.crossesMidnight,
       workdays,
       effective_from,
       effective_to,

@@ -20,7 +20,7 @@ export function RenameUserDialog({
 }) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState(currentName);
-  const { formAction, startError, busy } = useOperation(renameUserAction, { onStarted: close });
+  const { onSubmit, startError, busy } = useOperation(renameUserAction, { onStarted: close });
 
   function close() {
     setOpen(false);
@@ -34,7 +34,7 @@ export function RenameUserDialog({
       <IconBtn icon={Icon.edit} label={`Renombrar usuario ${userId}`} onClick={() => setOpen(true)} />
       <Dialog open={open} onClose={close} closable={!busy} title={`Renombrar usuario ${userId}`}>
         <div className="flex flex-col gap-3">
-          <form action={formAction} className="flex flex-col gap-3">
+          <form onSubmit={onSubmit} className="flex flex-col gap-3">
             <input type="hidden" name="dev_id" value={devId} />
             <input type="hidden" name="user_id" value={userId} />
             <label className="flex flex-col gap-1 text-xs text-text/85">

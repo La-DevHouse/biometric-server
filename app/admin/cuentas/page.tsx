@@ -74,8 +74,8 @@ export default async function CuentasPage() {
                 </Td>
                 <Td className="text-xs">{fmtWhen(a.last_login_at)}</Td>
                 <Td className="text-xs">{a._count.sessions}</Td>
-                <Td>
-                  <div className="flex flex-wrap items-center gap-1.5">
+                <Td actions>
+                  <div className="flex flex-nowrap items-center gap-[6px]">
                     <AccountFormDialog account={{ id: a.id, name: a.name, email: a.email }} />
                     <ResetPasswordDialog id={a.id} name={a.name} />
                     <RecordStatusButton

@@ -38,7 +38,9 @@ export function Th({ className, children }: { className?: string; children?: Rea
 /**
  * `actions`: la celda contiene botones propios (editar, desactivar…) — se pone
  * por encima del link estirado de la fila (ver RowLink) para que un clic en
- * un ícono haga su acción y no navegue al detalle.
+ * un ícono haga su acción y no navegue al detalle. `w-px whitespace-nowrap`:
+ * la columna mide lo que sus botones y nunca los parte en dos filas (con los
+ * íconos de 40px, el ancho repartido por la tabla no alcanzaba).
  */
 export function Td({
   className,
@@ -52,7 +54,7 @@ export function Td({
   colSpan?: number;
 }) {
   return (
-    <td colSpan={colSpan} className={cx("px-[14px] py-[11px] align-middle border-b border-neutral-200", actions && "relative z-10", className)}>
+    <td colSpan={colSpan} className={cx("px-[14px] py-[11px] align-middle border-b border-neutral-200", actions && "relative z-10 w-px whitespace-nowrap", className)}>
       {children}
     </td>
   );

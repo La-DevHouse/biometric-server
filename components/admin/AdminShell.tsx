@@ -208,9 +208,17 @@ export function AdminShell({
               onClick={() => setMobileOpen((o) => !o)}
               aria-label={mobileOpen ? "Cerrar menú" : "Abrir menú"}
               aria-expanded={mobileOpen}
-              className="flex-none w-[40px] h-[40px] flex items-center justify-center border border-neutral-500 bg-transparent cursor-pointer text-[20px] leading-none md:hidden"
+              className="flex-none w-[40px] h-[40px] flex items-center justify-center border border-neutral-500 bg-transparent cursor-pointer text-[25px] leading-none md:hidden"
             >
-              {mobileOpen ? "×" : "☰"}
+              {/* SVG y no el glifo "☰": la fuente lo dibuja por debajo del centro
+                  de la caja. 18×14 = 1.25× el glifo anterior. */}
+              {mobileOpen ? (
+                "×"
+              ) : (
+                <svg viewBox="0 0 18 14" width="18" height="14" aria-hidden className="block">
+                  <path d="M0 1h18M0 7h18M0 13h18" stroke="currentColor" strokeWidth="2" />
+                </svg>
+              )}
             </button>
             <h4 className="font-heading text-xl font-semibold tracking-[-0.01em] m-0 truncate">{titleFor(pathname)}</h4>
             <CommandPalette />

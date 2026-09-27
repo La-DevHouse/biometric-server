@@ -11,7 +11,7 @@ import { FIELD_INPUT as INPUT_CLASS } from "@/components/ui/fieldStyles";
 
 export function RenameDeviceDialog({ devId, currentName }: { devId: string; currentName: string }) {
   const [open, setOpen] = useState(false);
-  const { formAction, startError, busy } = useOperation(renameDeviceAction, { onStarted: close });
+  const { onSubmit, startError, busy } = useOperation(renameDeviceAction, { onStarted: close });
 
   function close() {
     setOpen(false);
@@ -22,7 +22,7 @@ export function RenameDeviceDialog({ devId, currentName }: { devId: string; curr
       <IconBtn icon={Icon.edit} label="Renombrar" onClick={() => setOpen(true)} />
       <Dialog open={open} onClose={close} closable={!busy} title="Renombrar equipo">
         <div className="flex flex-col gap-3">
-          <form action={formAction} className="flex flex-col gap-3">
+          <form onSubmit={onSubmit} className="flex flex-col gap-3">
             <input type="hidden" name="dev_id" value={devId} />
             <label className="flex flex-col gap-1 text-xs text-text/85">
               Nombre nuevo

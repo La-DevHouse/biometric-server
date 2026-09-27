@@ -1,15 +1,12 @@
 import Link from "next/link";
+import { Suspense } from "react";
 import { notFound } from "next/navigation";
 import { initDb, prisma } from "@/lib/db";
-import {
-  companyAttendance,
-  companyAttendanceSites,
-  type CompanyAttendanceRow,
-} from "@/lib/companyAttendance";
+import { companyAttendance, companyAttendanceSites, type CompanyAttendanceRow } from "@/lib/companyAttendance";
 import { requireUser } from "@/lib/auth";
 import { Table, Th, Td, Tr } from "@/components/ui/Table";
 import { MobileList, MobileRow } from "@/components/ui/MobileRow";
-import { Btn, DownloadBtn, DisabledBtn } from "@/components/ui/Btn";
+import { DownloadBtn, DisabledBtn } from "@/components/ui/Btn";
 import { Tip } from "@/components/ui/IconBtn";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { CompanyTabs } from "@/components/admin/CompanyTabs";
@@ -17,10 +14,8 @@ import { MultiOpButton } from "@/components/admin/MultiOpButton";
 import { Icon } from "@/components/ui/icons";
 import { syncCompanyAttendanceAction } from "@/app/admin/actions";
 import { formatIoTime } from "@/lib/ioTime";
-import {
-  FIELD_INPUT as INPUT,
-  FIELD_LABEL as LABEL,
-} from "@/components/ui/fieldStyles";
+import { UrlFilters } from "@/components/admin/UrlFilters";
+import { filterSummary } from "@/lib/filterSummary";
 
 export const dynamic = "force-dynamic";
 
@@ -52,8 +47,7 @@ export default async function EmpresaAsistenciaPage({
   });
   if (!company) notFound();
 
-  const siteId =
-    f.sede && Number.isFinite(Number(f.sede)) ? Number(f.sede) : null;
+  const siteId = f.sede && Number.isFinite(Number(f.sede)) ? Number(f.sede) : null;
   const [rows, sites] = await Promise.all([
     companyAttendance(id, {
       from: f.from,
@@ -65,8 +59,7 @@ export default async function EmpresaAsistenciaPage({
   ]);
   const truncated = rows.length > RESULT_LIMIT;
   const logs = rows.slice(0, RESULT_LIMIT);
-  const foreign = (companyId: number, companyName: string) =>
-    companyId === id ? "" : ` (${companyName})`;
+  const foreign = (companyId: number, companyName: string) => (companyId === id ? "" : ` (${companyName})`);
 
   // Export (docs/11 R8): exactamente lo filtrado en pantalla; exige rango.
   const exportParams = new URLSearchParams();
@@ -87,21 +80,12 @@ export default async function EmpresaAsistenciaPage({
       ) : (
         <DisabledBtn variant="icon">{Icon.export}</DisabledBtn>
       )}
-      <Tip
-        label={
-          canExport
-            ? "Exportar a Excel (Galepso)"
-            : "Elegí desde y hasta para exportar"
-        }
-      />
+      <Tip label={canExport ? "Exportar a Excel (Galepso)" : "Elegí desde y hasta para exportar"} />
     </span>
   );
 
   const person = (r: CompanyAttendanceRow) => (
-    <Link
-      href={`/admin/empleados/${r.employee_id}`}
-      className="text-accent no-underline hover:underline"
-    >
+    <Link href={`/admin/empleados/${r.employee_id}`} className="text-accent no-underline hover:underline">
       {r.last_name}, {r.first_name}
     </Link>
   );
@@ -128,43 +112,32 @@ export default async function EmpresaAsistenciaPage({
         }
       />
 
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <form method="GET" className="flex flex-wrap items-end gap-2">
-          <label className={LABEL}>
-            Desde
-            <input
-              type="date"
-              name="from"
-              defaultValue={f.from ?? ""}
-              className={INPUT}
-            />
-          </label>
-          <label className={LABEL}>
-            Hasta
-            <input
-              type="date"
-              name="to"
-              defaultValue={f.to ?? ""}
-              className={INPUT}
-            />
-          </label>
-          <label className={LABEL}>
-            Sede
-            <select name="sede" defaultValue={f.sede ?? ""} className={INPUT}>
-              <option value="">todas</option>
-              {sites.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name}
-                  {foreign(s.company_id, s.company.name)}
-                  {s.status !== "active" ? " — inactiva" : ""}
-                </option>
-              ))}
-            </select>
-          </label>
-          <Btn type="submit" variant="secondary">
-            Filtrar
-          </Btn>
-        </form>
+      <div className="flex items-center justify-between gap-3">
+        <p className="m-0 text-sm text-text/75">
+          {filterSummary(
+            f.from,
+            f.to,
+            siteId != null ? `Sede ${sites.find((s) => s.id === siteId)?.name ?? ""}` : null
+          )}
+        </p>
+        <Suspense fallback={<div className="h-(--control-h) w-(--control-h)" />}>
+          <UrlFilters
+            fields={[
+              { name: "from", label: "Desde", type: "date" },
+              { name: "to", label: "Hasta", type: "date" },
+              {
+                name: "sede",
+                label: "Sede",
+                type: "select",
+                emptyLabel: "todas",
+                options: sites.map((s) => ({
+                  value: String(s.id),
+                  label: `${s.name}${foreign(s.company_id, s.company.name)}${s.status !== "active" ? " — inactiva" : ""}`,
+                })),
+              },
+            ]}
+          />
+        </Suspense>
       </div>
 
       {logs.length === 0 ? (
@@ -203,11 +176,7 @@ export default async function EmpresaAsistenciaPage({
               <MobileRow
                 key={r.id}
                 title={`${r.last_name}, ${r.first_name}`}
-                tags={
-                  <span className="font-mono text-xs text-text/60">
-                    {formatIoTime(r.io_time)}
-                  </span>
-                }
+                tags={<span className="font-mono text-xs text-text/60">{formatIoTime(r.io_time)}</span>}
                 fields={[
                   { label: "Sede", value: r.site_name },
                   { label: "Equipo", value: r.device_name },
@@ -218,11 +187,8 @@ export default async function EmpresaAsistenciaPage({
           </MobileList>
           <p className="m-0 text-xs text-text/70">
             {logs.length} marcación{logs.length === 1 ? "" : "es"}
-            {truncated
-              ? ` (mostrando las ${RESULT_LIMIT} más recientes)`
-              : ""}{" "}
-            · por contrato: es lo que se exporta a nómina. Lo marcado en un
-            equipo por cualquier ID está en Equipos → Marcaciones.
+            {truncated ? ` (mostrando las ${RESULT_LIMIT} más recientes)` : ""} · por contrato: es lo que se exporta a
+            nómina. Lo marcado en un equipo por cualquier ID está en Equipos → Marcaciones.
           </p>
         </>
       )}

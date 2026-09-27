@@ -18,7 +18,7 @@ import { viewBiometricsAction } from "@/app/admin/actions";
  */
 export function ViewBiometricsDialog({ devId, userId }: { devId: string; userId: string }) {
   const [open, setOpen] = useState(false);
-  const { formAction, startError, busy } = useOperation(viewBiometricsAction, { onStarted: close });
+  const { onSubmit, startError, busy } = useOperation(viewBiometricsAction, { onStarted: close });
 
   function close() {
     setOpen(false);
@@ -34,7 +34,7 @@ export function ViewBiometricsDialog({ devId, userId }: { devId: string; userId:
               Las plantillas de huella son metadata de solo lectura — esto solo consulta al equipo
               qué huellas tiene registradas.
             </p>
-            <form action={formAction}>
+            <form onSubmit={onSubmit}>
               <input type="hidden" name="dev_id" value={devId} />
               <input type="hidden" name="user_id" value={userId} />
               {startError && <p className="text-sm m-0 text-text mb-2">{startError}</p>}

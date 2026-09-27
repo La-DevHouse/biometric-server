@@ -5,6 +5,7 @@ import { queueCommandAction, type QueueCommandState } from "@/app/admin/actions"
 import { COMMAND_TEMPLATES } from "@/lib/commandTemplates";
 import { Btn } from "@/components/ui/Btn";
 import { FIELD_INPUT as INPUT_CLASS } from "@/components/ui/fieldStyles";
+import { useFormSubmit } from "@/components/ui/useFormSubmit";
 
 const INITIAL_STATE: QueueCommandState = { status: "idle" };
 
@@ -14,11 +15,12 @@ export function DiagnosticoCommandForm({
   devices: { dev_id: string; label: string }[];
 }) {
   const [state, formAction, isPending] = useActionState(queueCommandAction, INITIAL_STATE);
+  const onSubmit = useFormSubmit(formAction, state);
   const [cmdCode, setCmdCode] = useState("");
   const template = cmdCode ? COMMAND_TEMPLATES[cmdCode] : undefined;
 
   return (
-    <form action={formAction} className="flex flex-col gap-3 max-w-md">
+    <form onSubmit={onSubmit} className="flex flex-col gap-3 max-w-md">
       <label className="flex flex-col gap-1 text-xs text-text/85">
         Equipo
         <select name="dev_id" required className={INPUT_CLASS} defaultValue="">

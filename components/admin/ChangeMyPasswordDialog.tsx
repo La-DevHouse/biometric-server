@@ -4,13 +4,15 @@ import { useActionState, useEffect, useState } from "react";
 import { Dialog } from "@/components/ui/Dialog";
 import { Btn } from "@/components/ui/Btn";
 import { useToast } from "./Toaster";
+import { useFormSubmit } from "@/components/ui/useFormSubmit";
 import { changeMyPasswordAction } from "@/app/admin/cuentas/actions";
 import { ADMIN_ACTION_INITIAL } from "@/lib/adminActionState";
-import { FIELD_INPUT as INPUT, FIELD_LABEL as LABEL } from "@/components/ui/fieldStyles";
+import { FIELD_INPUT as INPUT, FIELD_LABEL as LABEL, FIELD_HINT } from "@/components/ui/fieldStyles";
 
 export function ChangeMyPasswordDialog() {
   const [open, setOpen] = useState(false);
   const [state, formAction, pending] = useActionState(changeMyPasswordAction, ADMIN_ACTION_INITIAL);
+  const onSubmit = useFormSubmit(formAction, state);
   const { push } = useToast();
 
   useEffect(() => {
@@ -26,7 +28,7 @@ export function ChangeMyPasswordDialog() {
         Cambiar mi contraseña
       </Btn>
       <Dialog open={open} onClose={() => setOpen(false)} title="Cambiar mi contraseña">
-        <form action={formAction} className="flex flex-col gap-3">
+        <form onSubmit={onSubmit} className="flex flex-col gap-3">
           <p className="m-0 text-xs text-text/70">
             Se cierran tus otras sesiones abiertas; esta se mantiene.
           </p>
@@ -35,8 +37,11 @@ export function ChangeMyPasswordDialog() {
             <input name="current_password" type="password" required className={INPUT} autoFocus />
           </label>
           <label className={LABEL}>
-            Contraseña nueva * <span className="text-text/60">(mín. 8)</span>
+            <span>
+              Contraseña nueva *
+            </span>
             <input name="new_password" type="password" required minLength={8} className={INPUT} />
+            <span className={FIELD_HINT}>Mínimo 8 caracteres.</span>
           </label>
           <Btn type="submit" variant="primary" disabled={pending}>
             {pending ? "Guardando…" : "Actualizar"}

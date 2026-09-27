@@ -6,10 +6,11 @@ import { Btn } from "@/components/ui/Btn";
 import { IconBtn } from "@/components/ui/IconBtn";
 import { Icon } from "@/components/ui/icons";
 import { useToast } from "./Toaster";
+import { useFormSubmit } from "@/components/ui/useFormSubmit";
 import { createSiteAction, updateSiteAction } from "@/app/admin/empresas/actions";
 import { ADMIN_ACTION_INITIAL } from "@/lib/adminActionState";
 import { COMMON_TIMEZONES, DEFAULT_TZ } from "@/lib/time";
-import { FIELD_INPUT as INPUT, FIELD_LABEL as LABEL } from "@/components/ui/fieldStyles";
+import { FIELD_INPUT as INPUT, FIELD_LABEL as LABEL, FIELD_OPTIONAL, FIELD_HINT } from "@/components/ui/fieldStyles";
 
 export interface SiteFormValues {
   id: number;
@@ -31,6 +32,7 @@ export function SiteFormDialog({
     editing ? updateSiteAction : createSiteAction,
     ADMIN_ACTION_INITIAL
   );
+  const onSubmit = useFormSubmit(formAction, state);
   const { push } = useToast();
   const formId = useId();
 
@@ -60,7 +62,7 @@ export function SiteFormDialog({
           </Btn>
         }
       >
-        <form id={formId} action={formAction} className="flex flex-col gap-3">
+        <form id={formId} onSubmit={onSubmit} className="flex flex-col gap-3">
           {editing ? (
             <input type="hidden" name="id" value={site.id} />
           ) : (
@@ -71,11 +73,16 @@ export function SiteFormDialog({
             <input name="name" required defaultValue={site?.name ?? ""} className={INPUT} autoFocus />
           </label>
           <label className={LABEL}>
-            Código <span className="text-text/60">(opcional — identificador corto de ALCO, único por empresa)</span>
+            <span>
+              Código <span className={FIELD_OPTIONAL}>opcional</span>
+            </span>
             <input name="code" defaultValue={site?.code ?? ""} className={INPUT} />
+            <span className={FIELD_HINT}>Identificador corto de ALCO, único por empresa.</span>
           </label>
           <label className={LABEL}>
-            Zona horaria <span className="text-text/60">(hora local de la sede — marcajes y hora del equipo)</span>
+            <span>
+              Zona horaria
+            </span>
             <select name="timezone" defaultValue={site?.timezone ?? DEFAULT_TZ} className={INPUT}>
               {site?.timezone && !(COMMON_TIMEZONES as readonly string[]).includes(site.timezone) && (
                 <option value={site.timezone}>{site.timezone}</option>
@@ -86,6 +93,7 @@ export function SiteFormDialog({
                 </option>
               ))}
             </select>
+            <span className={FIELD_HINT}>Hora local de la sede — marcajes y hora del equipo.</span>
           </label>
         </form>
       </Dialog>

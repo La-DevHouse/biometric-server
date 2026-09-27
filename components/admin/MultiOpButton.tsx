@@ -32,7 +32,7 @@ export function MultiOpButton({
 }) {
   const [open, setOpen] = useState(false);
   const formId = useId();
-  const { formAction, startError, busy } = useMultiOperation(action, { onStarted: () => setOpen(false) });
+  const { onSubmit, startError, busy } = useMultiOperation(action, { onStarted: () => setOpen(false) });
 
   return (
     <>
@@ -56,7 +56,7 @@ export function MultiOpButton({
       >
         <p className="text-sm m-0">{description}</p>
         <p className="text-xs text-text/70 m-0">Corre en segundo plano; el avance aparece en el panel “Procesando”.</p>
-        <form id={formId} action={formAction}>
+        <form id={formId} onSubmit={onSubmit}>
           {Object.entries(hidden).map(([k, v]) => (
             <input key={k} type="hidden" name={k} value={v} />
           ))}

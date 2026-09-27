@@ -6,6 +6,7 @@ import { Btn } from "@/components/ui/Btn";
 import { IconBtn } from "@/components/ui/IconBtn";
 import { Icon } from "@/components/ui/icons";
 import { useToast } from "./Toaster";
+import { useFormSubmit } from "@/components/ui/useFormSubmit";
 import { EmploymentFields, type EmploymentDefaults } from "./EmploymentFields";
 import { createEmploymentAction, updateEmploymentAction } from "@/app/admin/empleados/actions";
 import { ADMIN_ACTION_INITIAL } from "@/lib/adminActionState";
@@ -53,6 +54,7 @@ export function EmploymentFormDialog({
     editing ? updateEmploymentAction : createEmploymentAction,
     ADMIN_ACTION_INITIAL
   );
+  const onSubmit = useFormSubmit(formAction, state);
   const { push } = useToast();
 
   useEffect(() => {
@@ -77,7 +79,7 @@ export function EmploymentFormDialog({
         <IconBtn icon={editing ? Icon.edit : Icon.add} label={editing ? "Editar contrato" : "Nuevo contrato"} onClick={() => setOpen(true)} />
       )}
       <Dialog open={open} onClose={() => setOpen(false)} title={title}>
-        <form action={formAction} className="flex flex-col gap-3">
+        <form onSubmit={onSubmit} className="flex flex-col gap-3">
           {editing ? (
             <input type="hidden" name="id" value={employment.id} />
           ) : (

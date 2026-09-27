@@ -1,6 +1,7 @@
 import type { ReactNode, ButtonHTMLAttributes } from "react";
 import { cx } from "@/lib/cx";
 import { Btn } from "./Btn";
+import { Tip } from "./Tip";
 
 /**
  * Botón-ícono con tooltip (docs/11 U2: íconos con tooltip son la norma para
@@ -40,21 +41,5 @@ export function IconBtn({
   );
 }
 
-/** El globo del tooltip — también lo usan links-ícono que no son <button>. */
-export function Tip({ label, side = "top" }: { label: string; side?: "top" | "bottom" }) {
-  return (
-    <span
-      role="tooltip"
-      aria-hidden
-      className={cx(
-        "pointer-events-none absolute left-1/2 z-50 -translate-x-1/2 whitespace-nowrap",
-        "border border-text bg-text px-2 py-1 font-sans text-xs font-normal text-white shadow-hard",
-        "opacity-0 transition-opacity duration-100 delay-150",
-        "group-hover/tip:opacity-100 group-focus-within/tip:opacity-100",
-        side === "top" ? "bottom-full mb-1.5" : "top-full mt-1.5"
-      )}
-    >
-      {label}
-    </span>
-  );
-}
+// El globo vive en su propio componente cliente (posicionamiento fijo).
+export { Tip };

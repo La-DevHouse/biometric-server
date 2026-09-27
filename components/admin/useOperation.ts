@@ -3,6 +3,7 @@
 import { useActionState, useEffect, useRef } from "react";
 import { OP_ACTION_INITIAL, MULTI_OP_ACTION_INITIAL, type OpActionState, type MultiOpActionState } from "@/lib/opActionState";
 import { useOperationsTracker } from "./OperationsTracker";
+import { useFormSubmit } from "@/components/ui/useFormSubmit";
 
 type OpAction = (prev: OpActionState, formData: FormData) => Promise<OpActionState>;
 type MultiOpAction = (prev: MultiOpActionState, formData: FormData) => Promise<MultiOpActionState>;
@@ -13,8 +14,10 @@ export interface UseOperationOptions {
 }
 
 export interface UseOperationApi {
-  /** Pasar a <form action={...}>. */
+  /** Pasar a <form action={...}> (vacía el form aunque falle — preferir onSubmit). */
   formAction: (formData: FormData) => void;
+  /** Pasar a <form onSubmit={...}>: no borra lo escrito si la operación no arranca. */
+  onSubmit: (e: React.FormEvent<HTMLFormElement>) => void;
   /** Error de arranque (validación) — se muestra dentro del propio diálogo, nunca como alerta aparte. */
   startError: string | null;
   /** true solo mientras la server action encola — el seguimiento no bloquea nada. */
@@ -43,8 +46,11 @@ export function useOperation(action: OpAction, opts: UseOperationOptions = {}): 
     onStartedRef.current?.();
   }, [state, track]);
 
+  const onSubmit = useFormSubmit(formAction, state);
+
   return {
     formAction,
+    onSubmit,
     startError: state.status === "error" ? state.message : null,
     busy: starting,
   };
@@ -66,8 +72,11 @@ export function useMultiOperation(action: MultiOpAction, opts: UseOperationOptio
     onStartedRef.current?.();
   }, [state, track]);
 
+  const onSubmit = useFormSubmit(formAction, state);
+
   return {
     formAction,
+    onSubmit,
     startError: state.status === "error" ? state.message : null,
     busy: starting,
   };

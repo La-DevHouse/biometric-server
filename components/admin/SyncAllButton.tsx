@@ -11,13 +11,13 @@ import { syncAllDevicesAction } from "@/app/admin/actions";
 /** "Sincronizar todos": una corrida del reconciliador por equipo asignado; el avance va al panel "Procesando". */
 export function SyncAllButton() {
   const [open, setOpen] = useState(false);
-  const { formAction, startError, busy } = useMultiOperation(syncAllDevicesAction, { onStarted: () => setOpen(false) });
+  const { onSubmit, startError, busy } = useMultiOperation(syncAllDevicesAction, { onStarted: () => setOpen(false) });
 
   return (
     <>
       <IconBtn icon={Icon.sync} label="Sincronizar todos" onClick={() => setOpen(true)} />
       <Dialog open={open} onClose={() => setOpen(false)} closable={!busy} title="Sincronizar huellas en todos los equipos">
-        <form action={formAction} className="flex flex-col gap-3">
+        <form onSubmit={onSubmit} className="flex flex-col gap-3">
           <p className="text-sm m-0">
             Revisa cada equipo asignado a una sede: agrega a quien falte, copia las huellas que falten y
             quita a quien ya no corresponda (nunca admins ni IDs que no sean de un empleado; si serían

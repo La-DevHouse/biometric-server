@@ -7,9 +7,10 @@ import { IconBtn } from "@/components/ui/IconBtn";
 import { Icon } from "@/components/ui/icons";
 import { Collapsible } from "@/components/ui/Collapsible";
 import { useToast } from "./Toaster";
+import { useFormSubmit } from "@/components/ui/useFormSubmit";
 import { createScheduleAction, updateScheduleAction } from "@/app/admin/horarios/actions";
 import { ADMIN_ACTION_INITIAL } from "@/lib/adminActionState";
-import { FIELD_INPUT as INPUT, FIELD_LABEL as LABEL } from "@/components/ui/fieldStyles";
+import { FIELD_INPUT as INPUT, FIELD_LABEL as LABEL, FIELD_OPTIONAL, FIELD_HINT } from "@/components/ui/fieldStyles";
 
 export interface ScheduleValues {
   id: number;
@@ -35,6 +36,7 @@ export function ScheduleFormDialog({
     editing ? updateScheduleAction : createScheduleAction,
     ADMIN_ACTION_INITIAL
   );
+  const onSubmit = useFormSubmit(formAction, state);
   const { push } = useToast();
   const formId = useId();
 
@@ -62,7 +64,7 @@ export function ScheduleFormDialog({
           </Btn>
         }
       >
-        <form id={formId} action={formAction} className="flex flex-col gap-3">
+        <form id={formId} onSubmit={onSubmit} className="flex flex-col gap-3">
           {editing && <input type="hidden" name="id" value={schedule.id} />}
 
           <label className={LABEL}>
@@ -88,12 +90,18 @@ export function ScheduleFormDialog({
           </label>
 
           <label className={LABEL}>
-            Nombre * <span className="text-text/60">(ej. Administrativo, Planta, Docentes)</span>
+            <span>
+              Nombre *
+            </span>
             <input name="name" required defaultValue={schedule?.name ?? ""} className={INPUT} autoFocus />
+            <span className={FIELD_HINT}>Ej. Administrativo, Planta, Docentes.</span>
           </label>
           <label className={LABEL}>
-            Código <span className="text-text/60">(opcional — identificador corto de ALCO para reportes)</span>
+            <span>
+              Código <span className={FIELD_OPTIONAL}>opcional</span>
+            </span>
             <input name="code" defaultValue={schedule?.code ?? ""} className={INPUT} />
+            <span className={FIELD_HINT}>Identificador corto de ALCO para reportes.</span>
           </label>
 
           <Collapsible title="Umbrales de asistencia (vacío = hereda de la empresa)">
