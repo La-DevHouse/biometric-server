@@ -50,7 +50,7 @@ export function MobileRow({
         ACCENT_BORDER[accent]
       )}
     >
-      <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
+      <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5 justify-between">
         {titleEl}
         {tags && <span className="flex flex-wrap items-center gap-1.5">{tags}</span>}
       </div>

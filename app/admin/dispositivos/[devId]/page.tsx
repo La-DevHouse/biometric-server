@@ -225,7 +225,6 @@ export default async function DeviceDetailPage({
         <StatCard
           kicker="Huellas enroladas"
           value={device.stat_fp_count ?? "—"}
-          meta="solo metadata — no se pueden copiar entre equipos"
         />
         <StatCard
           kicker="Marcaciones en memoria"

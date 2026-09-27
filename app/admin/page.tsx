@@ -115,11 +115,11 @@ export default async function InicioPage() {
 
       {offlineDevices.length > 0 && (
         <Card>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 max-sm:flex-col max-sm:items-start">
             <CardMeta>
               Sin conexión: {offlineDevices.map((d) => d.fk_name || d.dev_id).join(", ")}
             </CardMeta>
-            <LinkBtn href="/admin/dispositivos" variant="ghost" className="ml-auto">
+            <LinkBtn href="/admin/dispositivos" variant="primary" className="ml-auto max-sm:w-full">
               Ver dispositivos →
             </LinkBtn>
           </div>
