@@ -3,6 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { cx } from "@/lib/cx";
+import { formatRelativeTime, formatDateTime } from "@/lib/formatRelativeTime";
 import type { OperationStepView, TrackedOperationView } from "@/lib/operations";
 
 /**
@@ -189,6 +190,14 @@ export function OperationsTrackerProvider({ children }: { children: ReactNode })
     setTimeout(clearFinished, EXIT_MS);
   }, [clearFinished]);
 
+  // Reloj para los "hace X min": re-render cada 30 s aunque no haya polling
+  // (el panel deja de consultar cuando no queda nada en curso).
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(t);
+  }, []);
+
   const list = [...entries.values()].sort((a, b) => b.op.created_at - a.op.created_at);
   const running = list.filter((e) => !e.op.isTerminal).length;
 
@@ -260,7 +269,19 @@ export function OperationsTrackerProvider({ children }: { children: ReactNode })
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
                       <p className="m-0 text-sm font-semibold leading-snug">{op.label}</p>
-                      <p className="m-0 text-xs text-text/60 font-mono">{op.dev_id}</p>
+                      <p className="m-0 text-xs text-text/60">
+                        <span className="font-mono">{op.dev_id}</span>
+                        {" · "}
+                        {/* Cuándo empezó (o terminó): el tooltip trae la fecha y hora exactas. */}
+                        <time
+                          dateTime={new Date(op.isTerminal && op.finished_at ? op.finished_at : op.created_at).toISOString()}
+                          title={formatDateTime(op.isTerminal && op.finished_at ? op.finished_at : op.created_at)}
+                        >
+                          {op.isTerminal && op.finished_at
+                            ? `terminó ${formatRelativeTime(op.finished_at, now)}`
+                            : `iniciado ${formatRelativeTime(op.created_at, now)}`}
+                        </time>
+                      </p>
                     </div>
                     {op.isTerminal && (
                       <button
