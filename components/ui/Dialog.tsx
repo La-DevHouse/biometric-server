@@ -68,6 +68,11 @@ export function Dialog({
         // especificidad) y el diálogo queda "cerrado" pero ocupando layout e
         // interceptando clicks igual.
         "hidden open:flex flex-col",
+        // El <dialog> se renderiza donde está su botón (ej. dentro de la celda de
+        // acciones de una tabla, que es whitespace-nowrap, o de un label mono en
+        // mayúsculas): cortar cualquier estilo de texto heredado, así el
+        // contenido siempre parte líneas y se ve con la tipografía normal.
+        "whitespace-normal break-words text-left font-sans font-normal normal-case tracking-normal text-sm text-text",
         "backdrop:bg-text/40 bg-surface p-0 max-w-none",
         // Alto = el del contenido, con tope: un diálogo de una línea no se
         // estira a toda la pantalla (antes, debajo de sm, era h-dvh fijo y un
