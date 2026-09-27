@@ -152,6 +152,12 @@ export function CompanyFormDialog({
   }
 
   function handleRemoveLogo() {
+    // Con un error a la vista, la × solo limpia el error — nunca borra el logo
+    // que la empresa ya tenía guardado.
+    if (logoError) {
+      setLogoError(null);
+      return;
+    }
     if (logoFile) {
       setLogoFile(null);
       setLogoError(null);
@@ -167,11 +173,16 @@ export function CompanyFormDialog({
 
   const hasExistingLogo = !!company?.has_logo && !removeExistingLogo;
   const logoDropzoneState: DropzoneState = logoError
-    ? { status: "error", message: logoError, hint: "Probá con otro archivo" }
+    ? { status: "error", message: logoError, hint: "PNG · JPG · WEBP · SVG · máx 512 KB" }
     : logoFile
-      ? { status: "loaded", name: logoFile.name, meta: `${Math.ceil(logoFile.size / 1024)} KB · listo` }
+      ? {
+          status: "loaded",
+          name: logoFile.name,
+          meta: `${Math.ceil(logoFile.size / 1024)} KB · listo`,
+          previewSrc: logoPreview ?? undefined,
+        }
       : hasExistingLogo
-        ? { status: "loaded", name: "Logo actual", meta: "Guardado" }
+        ? { status: "loaded", name: "Logo actual", meta: "Guardado", previewSrc: `/admin/empresas/${company?.id}/logo` }
         : { status: "idle" };
 
   return (
@@ -307,26 +318,16 @@ export function CompanyFormDialog({
 
           <input ref={logoInputRef} type="file" name="logo" className="hidden" />
           {removeExistingLogo && <input type="hidden" name="remove_logo" value="on" />}
-          <div className="flex items-start gap-3">
-            <div className="flex-1">
-              <FileDropzone
-                label="Logo"
-                accept="image/png,image/jpeg,image/webp,image/svg+xml"
-                hint="PNG · JPG · WEBP · SVG · máx 512 KB"
-                state={logoDropzoneState}
-                onFile={handleLogoFile}
-                onRemove={handleRemoveLogo}
-              />
-            </div>
-            {(logoPreview || hasExistingLogo) && (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={logoPreview ?? `/admin/empresas/${company?.id}/logo`}
-                alt="logo"
-                className="mt-6 h-10 w-auto flex-none border border-divider bg-surface object-contain p-0.5"
-              />
-            )}
-          </div>
+          {/* La miniatura va DENTRO del recuadro (FileDropzone), no al costado: al
+              costado ensanchaba el diálogo y quedaba fuera de su borde. */}
+          <FileDropzone
+            label="Logo"
+            accept="image/png,image/jpeg,image/webp,image/svg+xml"
+            hint="PNG · JPG · WEBP · SVG · máx 512 KB"
+            state={logoDropzoneState}
+            onFile={handleLogoFile}
+            onRemove={handleRemoveLogo}
+          />
 
           <Collapsible title="Representante legal">
             <label className={LABEL}>

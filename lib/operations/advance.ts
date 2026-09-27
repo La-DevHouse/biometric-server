@@ -66,6 +66,9 @@ interface PushFingerprintParams {
 
 interface AddEmployeeToDevicePlan {
   phase:
+    | "baseline"
+    | "verify_create_count"
+    | "verify_push_count"
     | "probe"
     | "probe_list"
     | "create"
@@ -85,6 +88,10 @@ interface AddEmployeeToDevicePlan {
   currentSlot?: number;
   /** La cédula ya existía en el equipo: se vinculó sin crear (docs/10 R5 / plan.md). */
   linkedExisting?: { deviceName: string };
+  /** Totales del equipo (GET_DEVICE_STATUS) para verificar por conteo en vez de
+   * releer con GET_USER_INFO (docs/10 O9). Sin valor = modo anterior (relectura). */
+  baselineUsers?: number;
+  fpBefore?: number;
   /** Frozen once the fingerprint chain ends, so the privilege phase can
    * append to the same summary instead of recomputing it blind. */
   fingerprintNote?: string;
@@ -628,6 +635,72 @@ async function advanceAddEmployeeToDevice(op: OperationRow, input: AdvanceInput)
     ? JSON.parse(op.params_json)
     : { employeeId: 0 };
 
+  if (plan.phase === "baseline") {
+    // Punto de partida: los totales del equipo (GET_DEVICE_STATUS, que nunca se
+    // colgó). Permiten verificar por conteo y, si la caché conoce a TODOS los
+    // usuarios del equipo, saltarse la sonda GET_USER_INFO — el comando que en
+    // producción deja al equipo mudo ~2 min cuando se cuelga (docs/10 O9).
+    const users = totalUserCount(input);
+    const fp = fingerprintCount(input);
+    const id = String(plan.candidateId);
+    if (users !== null && fp !== null) {
+      const known = await prisma.users.findMany({ where: { dev_id: op.dev_id }, select: { user_id: true, user_name: true } });
+      // ni uno de más ni de menos: la caché es el equipo. Y si la última revisión
+      // nocturna no logró cuadrarla (hay usuarios que no conocemos), no se confía:
+      // que coincidan las cantidades podría ser casualidad.
+      const lastAudit = await prisma.$queryRaw<{ exact: string | null }[]>`
+        SELECT stats->>'cache_exact' AS exact FROM sync_run
+         WHERE dev_id = ${op.dev_id} AND kind = 'fingerprints' AND ok = true AND stats->>'audit' = 'true'
+         ORDER BY started_at DESC LIMIT 1`;
+      const cacheComplete = known.length === users && lastAudit[0]?.exact !== "false";
+      const cachedSelf = known.find((u) => u.user_id === id);
+      if (cacheComplete && !cachedSelf) {
+        // Libre con certeza: no hay en el equipo ningún usuario que no conozcamos.
+        const nextPlan: AddEmployeeToDevicePlan = { ...plan, phase: "create", baselineUsers: users, fpBefore: fp };
+        await setStage(op.id, "waiting", { plan: nextPlan });
+        await queueCommandForOperation(op.id, op.dev_id, "SET_USER_INFO", {
+          user_id: id,
+          user_name: plan.userName,
+          user_privilege: plan.privilege,
+        });
+        return;
+      }
+      const linked = cachedSelf
+        ? await prisma.employee_device_enrollment.findFirst({
+            where: { dev_id: op.dev_id, device_user_id: id, employee_id: params.employeeId, status: "active" },
+            select: { id: true },
+          })
+        : null;
+      if (cacheComplete && cachedSelf && linked) {
+        // Ya está y ya está vinculada (completar huellas): nada que sondear.
+        const pending = await missingOnDevice(plan.pendingFingerprints, op.dev_id, id);
+        await advanceAddEmployeeToDevicePushNext(
+          op,
+          {
+            ...plan,
+            phase: "push",
+            pendingFingerprints: pending,
+            linkedExisting: { deviceName: cachedSelf.user_name ?? id },
+            baselineUsers: users,
+            fpBefore: fp,
+          },
+          params
+        );
+        return;
+      }
+    }
+    // Caché incompleta o estado ilegible: la sonda de siempre.
+    const nextPlan: AddEmployeeToDevicePlan = {
+      ...plan,
+      phase: "probe",
+      baselineUsers: users ?? undefined,
+      fpBefore: fp ?? undefined,
+    };
+    await setStage(op.id, "waiting", { plan: nextPlan });
+    await queueCommandForOperation(op.id, op.dev_id, "GET_USER_INFO", { user_id: id });
+    return;
+  }
+
   if (plan.phase === "probe") {
     // El candidato es la cédula del empleado (docs/09 D4, docs/10 R5). Si ya
     // hay un usuario con esa cédula en el equipo, ES esta persona — la
@@ -674,10 +747,84 @@ async function advanceAddEmployeeToDevice(op: OperationRow, input: AdvanceInput)
 
   if (plan.phase === "create") {
     // SET_USER_INFO puede devolver OK con cuerpo vacío (mismo comportamiento
-    // verificado en CREATE_USER) — la única confirmación real es releer.
+    // verificado en CREATE_USER): no se le cree. Con línea de base, se confirma
+    // porque el total de usuarios sube exactamente 1 (como DELETE_USER al revés).
+    if (plan.baselineUsers !== undefined) {
+      const nextPlan: AddEmployeeToDevicePlan = { ...plan, phase: "verify_create_count" };
+      await setStage(op.id, "verifying", { plan: nextPlan });
+      await queueCommandForOperation(op.id, op.dev_id, "GET_DEVICE_STATUS", {});
+      return;
+    }
     const nextPlan: AddEmployeeToDevicePlan = { ...plan, phase: "verify_create" };
     await setStage(op.id, "verifying", { plan: nextPlan });
     await queueCommandForOperation(op.id, op.dev_id, "GET_USER_INFO", { user_id: String(plan.candidateId) });
+    return;
+  }
+
+  if (plan.phase === "verify_create_count") {
+    const after = totalUserCount(input);
+    const id = String(plan.candidateId);
+    if (after !== null && plan.baselineUsers !== undefined && after === plan.baselineUsers + 1) {
+      // Creado. Se anota en la caché lo que se escribió (lo que antes dejaba la relectura).
+      await runAsync(
+        `INSERT INTO users (dev_id, user_id, user_name, user_privilege) VALUES (?, ?, ?, 'USER')
+         ON CONFLICT(dev_id, user_id) DO UPDATE SET user_name = excluded.user_name`,
+        [op.dev_id, id, plan.userName]
+      );
+      await ensureLinked(params.employeeId, op.dev_id, id);
+      await advanceAddEmployeeToDevicePushNext(
+        op,
+        { ...plan, phase: "push", baselineUsers: after, fpBefore: fingerprintCount(input) ?? plan.fpBefore },
+        params
+      );
+      return;
+    }
+    // El conteo no cierra (algo cambió en el equipo a la vez, o no se leyó): la
+    // relectura de siempre decide, y el resto de la operación sigue en ese modo.
+    const nextPlan: AddEmployeeToDevicePlan = { ...plan, phase: "verify_create", baselineUsers: undefined, fpBefore: undefined };
+    await setStage(op.id, "verifying", { plan: nextPlan });
+    await queueCommandForOperation(op.id, op.dev_id, "GET_USER_INFO", { user_id: id });
+    return;
+  }
+
+  if (plan.phase === "verify_push_count") {
+    const fingerprintId = plan.currentFingerprint ?? -1;
+    const slot = plan.currentSlot ?? -1;
+    const userId = String(plan.candidateId);
+    const fp = fingerprintCount(input);
+    const before = plan.fpBefore;
+    if (fp === null || before === undefined || (fp !== before + 1 && fp !== before)) {
+      // No cierra con una sola huella escrita: releer, como antes.
+      const nextPlan: AddEmployeeToDevicePlan = { ...plan, phase: "verify_push", baselineUsers: undefined, fpBefore: undefined };
+      await setStage(op.id, "verifying", { plan: nextPlan });
+      await queueCommandForOperation(op.id, op.dev_id, "GET_USER_INFO", { user_id: userId });
+      return;
+    }
+    const wasWritten = fp === before + 1; // igual = OK sin escribir (slot ocupado, T9b)
+    if (wasWritten) {
+      await recordPropagatedSlot(op.dev_id, userId, slot, fingerprintId);
+      const fingerprint = await prisma.employee_fingerprint.findUnique({ where: { id: fingerprintId }, select: { template: true } });
+      if (fingerprint) {
+        await runAsync(
+          `INSERT INTO enroll_data (dev_id, user_id, backup_number, data) VALUES (?, ?, ?, ?)
+           ON CONFLICT(dev_id, user_id, backup_number) DO UPDATE SET data = excluded.data`,
+          [op.dev_id, userId, slot, patchTemplateUserId(fingerprint.template, userId)]
+        );
+      }
+    }
+    await advanceAddEmployeeToDevicePushNext(
+      op,
+      {
+        ...plan,
+        phase: "push",
+        fpBefore: fp,
+        pushedFingerprints: wasWritten ? [...plan.pushedFingerprints, fingerprintId] : plan.pushedFingerprints,
+        failedFingerprints: wasWritten
+          ? plan.failedFingerprints
+          : [...plan.failedFingerprints, { fingerprintId, reason: `el equipo no la escribió en el slot ${slot} (sin cambio en su total de huellas)` }],
+      },
+      params
+    );
     return;
   }
 
@@ -698,8 +845,15 @@ async function advanceAddEmployeeToDevice(op: OperationRow, input: AdvanceInput)
 
   if (plan.phase === "push") {
     // Igual que PUSH_FINGERPRINT: el cmd_return_code de SET_ENROLL_DATA no
-    // es confiable en ninguna dirección — siempre se verifica con una
-    // relectura antes de dar por copiada la huella.
+    // es confiable en ninguna dirección — siempre se verifica. Con línea de
+    // base, por el total de huellas del equipo (+1 = escrita; igual = no la
+    // escribió, T9b); si no, releyendo como antes.
+    if (plan.fpBefore !== undefined) {
+      const nextPlan: AddEmployeeToDevicePlan = { ...plan, phase: "verify_push_count" };
+      await setStage(op.id, "verifying", { plan: nextPlan });
+      await queueCommandForOperation(op.id, op.dev_id, "GET_DEVICE_STATUS", {});
+      return;
+    }
     const nextPlan: AddEmployeeToDevicePlan = { ...plan, phase: "verify_push" };
     await setStage(op.id, "verifying", { plan: nextPlan });
     await queueCommandForOperation(op.id, op.dev_id, "GET_USER_INFO", { user_id: String(plan.candidateId) });
@@ -899,6 +1053,13 @@ function summarizeAddEmployeeToDevice(plan: AddEmployeeToDevicePlan): string {
 function decodeIdListOrEmpty(resultJson: Record<string, any> | null, binaries: Buffer[]): string[] | null {
   if (resultJson?.user_id_count === 0) return [];
   return decodeUserIdList(resultJson, binaries);
+}
+
+/** fp_count de un GET_DEVICE_STATUS, o null si no se pudo leer. */
+function fingerprintCount(input: AdvanceInput): number | null {
+  if (!input.ok) return null;
+  const n = Number(input.resultJson?.fp_count);
+  return Number.isInteger(n) && n >= 0 ? n : null;
 }
 
 /** total_user_count de un GET_DEVICE_STATUS (llega como string), o null si no se pudo leer. */

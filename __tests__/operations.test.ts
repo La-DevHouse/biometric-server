@@ -96,9 +96,13 @@ function idListResult(ids: number[]) {
 }
 
 /** GET_DEVICE_STATUS result with the given total_user_count (strings, like the device). */
-function statusResult(totalUsers: number) {
-  return { ok: true, resultJson: { total_user_count: String(totalUsers), fp_count: "0" } };
+function statusResult(totalUsers: number, fpCount = 0) {
+  return { ok: true, resultJson: { total_user_count: String(totalUsers), fp_count: String(fpCount) } };
 }
+
+/** ADD_EMPLOYEE_TO_DEVICE arranca con GET_DEVICE_STATUS (fase "baseline"). Estado
+ * ilegible = la operación sigue exactamente como antes (sonda GET_USER_INFO). */
+const BASELINE_UNREADABLE = { ok: false, returnCode: "Error" } as const;
 
 // --- Attendance dedup idempotence ---
 
@@ -882,6 +886,9 @@ test("ADD_EMPLOYEE_TO_DEVICE - uses the employee's cédula (digits only) as the 
   const { id: opId } = await ops.startAddEmployeeToDevice(DEV_B, { employeeId, userName: "Nueva" });
 
   let cmd = await currentCommand(opId);
+  assert.equal(cmd.cmd_code, "GET_DEVICE_STATUS", "first reads the device totals (baseline)");
+  await completeCurrentStep(opId, BASELINE_UNREADABLE); // → sonda como antes
+  cmd = await currentCommand(opId);
   assert.equal(cmd.cmd_code, "GET_USER_INFO");
   assert.equal(JSON.parse(cmd.cmd_param ?? "{}").user_id, "20000003", "id must be the cédula, not a sequential number");
   await completeCurrentStep(opId, { ok: false, returnCode: "Error" });
@@ -914,6 +921,7 @@ test("ADD_EMPLOYEE_TO_DEVICE - the cédula already exists on the device: links i
   const employeeId = await makeEmployee("V20000004");
 
   const { id: opId } = await ops.startAddEmployeeToDevice(DEV_B, { employeeId, userName: "Nueva" });
+  await completeCurrentStep(opId, BASELINE_UNREADABLE);
 
   // Probe: the device already has this cédula, with its own physical fingerprint.
   await completeCurrentStep(opId, {
@@ -946,6 +954,7 @@ test("ADD_EMPLOYEE_TO_DEVICE - copies the canonical fingerprints into free slots
   const { id: opId, warning } = await ops.startAddEmployeeToDevice(DEV_B, { employeeId, userName: "Nueva" });
   assert.match(warning ?? "", /2 huella\(s\) capturada\(s\)/);
 
+  await completeCurrentStep(opId, BASELINE_UNREADABLE);
   await completeCurrentStep(opId, { ok: false, returnCode: "Error" }); // probe: no answer
   await completeCurrentStep(opId, idListResult([])); // cross-check: not listed → free
   await completeCurrentStep(opId, { ok: true, resultJson: null }); // create apply
@@ -995,6 +1004,129 @@ test("ADD_EMPLOYEE_TO_DEVICE - copies the canonical fingerprints into free slots
   assert.deepEqual((await slotsOf(DEV_B, "20000006")).map((x) => [x.backup_number, x.origin]), [[0, "propagated"]]);
 });
 
+// --- ADD_EMPLOYEE_TO_DEVICE: verificación por conteo (docs/10 O9) ---
+// En producción, cada GET_USER_INFO que se cuelga deja al equipo sin consultar
+// ~2 min. Con los totales de GET_DEVICE_STATUS se evitan la sonda (si la caché
+// conoce a TODOS los usuarios) y las relecturas de verificación.
+
+async function cacheDeviceUser(devId: string, userId: string, name = "X", privilege = "USER") {
+  await db.runAsync(`INSERT INTO users (dev_id, user_id, user_name, user_privilege) VALUES (?, ?, ?, ?)`, [devId, userId, name, privilege]);
+}
+
+test("ADD_EMPLOYEE_TO_DEVICE - caché completa y cédula ausente: crea sin sonda y verifica por conteo, sin ningún GET_USER_INFO", async () => {
+  await freshDomainDb();
+  const employeeId = await makeEmployee("V20000021");
+  await cacheDeviceUser(DEV_B, "9001", "Admin", "MANAGER");
+
+  const { id: opId } = await ops.startAddEmployeeToDevice(DEV_B, { employeeId, userName: "Nueva" });
+  await completeCurrentStep(opId, statusResult(1, 1)); // el equipo tiene 1 usuario = la caché
+  let cmd = await currentCommand(opId);
+  assert.equal(cmd.cmd_code, "SET_USER_INFO", "sin sonda: la caché conoce a todos los usuarios");
+  await completeCurrentStep(opId, { ok: true, resultJson: null });
+  cmd = await currentCommand(opId);
+  assert.equal(cmd.cmd_code, "GET_DEVICE_STATUS");
+  await completeCurrentStep(opId, statusResult(2, 1)); // +1 usuario
+
+  const op = await ops.getOperation(opId);
+  assert.equal(op?.stage, "done");
+  const commands = await ops.getOperationCommands(opId);
+  assert.ok(!commands.some((c) => c.cmd_code === "GET_USER_INFO"), "ningún GET_USER_INFO");
+  assert.ok(await db.getAsync(`SELECT 1 FROM users WHERE dev_id = ? AND user_id = '20000021'`, [DEV_B]), "queda en la caché");
+  assert.ok(await db.getAsync(`SELECT 1 FROM employee_device_enrollment WHERE employee_id = ? AND dev_id = ? AND status = 'active'`, [employeeId, DEV_B]));
+});
+
+test("ADD_EMPLOYEE_TO_DEVICE - huellas verificadas por el total: +1 = escrita, igual = no escrita (T9b)", async () => {
+  await freshDomainDb();
+  const employeeId = await makeEmployee("V20000022");
+  await makeFingerprint(employeeId, fakeTemplate(999), 0);
+  await makeFingerprint(employeeId, fakeTemplate(999), 1);
+
+  const { id: opId } = await ops.startAddEmployeeToDevice(DEV_B, { employeeId, userName: "Nueva" });
+  await completeCurrentStep(opId, statusResult(0, 0)); // equipo vacío, caché vacía = completa
+  await completeCurrentStep(opId, { ok: true, resultJson: null }); // SET_USER_INFO
+  await completeCurrentStep(opId, statusResult(1, 0)); // creado
+
+  let cmd = await currentCommand(opId);
+  assert.equal(cmd.cmd_code, "SET_ENROLL_DATA");
+  assert.equal(JSON.parse(cmd.cmd_param ?? "{}").backup_number, 0);
+  await completeCurrentStep(opId, { ok: true, resultJson: null });
+  cmd = await currentCommand(opId);
+  assert.equal(cmd.cmd_code, "GET_DEVICE_STATUS", "verifica por conteo, no releyendo");
+  await completeCurrentStep(opId, statusResult(1, 1)); // +1 huella → escrita
+
+  cmd = await currentCommand(opId);
+  assert.equal(cmd.cmd_code, "SET_ENROLL_DATA");
+  assert.equal(JSON.parse(cmd.cmd_param ?? "{}").backup_number, 1);
+  await completeCurrentStep(opId, { ok: true, resultJson: null }); // "OK"…
+  await completeCurrentStep(opId, statusResult(1, 1)); // …pero el total no cambió → no escrita
+
+  const op = await ops.getOperation(opId);
+  assert.equal(op?.stage, "done");
+  assert.match(op!.note ?? "", /1 de 2 huella\(s\) copiada\(s\)/);
+  assert.match(op!.note ?? "", /sin cambio en su total de huellas/);
+  assert.deepEqual((await slotsOf(DEV_B, "20000022")).map((x) => [x.backup_number, x.origin]), [[0, "propagated"]]);
+  const cached = await db.allAsync<{ backup_number: number }>(`SELECT backup_number FROM enroll_data WHERE dev_id = ? AND user_id = '20000022'`, [DEV_B]);
+  assert.deepEqual(cached.map((r) => r.backup_number), [0], "la huella escrita queda en la caché (la próxima corrida no relee)");
+  assert.ok(!(await ops.getOperationCommands(opId)).some((c) => c.cmd_code === "GET_USER_INFO"));
+});
+
+test("ADD_EMPLOYEE_TO_DEVICE - si el conteo no cierra (cambio simultáneo), vuelve a verificar releyendo", async () => {
+  await freshDomainDb();
+  const employeeId = await makeEmployee("V20000023");
+  const { id: opId } = await ops.startAddEmployeeToDevice(DEV_B, { employeeId, userName: "Nueva" });
+  await completeCurrentStep(opId, statusResult(0, 0));
+  await completeCurrentStep(opId, { ok: true, resultJson: null }); // SET_USER_INFO
+  await completeCurrentStep(opId, statusResult(2, 0)); // +2: alguien agregó otro en el teclado a la vez
+
+  const cmd = await currentCommand(opId);
+  assert.equal(cmd.cmd_code, "GET_USER_INFO", "ante la duda, la relectura de siempre decide");
+  await completeCurrentStep(opId, { ok: true, resultJson: { user_id: "20000023", user_name: "Nueva", user_privilege: "USER" } });
+  assert.equal((await ops.getOperation(opId))?.stage, "done");
+});
+
+test("ADD_EMPLOYEE_TO_DEVICE - caché incompleta (el equipo tiene usuarios que no conocemos): sonda GET_USER_INFO, nunca crea a ciegas", async () => {
+  await freshDomainDb();
+  const employeeId = await makeEmployee("V20000024");
+  await cacheDeviceUser(DEV_B, "9001", "Admin", "MANAGER");
+  const { id: opId } = await ops.startAddEmployeeToDevice(DEV_B, { employeeId, userName: "Nueva" });
+  await completeCurrentStep(opId, statusResult(3, 1)); // 3 en el equipo, 1 en caché
+  const cmd = await currentCommand(opId);
+  assert.equal(cmd.cmd_code, "GET_USER_INFO");
+  assert.equal(JSON.parse(cmd.cmd_param ?? "{}").user_id, "20000024");
+});
+
+test("ADD_EMPLOYEE_TO_DEVICE - ya vinculada y en caché completa (completar huellas): sin sonda, directo a la huella", async () => {
+  await freshDomainDb();
+  const employeeId = await makeEmployee("V20000025");
+  await makeFingerprint(employeeId, fakeTemplate(999), 0);
+  await cacheDeviceUser(DEV_B, "20000025", "Nueva");
+  await makeEnrollment(employeeId, DEV_B, "20000025");
+
+  const { id: opId } = await ops.startAddEmployeeToDevice(DEV_B, { employeeId, userName: "Nueva" }, { background: true });
+  await completeCurrentStep(opId, statusResult(1, 0));
+  const cmd = await currentCommand(opId);
+  assert.equal(cmd.cmd_code, "SET_ENROLL_DATA", "sin sonda ni SET_USER_INFO");
+  await completeCurrentStep(opId, { ok: true, resultJson: null });
+  await completeCurrentStep(opId, statusResult(1, 1));
+  const op = await ops.getOperation(opId);
+  assert.equal(op?.stage, "done");
+  assert.match(op!.note ?? "", /ya existía en el equipo/);
+});
+
+test("ADD_EMPLOYEE_TO_DEVICE - si la última revisión nocturna dijo que la caché no es exacta, siempre sondea", async () => {
+  await freshDomainDb();
+  const employeeId = await makeEmployee("V20000026");
+  await cacheDeviceUser(DEV_B, "9001", "Admin", "MANAGER");
+  await db.runAsync(
+    `INSERT INTO sync_run (kind, trigger, dev_id, finished_at, ok, stats) VALUES ('fingerprints', 'cron', ?, now(), true, ?::jsonb)`,
+    [DEV_B, JSON.stringify({ audit: true, cache_exact: false })]
+  );
+  const { id: opId } = await ops.startAddEmployeeToDevice(DEV_B, { employeeId, userName: "Nueva" });
+  await completeCurrentStep(opId, statusResult(1, 1)); // las cantidades coinciden… pero no se confía
+  const cmd = await currentCommand(opId);
+  assert.equal(cmd.cmd_code, "GET_USER_INFO");
+});
+
 // --- ADD_EMPLOYEE_TO_DEVICE: elevated privilege only applies once the user
 // has a fingerprint, so it's requested LAST, after any fingerprint push ---
 // Verified against real hardware (2026-09-08): a brand-new user created with
@@ -1009,6 +1141,7 @@ test("ADD_EMPLOYEE_TO_DEVICE - MANAGER without any fingerprint ends in mismatch 
 
   const { id: opId } = await ops.startAddEmployeeToDevice(DEV_B, { employeeId, userName: "Nueva", privilege: "MANAGER" });
 
+  await completeCurrentStep(opId, BASELINE_UNREADABLE);
   await completeCurrentStep(opId, { ok: false, returnCode: "Error" }); // probe: no answer
   await completeCurrentStep(opId, idListResult([])); // cross-check: not listed → free
   await completeCurrentStep(opId, { ok: true, resultJson: null }); // create apply
@@ -1041,6 +1174,7 @@ test("ADD_EMPLOYEE_TO_DEVICE - MANAGER with a fingerprint pushed in the same cha
 
   const { id: opId } = await ops.startAddEmployeeToDevice(DEV_B, { employeeId, userName: "Nueva", privilege: "MANAGER" });
 
+  await completeCurrentStep(opId, BASELINE_UNREADABLE);
   await completeCurrentStep(opId, { ok: false, returnCode: "Error" }); // probe: no answer
   await completeCurrentStep(opId, idListResult([])); // cross-check: not listed → free
   await completeCurrentStep(opId, { ok: true, resultJson: null }); // create apply
@@ -1305,6 +1439,7 @@ test("sweepStaleOperations - an ADD_EMPLOYEE_TO_DEVICE probe that never answers 
   await freshDomainDb();
   const employeeId = await makeEmployee("V20000007");
   const { id: opId } = await ops.startAddEmployeeToDevice(DEV_B, { employeeId, userName: "Nueva" });
+  await completeCurrentStep(opId, BASELINE_UNREADABLE); // → fase de sonda
 
   await db.runAsync(`UPDATE operations SET stage = 'sent', updated_at = ? WHERE id = ?`, [
     Date.now() - 31_000,

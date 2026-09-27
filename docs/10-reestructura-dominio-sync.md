@@ -209,6 +209,25 @@ entrega al equipo sigue siendo por polling. No hay I/O síncrono con el equipo.
    - el conteo de huellas subió pero la lista no cambió (alguien agregó otro dedo) →
      `GET_USER_INFO` a cada usuario con huella de ese equipo. El costo está acotado.
 
+   **Actualización (2026-09-27): solo se relee lo que cambió** (`selectUsersToRead`,
+   `lib/sync/plan.ts`): usuarios nuevos en la lista, los que en caché tenían 0 huellas,
+   privilegio desconocido, vinculados nunca leídos y los que el equipo avisó por
+   `realtime_enroll_data`. Si con eso no hay a quién leer y el total de huellas no cierra
+   contra la caché, se cae a la relectura completa. Antes cada corrida releía a todos en
+   cuanto cambiaba un contador (y los cambiamos nosotros con cada escritura): en
+   producción eso multiplicaba los `GET_USER_INFO`, el comando que deja al equipo mudo
+   ~2 min cuando se cuelga (O9).
+
+   **Revisión nocturna** (`SYNC_AUDIT_CRON`, 03:00): una corrida por equipo que además
+   consulta a todos los usuarios SIN huella que conocemos y **cuadra por conteo**
+   (`auditVerdict`): el equipo tiene `total_user_count − |lista|` usuarios sin huella; si
+   los que contestaron "existo" son exactamente esa cantidad, los demás ya no están
+   (borrados desde el teclado) → salen de la caché, del registro de huellas y del vínculo,
+   y si siguen en el alcance se vuelven a crear en esa misma corrida. Si no cierra (hay
+   usuarios que no conocemos), no se toca nada y la corrida queda con `cache_exact:
+   false`: mientras tanto `ADD_EMPLOYEE_TO_DEVICE` nunca se salta la sonda. No se puede
+   podar por "no contestó": `GET_USER_INFO` a veces calla con usuarios que existen (O9).
+
    Cada slot que no esté en el registro y cuyo `device_user_id` sea una cédula de un
    empleado del sistema → **ingesta**: blob de 612 B → `employee_fingerprint` nueva y
    `device_fingerprint_slot(origin=physical)`. Una cédula desconocida → vista de
@@ -517,7 +536,7 @@ Pendientes: T6 (propagación A→B con el reconciliador), T7, T10–T14.
 | O6 | Migración desde Adempiere: los dumps de datos se definen más adelante (Jesús). El reconciliador ya los protege: las cédulas sin contrato no se tocan y los dispositivos sin sede están congelados | Hito 5 |
 | O7 | El filtro "empleados por sede" que pidió Ezequiel (`09` §3.12) queda sin soporte en el schema. Si lo vuelve a pedir, se hace un filtro calculado por marcajes | — |
 | O8 | ~~R10 después de T9b~~ **Decidido (2026-09-26): las 10 primeras + alerta.** Como no se puede sobrescribir un slot, no se recrea al usuario para meter huellas más recientes. Si la unión de huellas pasa de 10, las que sobran quedan en la copia canónica sin propagarse, y se muestra una alerta en la ficha del empleado | — |
-| O9 | **`GET_USER_INFO` se cuelga de forma intermitente también con usuarios que SÍ existen** (visto en A el 2026-09-26: usuario 2 a las 19:27, y `30000001` a las 18:45, que seguía existiendo; un reintento minutos después respondió en 1 s). La regla "si no responde, no existe" de `ADD_EMPLOYEE_TO_DEVICE` y de la verificación de `DELETE_USER` **no es segura**: dio por borrado a `30000001` cuando su `DELETE_USER` había devuelto `Error`. El reconciliador verifica con `GET_DEVICE_STATUS` (cambio en los contadores) + `GET_USER_ID_LIST`, nunca por silencio, y **nunca manda `SET_USER_INFO` si hay duda de que el ID exista** (reindexado destructivo) | ✅ **Bug corregido en el código actual (2026-09-26):** `DELETE_USER` verifica con `total_user_count` antes y después (tiene que bajar exactamente 1; si no, `mismatch`); las sondas de `CREATE_USER`/`ADD_EMPLOYEE_TO_DEVICE` ya no toman el silencio como "libre": lo cruzan con `GET_USER_ID_LIST` (`probeListVerdict`) y no crean si la cédula aparece o si la lista no se puede leer |
+| O9 | **Producción (2026-09-27, `scripts/sql/diagnostico-desconexiones.sql`): cada `GET_USER_INFO` que no vuelve deja al equipo SIN CONSULTAR ~120 s** (en red local, ~10 s) → el panel lo muestra desconectado y la cola se frena. Los 3 casos del 158 fueron dentro de `ADD_EMPLOYEE_TO_DEVICE` (usuario con 2 huellas y uno aún no creado); el servidor respondió siempre en < 350 ms. Mitigación 1: el reconciliador lee solo lo que cambió (§4.2). Mitigación 2: `ADD_EMPLOYEE_TO_DEVICE` arranca con `GET_DEVICE_STATUS` y verifica creación y huellas **por conteo** (+1 usuario / +1 huella; igual = no escrita, T9b), guarda en caché lo confirmado, y **se salta la sonda** solo si la caché conoce a todos los usuarios del equipo (cantidad exacta); cualquier conteo que no cierre vuelve a la relectura con `GET_USER_INFO`. Pendiente validar en hardware (`13` B1–B3, A7). **Antes:** **`GET_USER_INFO` se cuelga de forma intermitente también con usuarios que SÍ existen** (visto en A el 2026-09-26: usuario 2 a las 19:27, y `30000001` a las 18:45, que seguía existiendo; un reintento minutos después respondió en 1 s). La regla "si no responde, no existe" de `ADD_EMPLOYEE_TO_DEVICE` y de la verificación de `DELETE_USER` **no es segura**: dio por borrado a `30000001` cuando su `DELETE_USER` había devuelto `Error`. El reconciliador verifica con `GET_DEVICE_STATUS` (cambio en los contadores) + `GET_USER_ID_LIST`, nunca por silencio, y **nunca manda `SET_USER_INFO` si hay duda de que el ID exista** (reindexado destructivo) | ✅ **Bug corregido en el código actual (2026-09-26):** `DELETE_USER` verifica con `total_user_count` antes y después (tiene que bajar exactamente 1; si no, `mismatch`); las sondas de `CREATE_USER`/`ADD_EMPLOYEE_TO_DEVICE` ya no toman el silencio como "libre": lo cruzan con `GET_USER_ID_LIST` (`probeListVerdict`) y no crean si la cédula aparece o si la lista no se puede leer |
 | O10 | `export_run` con `scope = group`: apuntaba a la empresa raíz (`scope_company_id`), que ya no existe como concepto. Cuando se implemente el Hito 5, agregar `scope_group_id` (FK a `company_group`) — **cerrado (2026-09-27, `11` R2/R7): no hay export por grupo, no hace falta** | — |
 | O11 | Contratos con fecha de inicio futura: el fan-out del PR 1 solo enrola contratos **vigentes hoy** (§4.1). Hasta que exista el cron (PR 2), un contrato futuro se enrola con "Re-sincronizar enrolamientos" en la empresa cuando empieza | PR 2 lo resuelve solo |
 | O12 | Aviso de impacto al desactivar una empresa o un grupo (hoy solo lo protege el freno de borrado masivo) | — |

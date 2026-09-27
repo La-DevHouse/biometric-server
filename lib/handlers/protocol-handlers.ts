@@ -18,6 +18,7 @@ import { logRawTraffic } from "./index";
 import { upsertUserFromInfo, upsertDeviceStatus } from "@/lib/operations/persist";
 import { advanceOperationForCommand, sweepStaleOperations } from "@/lib/operations/advance";
 import { finishOperation, getOperationRow } from "@/lib/operations/queue";
+import { maybeAutoSyncClock } from "@/lib/deviceClock";
 
 const NO_CMD_STRATEGY = process.env.NO_CMD_STRATEGY || "ok_empty";
 
@@ -66,6 +67,10 @@ export async function handleReceiveCmd(
        last_seen_at = ${NOW_MS}`,
     [devId, fkName, firmware, fkBinDataLib, supportedEnrollData]
   );
+
+  // Reloj desviado → "Sincronizar hora" sola (lib/deviceClock). No espera: la
+  // respuesta al equipo no se demora por esto.
+  maybeAutoSyncClock(devId, json?.fk_time ?? null);
 
   // Next WAIT command: lowest priority first (panel 100 before reconciler
   // 200 — docs/10 §3.1), then oldest.
@@ -421,7 +426,11 @@ export async function handleRealtimeEnrollData(
   // su propio GET_USER_INFO (forma limpia de 612 B); acá solo se dispara, sin
   // bloquear la respuesta al equipo ni dejar que un fallo la afecte.
   import("@/lib/sync/reconcile")
-    .then(({ startReconcileDevice }) => startReconcileDevice(devId, { trigger: "event" }))
+    .then(({ startReconcileDevice, hintUserChanged }) => {
+      // Solo este usuario cambió: la corrida lo lee a él, no a todo el equipo.
+      hintUserChanged(devId, userId);
+      return startReconcileDevice(devId, { trigger: "event" });
+    })
     .catch((err) => console.error("[sync] no se pudo disparar la corrida tras realtime_enroll_data:", devId, err));
 
   const resp = buildResponse({ responseCode: "OK" });

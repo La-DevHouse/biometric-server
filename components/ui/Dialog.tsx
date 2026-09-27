@@ -95,7 +95,7 @@ export function Dialog({
         <span className="h-[4px] w-[36px] bg-neutral-400" />
       </div>
       <div className="flex items-center justify-between gap-[10px] px-[14px] py-[12px] max-md:px-[16px] max-md:py-[14px] border-b border-divider md:bg-chrome flex-none">
-        <h3 className="font-heading text-xl font-semibold tracking-[-0.01em] m-0">{title}</h3>
+        <h3 className="min-w-0 font-heading text-xl font-semibold tracking-[-0.01em] m-0 [overflow-wrap:anywhere]">{title}</h3>
         {closable && (
           <button
             type="button"

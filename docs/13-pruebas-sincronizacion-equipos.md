@@ -101,7 +101,7 @@ la persona correcta. **La única prueba de que una huella llegó es que marque.*
 | A5 | Mover **B de S1b (E1) a S3 (E3)**. Mirar el aviso de impacto | El aviso lista quién pierde acceso a B. Se borran de B los de E1/G y se agregan los de E3; `9001` intacto | T12 |
 | A6 | Desactivar la sede **S3** (B queda en una sede inactiva) | B queda **congelado**: no se borra a nadie. Reactivar S3: vuelve a sincronizar | — |
 | A7 | **Equipo nuevo:** borrar B del registro no se puede; simularlo con "Asignar" desde cero: dejar B sin sede, borrar de B por teclado a todos menos `9001`, asignarla a S1a | B se rellena solo con todos los del alcance **con sus huellas** (copiadas, sin captura) | — |
-| A8 | Sincronizar hora en A y B | La hora del equipo coincide con la de la zona de la sede | T14 |
+| A8 | Desajustar a mano la hora de A (menú del equipo, +1 h) y esperar | **Se corrige sola** en la siguiente consulta (~11 s): cada consulta trae el reloj del equipo (`fk_time`) y si se desvía más de `CLOCK_MAX_DRIFT_S` (120 s) se encola "Sincronizar hora" (`lib/deviceClock.ts`; log `[reloj]`). Reintenta como mucho cada 15 min por equipo | T14 |
 
 ## B. Contratos de trabajo
 

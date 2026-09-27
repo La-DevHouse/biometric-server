@@ -5,7 +5,8 @@
 //   1. status — GET_DEVICE_STATUS. Si fp_count/total_user_count no cambiaron desde
 //      la última corrida OK, se salta la lectura (detector validado en hardware, T1).
 //   2. list   — GET_USER_ID_LIST (trae exactamente los usuarios con ≥1 huella, T2).
-//   3. info   — GET_USER_INFO de cada uno → caché `users` + ingesta de huellas
+//   3. info   — GET_USER_INFO SOLO de quien cambió o no se conoce (selectUsersToRead,
+//               lib/sync/plan.ts) → caché `users` + ingesta de huellas
 //               (lib/fingerprints.ts: vincula por cédula, huellas físicas nuevas →
 //               copia canónica; las propagadas por nosotros nunca vuelven como nuevas).
 //   4. decide — planReconcile (lib/sync/plan.ts) y ejecución: altas/completar con
@@ -22,7 +23,7 @@ import { upsertUserFromInfo, type UserInfoResult } from "@/lib/operations/persis
 import { startAddEmployeeToDevice, startDeleteUser } from "@/lib/operations";
 import { ingestUserInfo, employeeIdsByCedula, cedulaDigits, desiredFingerprints, fingerprintOverflow } from "@/lib/fingerprints";
 import { activeEmploymentWhere, scopeCompanyIds, applicableDevices } from "@/lib/scope";
-import { planReconcile, type ReconcilePlan, type ScopedEmployee } from "./plan";
+import { planReconcile, selectUsersToRead, auditVerdict, type ReconcilePlan, type ScopedEmployee } from "./plan";
 
 export type SyncTrigger = "cron" | "manual" | "event";
 
@@ -45,6 +46,26 @@ interface ReconcilePlanState {
   infoOk?: number;
   infoFailed?: string[];
   newFingerprintEmployees?: number[];
+  /** "incremental" (solo lo que cambió) o "full" (no cerraba el total de huellas). */
+  readMode?: "incremental" | "full";
+  /** Revisión nocturna: además relee a los usuarios sin huella de la caché y cuadra por conteo. */
+  audit?: boolean;
+  auditCheck?: string[];
+  auditConfirmed?: string[];
+  deviceNoFp?: number;
+}
+
+// Avisos "este usuario acaba de enrolar un dedo" (realtime_enroll_data), por
+// equipo, pendientes de la próxima fase de lista. En memoria del proceso de la
+// app (ahí corren tanto el aviso como la corrida). Si se pierden (reinicio), la
+// red de seguridad de selectUsersToRead lo detecta por el total de huellas.
+const readHints = new Map<string, Set<string>>();
+
+/** El equipo avisó que `userId` enroló un dedo: leerlo en la próxima corrida. */
+export function hintUserChanged(devId: string, userId: string): void {
+  const set = readHints.get(devId) ?? new Set<string>();
+  set.add(userId);
+  readHints.set(devId, set);
 }
 
 interface AdvanceInput {
@@ -71,7 +92,7 @@ async function deviceCompany(devId: string): Promise<number | null> {
  */
 export async function startReconcileDevice(
   devId: string,
-  opts: { trigger: SyncTrigger; force?: boolean; actorId?: number } = { trigger: "manual" }
+  opts: { trigger: SyncTrigger; force?: boolean; actorId?: number; audit?: boolean } = { trigger: "manual" }
 ): Promise<number | null> {
   if ((await deviceCompany(devId)) === null) return null;
 
@@ -84,10 +105,18 @@ export async function startReconcileDevice(
   const run = await prisma.sync_run.create({
     data: { kind: "fingerprints", trigger: opts.trigger, dev_id: devId, actor_app_user_id: opts.actorId ?? null },
   });
-  const plan: ReconcilePlanState = { phase: "status", runId: run.id, force: !!opts.force };
+  // La revisión siempre lee (force): su valor es justamente mirar aunque "no cambió nada".
+  const plan: ReconcilePlanState = { phase: "status", runId: run.id, force: !!opts.force || !!opts.audit, audit: !!opts.audit };
+  const why = opts.audit
+    ? "revisión nocturna"
+    : opts.trigger === "cron"
+      ? "automática"
+      : opts.trigger === "event"
+        ? "por un cambio"
+        : "manual";
   const opId = await createOperation({
     kind: "RECONCILE_DEVICE",
-    label: `${OPERATION_LABELS.RECONCILE_DEVICE} (${opts.trigger === "cron" ? "automática" : opts.trigger === "event" ? "por un cambio" : "manual"})`,
+    label: `${OPERATION_LABELS.RECONCILE_DEVICE} (${why})`,
     devId,
     plan,
     stepTotal: 3,
@@ -102,12 +131,13 @@ export async function startReconcileDevice(
 export async function triggerReconcile(
   devIds: Iterable<string>,
   trigger: SyncTrigger = "event",
-  actorId?: number
+  actorId?: number,
+  opts: { audit?: boolean } = {}
 ): Promise<number[]> {
   const ids: number[] = [];
   for (const devId of new Set(devIds)) {
     try {
-      const id = await startReconcileDevice(devId, { trigger, actorId });
+      const id = await startReconcileDevice(devId, { trigger, actorId, audit: opts.audit });
       if (id !== null) ids.push(id);
     } catch (e) {
       console.error("[sync] no se pudo encolar la corrida de", devId, e);
@@ -117,12 +147,13 @@ export async function triggerReconcile(
 }
 
 /** Todos los equipos asignados a una sede — lo que corre el cron. */
-export async function reconcileAll(trigger: SyncTrigger = "cron", actorId?: number): Promise<number[]> {
+export async function reconcileAll(trigger: SyncTrigger = "cron", actorId?: number, opts: { audit?: boolean } = {}): Promise<number[]> {
   const devices = await prisma.devices.findMany({ where: { site_id: { not: null } }, select: { dev_id: true } });
   return triggerReconcile(
     devices.map((d) => d.dev_id),
     trigger,
-    actorId
+    actorId,
+    opts
   );
 }
 
@@ -190,7 +221,7 @@ export async function advanceReconcile(op: OperationRow, input: AdvanceInput): P
       return;
     }
     const prev = await lastCounts(op.dev_id, plan.runId);
-    const changed = plan.force || !prev || prev.fp_count !== fp || prev.user_count !== users;
+    const changed = plan.force || !prev || prev.fp_count !== fp || prev.user_count !== users || (readHints.get(op.dev_id)?.size ?? 0) > 0;
     const next: ReconcilePlanState = { ...plan, fpCount: fp, userCount: users };
     if (!changed) {
       await decideAndApply(op, { ...next, infoOk: 0, infoFailed: [] }, false);
@@ -209,14 +240,56 @@ export async function advanceReconcile(op: OperationRow, input: AdvanceInput): P
       await finishOperation(op.id, "error", "No se pudo leer la lista de usuarios del equipo; se reintenta en la próxima corrida.");
       return;
     }
-    // Además de los que tienen huella (la lista), los vinculados que no aparecen:
-    // puede ser alguien sin huella todavía — se relee para conocer su privilegio.
-    const linked = await prisma.employee_device_enrollment.findMany({
-      where: { dev_id: op.dev_id, status: "active" },
-      select: { device_user_id: true },
+    // Solo se relee lo que cambió o no se conoce (selectUsersToRead): cada
+    // GET_USER_INFO es un riesgo de dejar al equipo mudo ~2 min (docs/10 O9).
+    const [linked, cachedUsers, cachedFp] = await Promise.all([
+      prisma.employee_device_enrollment.findMany({
+        where: { dev_id: op.dev_id, status: "active" },
+        select: { device_user_id: true },
+      }),
+      prisma.users.findMany({ where: { dev_id: op.dev_id }, select: { user_id: true, user_privilege: true } }),
+      prisma.enroll_data.groupBy({
+        by: ["user_id"],
+        where: { dev_id: op.dev_id, backup_number: { lte: 9 } }, // 0–9 = huellas (10+ = clave/tarjeta)
+        _count: { _all: true },
+      }),
+    ]);
+    const fpByUser = new Map(cachedFp.map((r) => [r.user_id, r._count._all]));
+    const cached = new Map<string, { privilege: string | null; fingerprints: number }>();
+    for (const u of cachedUsers) cached.set(u.user_id, { privilege: u.user_privilege ?? null, fingerprints: fpByUser.get(u.user_id) ?? 0 });
+    for (const [id, n] of fpByUser) if (!cached.has(id)) cached.set(id, { privilege: null, fingerprints: n });
+
+    const hints = [...(readHints.get(op.dev_id) ?? [])];
+    readHints.delete(op.dev_id);
+    const selection = selectUsersToRead({
+      listed,
+      linked: linked.map((l) => l.device_user_id),
+      cached,
+      hints,
+      deviceFpCount: plan.fpCount ?? 0,
     });
-    const pending = [...new Set([...listed, ...linked.map((l) => l.device_user_id)])];
-    await nextInfo(op, { ...plan, phase: "info", pendingInfo: pending, infoOk: 0, infoFailed: [], newFingerprintEmployees: [] });
+    // Ya no aparecen en la lista = hoy tienen 0 huellas: su caché de huellas quedó vieja.
+    if (selection.staleNoFingerprints.length) {
+      await prisma.enroll_data.deleteMany({ where: { dev_id: op.dev_id, user_id: { in: selection.staleNoFingerprints } } });
+    }
+    // Revisión nocturna: también se consulta a todos los que conocemos SIN huella
+    // (en caché o vinculados, fuera de la lista), para cuadrarlos por conteo.
+    const listedSet = new Set(listed);
+    const auditCheck = plan.audit
+      ? [...new Set([...cached.keys(), ...linked.map((l) => l.device_user_id)])].filter((id) => !listedSet.has(id))
+      : [];
+    await nextInfo(op, {
+      ...plan,
+      phase: "info",
+      pendingInfo: [...new Set([...selection.toRead, ...auditCheck])],
+      auditCheck: plan.audit ? auditCheck : undefined,
+      auditConfirmed: plan.audit ? [] : undefined,
+      deviceNoFp: plan.audit && plan.userCount !== undefined ? plan.userCount - listed.length : undefined,
+      readMode: selection.full ? "full" : "incremental",
+      infoOk: 0,
+      infoFailed: [],
+      newFingerprintEmployees: [],
+    });
     return;
   }
 
@@ -225,6 +298,8 @@ export async function advanceReconcile(op: OperationRow, input: AdvanceInput): P
   const infoFailed = [...(plan.infoFailed ?? [])];
   const newEmployees = new Set(plan.newFingerprintEmployees ?? []);
   let infoOk = plan.infoOk ?? 0;
+  const auditConfirmed = [...(plan.auditConfirmed ?? [])];
+  if (input.ok && input.resultJson?.user_name && current && plan.auditCheck?.includes(current)) auditConfirmed.push(current);
   if (input.ok && input.resultJson?.user_name) {
     const info = input.resultJson as UserInfoResult;
     await upsertUserFromInfo(op.dev_id, info, input.binaries);
@@ -237,6 +312,7 @@ export async function advanceReconcile(op: OperationRow, input: AdvanceInput): P
   await nextInfo(op, {
     ...plan,
     pendingInfo: rest,
+    auditConfirmed: plan.audit ? auditConfirmed : undefined,
     infoOk,
     infoFailed,
     newFingerprintEmployees: [...newEmployees],
@@ -324,6 +400,35 @@ export async function deviceSyncState(devId: string): Promise<DeviceSyncState> {
   return { frozen: false, plan, inScope, deviceUsers, employeeByUser };
 }
 
+/** Aplica el veredicto de la revisión nocturna (auditVerdict) sobre la caché del equipo. */
+async function applyAudit(devId: string, plan: ReconcilePlanState): Promise<{ exact: boolean; gone: string[] }> {
+  const verdict = auditVerdict({
+    check: plan.auditCheck ?? [],
+    confirmed: plan.auditConfirmed ?? [],
+    deviceNoFp: plan.deviceNoFp,
+  });
+  if (verdict.gone.length > 0) {
+    // Ya no están en el equipo (p. ej. borrados desde el teclado): fuera de la caché,
+    // del registro de huellas y del vínculo. Si la persona sigue en el alcance, la
+    // decisión de esta misma corrida la vuelve a crear con sus huellas.
+    await prisma.users.deleteMany({ where: { dev_id: devId, user_id: { in: verdict.gone } } });
+    await prisma.enroll_data.deleteMany({ where: { dev_id: devId, user_id: { in: verdict.gone } } });
+    await prisma.device_fingerprint_slot.deleteMany({ where: { dev_id: devId, device_user_id: { in: verdict.gone } } });
+    await prisma.employee_device_enrollment.updateMany({
+      where: { dev_id: devId, device_user_id: { in: verdict.gone }, status: "active" },
+      data: { status: "inactive", ended_at: new Date() },
+    });
+    await writeAudit({
+      actorId: null,
+      action: "device_user.gone",
+      entityType: "devices",
+      entityId: devId,
+      after: { user_ids: verdict.gone, why: "revisión nocturna: ya no están en el equipo (cuadrado por conteo)" },
+    });
+  }
+  return verdict;
+}
+
 async function decideAndApply(op: OperationRow, plan: ReconcilePlanState, readDevice: boolean): Promise<void> {
   const devId = op.dev_id;
   const companyId = await deviceCompany(devId);
@@ -332,6 +437,10 @@ async function decideAndApply(op: OperationRow, plan: ReconcilePlanState, readDe
     await finishOperation(op.id, "done", "Equipo sin sede activa: congelado, no se tocó nada.");
     return;
   }
+
+  // Revisión nocturna: cuadrar la caché por conteo ANTES de decidir, así quien fue
+  // borrado desde el teclado deja de figurar (y, si corresponde, se lo vuelve a crear).
+  const audit = plan.audit ? await applyAudit(devId, plan) : null;
 
   const [inScope, cachedUsers, linked, byCedula] = await Promise.all([
     scopedEmployees(devId, companyId),
@@ -371,6 +480,8 @@ async function decideAndApply(op: OperationRow, plan: ReconcilePlanState, readDe
     fp_count: plan.fpCount,
     user_count: plan.userCount,
     read_device: readDevice,
+    read_mode: plan.readMode ?? null,
+    ...(audit ? { audit: true, cache_exact: audit.exact, audit_gone: audit.gone, audit_checked: plan.auditCheck?.length ?? 0 } : {}),
     info_ok: plan.infoOk ?? 0,
     info_failed: plan.infoFailed ?? [],
     in_scope: inScope.length,

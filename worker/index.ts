@@ -13,7 +13,8 @@
 //
 // Env: DATABASE_URL, SYNC_FINGERPRINTS_INTERVAL_MIN (30), SYNC_ATTENDANCE_CRON
 // ("0 2 * * *"), SYNC_TZ ("America/Caracas"), SYNC_MAX_REMOVALS_PER_DEVICE (5),
-// SYNC_MAX_REMOVALS_PCT (20), WORKER_HEALTH_PORT (3001; 0 = sin healthcheck).
+// SYNC_MAX_REMOVALS_PCT (20), SYNC_AUDIT_CRON ("0 3 * * *": revisión nocturna de
+// usuarios de cada equipo, docs/10 §4.2), WORKER_HEALTH_PORT (3001; 0 = sin healthcheck).
 import { readdirSync } from "node:fs";
 import path from "node:path";
 import PgBoss from "pg-boss";
@@ -24,6 +25,7 @@ import { startHealthServer, setWorkerState, reportWorkerError } from "./health";
 
 const FINGERPRINTS = "sync-fingerprints";
 const ATTENDANCE = "sync-attendance";
+const AUDIT = "sync-audit";
 
 function fingerprintsCron(): string {
   const n = Number(process.env.SYNC_FINGERPRINTS_INTERVAL_MIN ?? 30);
@@ -87,13 +89,21 @@ async function main() {
   });
   await boss.start();
 
-  for (const q of [FINGERPRINTS, ATTENDANCE]) await boss.createQueue(q);
+  for (const q of [FINGERPRINTS, ATTENDANCE, AUDIT]) await boss.createQueue(q);
   await boss.schedule(FINGERPRINTS, fingerprintsCron(), {}, { tz });
   await boss.schedule(ATTENDANCE, process.env.SYNC_ATTENDANCE_CRON ?? "0 2 * * *", {}, { tz });
+  await boss.schedule(AUDIT, process.env.SYNC_AUDIT_CRON ?? "0 3 * * *", {}, { tz });
 
   await boss.work(FINGERPRINTS, async () => {
     const ids = await reconcileAll("cron");
     console.log(`[worker] huellas: ${ids.length} corrida(s) encolada(s)`);
+  });
+  // Revisión nocturna: relee a los usuarios sin huella de cada equipo y cuadra la
+  // caché por conteo (quién fue borrado desde el teclado, etc.). De noche, porque
+  // cada GET_USER_INFO que se cuelga deja al equipo ~2 min sin consultar (O9).
+  await boss.work(AUDIT, async () => {
+    const ids = await reconcileAll("cron", undefined, { audit: true });
+    console.log(`[worker] revisión nocturna: ${ids.length} equipo(s)`);
   });
   await boss.work(ATTENDANCE, async () => {
     const n = await attendancePullAll("cron");
@@ -102,7 +112,10 @@ async function main() {
   });
 
   setWorkerState("running");
-  console.log(`[worker] listo — huellas ${fingerprintsCron()}, asistencia ${process.env.SYNC_ATTENDANCE_CRON ?? "0 2 * * *"} (${tz})`);
+  console.log(
+    `[worker] listo — huellas ${fingerprintsCron()}, asistencia ${process.env.SYNC_ATTENDANCE_CRON ?? "0 2 * * *"}, ` +
+      `revisión ${process.env.SYNC_AUDIT_CRON ?? "0 3 * * *"} (${tz})`
+  );
 
   const stop = async () => {
     console.log("[worker] deteniendo…");

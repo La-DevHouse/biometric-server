@@ -23,7 +23,7 @@ export function StyleguideDropzoneDemo() {
         state={state}
         onFile={(file) => {
           if (file.size > 2 * 1024 * 1024) {
-            setState({ status: "error", message: "El archivo supera los 2 MB", hint: "Probá con otro archivo" });
+            setState({ status: "error", message: "El archivo supera los 2 MB", hint: "JPG · PNG · máx 2 MB" });
             return;
           }
           setState({ status: "loaded", name: file.name, meta: `${Math.ceil(file.size / 1024)} KB · listo` });
@@ -42,7 +42,7 @@ export function StyleguideDropzoneDemo() {
         label="Error (ejemplo estático)"
         accept="image/*"
         hint="JPG · PNG · máx 2 MB"
-        state={{ status: "error", message: "El archivo supera los 2 MB", hint: "Probá con otro archivo" }}
+        state={{ status: "error", message: "El archivo supera los 2 MB", hint: "JPG · PNG · máx 2 MB" }}
         onFile={() => {}}
       />
     </>

@@ -94,3 +94,83 @@ export function planReconcile(input: ReconcileInput): ReconcilePlan {
     unknownUsers,
   };
 }
+
+// -----------------------------------------------------------------------------
+// Qué usuarios releer (GET_USER_INFO) en una corrida
+// -----------------------------------------------------------------------------
+
+export interface ReadSelectionInput {
+  /** GET_USER_ID_LIST: exactamente los usuarios con ≥1 huella (T2). */
+  listed: string[];
+  /** device_user_id de los empleados vinculados (activos) a este equipo. */
+  linked: string[];
+  /** Caché del equipo: privilegio leído y cuántas huellas (slots 0–9) le conocemos. */
+  cached: Map<string, { privilege: string | null; fingerprints: number }>;
+  /** Avisos del equipo (realtime_enroll_data): alguien enroló un dedo en el teclado. */
+  hints: string[];
+  /** fp_count del GET_DEVICE_STATUS de esta corrida. */
+  deviceFpCount: number;
+}
+
+export interface ReadSelection {
+  toRead: string[];
+  /** true = no se pudo explicar el cambio con la caché → relectura completa (como antes). */
+  full: boolean;
+  /** En caché con huellas pero ya no en la lista → hoy tienen 0 huellas: limpiar su caché. */
+  staleNoFingerprints: string[];
+}
+
+/**
+ * Antes cada corrida releía a TODOS los usuarios con huella + vinculados en cuanto
+ * cambiaba un contador — y los contadores cambian con cada escritura nuestra, así
+ * que una copia disparaba decenas de GET_USER_INFO, el comando que a veces deja al
+ * equipo mudo ~2 min (docs/10 O9). Ahora se lee solo lo que cambió o no se conoce;
+ * si igual el total de huellas no cierra, se cae a la relectura completa.
+ */
+export function selectUsersToRead(input: ReadSelectionInput): ReadSelection {
+  const listed = new Set(input.listed);
+  const staleNoFingerprints = [...input.cached]
+    .filter(([id, c]) => c.fingerprints > 0 && !listed.has(id))
+    .map(([id]) => id);
+
+  const toRead = new Set<string>();
+  for (const id of input.listed) {
+    const c = input.cached.get(id);
+    if (!c || c.fingerprints === 0 || c.privilege === null) toRead.add(id); // nuevo, primera huella o privilegio desconocido
+  }
+  for (const id of input.linked) {
+    const c = input.cached.get(id);
+    if (!c || c.privilege === null) toRead.add(id); // vinculado que nunca se leyó
+  }
+  for (const id of input.hints) toRead.add(id);
+
+  if (toRead.size === 0) {
+    const expected = input.listed.reduce((n, id) => n + (input.cached.get(id)?.fingerprints ?? 0), 0);
+    if (expected !== input.deviceFpCount) {
+      return { toRead: [...new Set([...input.listed, ...input.linked])], full: true, staleNoFingerprints };
+    }
+  }
+  return { toRead: [...toRead], full: false, staleNoFingerprints };
+}
+
+// -----------------------------------------------------------------------------
+// Revisión nocturna de la caché de usuarios del equipo
+// -----------------------------------------------------------------------------
+
+/**
+ * El equipo no tiene cómo listar a los usuarios SIN huella (GET_USER_ID_LIST solo
+ * trae a los que tienen, T2) y un GET_USER_INFO sin respuesta no prueba que alguien
+ * no exista (O9). Así que se cuadra por conteo: el equipo tiene
+ * `deviceNoFp` = total_user_count − |lista| usuarios sin huella. Si los que tenemos
+ * en caché sin huella y CONTESTARON "existo" son exactamente esa cantidad, la caché
+ * es exacta y los que no contestaron ya no están → se sacan. Si no cierra (hay en el
+ * equipo usuarios que no conocemos), no se toca nada y la caché queda "no exacta".
+ */
+export function auditVerdict(input: { check: string[]; confirmed: string[]; deviceNoFp: number | undefined }): {
+  exact: boolean;
+  gone: string[];
+} {
+  const confirmed = new Set(input.confirmed.filter((id) => input.check.includes(id)));
+  const exact = input.deviceNoFp !== undefined && confirmed.size === input.deviceNoFp;
+  return { exact, gone: exact ? input.check.filter((id) => !confirmed.has(id)) : [] };
+}

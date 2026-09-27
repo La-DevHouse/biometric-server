@@ -597,7 +597,9 @@ export async function startAddEmployeeToDevice(
     userId: opUserKey,
     params: { employeeId: input.employeeId },
     plan: {
-      phase: "probe",
+      // Arranca leyendo los totales del equipo (GET_DEVICE_STATUS): ver la fase
+      // "baseline" en advance.ts — evita GET_USER_INFO cuando se puede.
+      phase: "baseline",
       candidateId,
       attempt: 1,
       userName: truncatedName,
@@ -608,7 +610,7 @@ export async function startAddEmployeeToDevice(
     },
     priority: priorityOf(opts),
   });
-  await queueCommandForOperation(id, devId, "GET_USER_INFO", { user_id: String(candidateId) });
+  await queueCommandForOperation(id, devId, "GET_DEVICE_STATUS", {});
   return { id, warning };
 }
 

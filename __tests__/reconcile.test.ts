@@ -90,15 +90,18 @@ test("plan - freno de borrado masivo: por encima del umbral no se borra nada, to
 const P = `REC_${Date.now()}_`;
 const DEV = P + "DEV";
 const DEV_FROZEN = P + "FROZEN";
+const DEV_AUD = P + "AUD";
 const made = { companies: [] as number[], employees: [] as number[], appUsers: [] as number[] };
 
 after(async () => {
   await prisma.employment.deleteMany({ where: { employee_id: { in: made.employees } } });
   await prisma.employee.deleteMany({ where: { id: { in: made.employees } } });
-  await db.runAsync(`DELETE FROM commands WHERE dev_id IN (?, ?)`, [DEV, DEV_FROZEN]);
-  await db.runAsync(`DELETE FROM operations WHERE dev_id IN (?, ?)`, [DEV, DEV_FROZEN]);
-  await db.runAsync(`DELETE FROM users WHERE dev_id IN (?, ?)`, [DEV, DEV_FROZEN]);
-  await prisma.devices.deleteMany({ where: { dev_id: { in: [DEV, DEV_FROZEN] } } });
+  await db.runAsync(`DELETE FROM commands WHERE dev_id IN (?, ?, ?)`, [DEV, DEV_FROZEN, DEV_AUD]);
+  await db.runAsync(`DELETE FROM operations WHERE dev_id IN (?, ?, ?)`, [DEV, DEV_FROZEN, DEV_AUD]);
+  await db.runAsync(`DELETE FROM users WHERE dev_id IN (?, ?, ?)`, [DEV, DEV_FROZEN, DEV_AUD]);
+  await db.runAsync(`DELETE FROM enroll_data WHERE dev_id IN (?, ?, ?)`, [DEV, DEV_FROZEN, DEV_AUD]);
+  await prisma.audit_log.deleteMany({ where: { entity_id: DEV_AUD } });
+  await prisma.devices.deleteMany({ where: { dev_id: { in: [DEV, DEV_FROZEN, DEV_AUD] } } });
   await prisma.client_company.deleteMany({ where: { id: { in: made.companies } } });
   await prisma.audit_log.deleteMany({ where: { actor_app_user_id: { in: made.appUsers } } });
   await prisma.app_user.deleteMany({ where: { id: { in: made.appUsers } } });
@@ -266,4 +269,77 @@ test("reconcile - freno de borrado masivo: crea sync_hold y no borra; al aprobar
     delete process.env.SYNC_MAX_REMOVALS_PER_DEVICE;
     delete process.env.SYNC_MAX_REMOVALS_PCT;
   }
+});
+
+// --- Revisión nocturna (docs/10 §4.2 / O9) ---
+
+test("auditVerdict - cuadra por conteo: solo poda si los confirmados son exactamente los sin-huella del equipo", () => {
+  // El equipo tiene 1 usuario sin huella; de los 2 que conocemos, contestó 1 → el otro ya no está.
+  assert.deepEqual(plan.auditVerdict({ check: ["A", "B"], confirmed: ["B"], deviceNoFp: 1 }), { exact: true, gone: ["A"] });
+  // El equipo tiene 2 sin huella pero solo reconocemos 1: hay alguien que no conocemos → no se toca nada.
+  assert.deepEqual(plan.auditVerdict({ check: ["A", "B"], confirmed: ["B"], deviceNoFp: 2 }), { exact: false, gone: [] });
+  // Todos contestaron y cierra: exacta, nadie que podar.
+  assert.deepEqual(plan.auditVerdict({ check: ["A"], confirmed: ["A"], deviceNoFp: 1 }), { exact: true, gone: [] });
+  // Sin dato del equipo: nunca se poda.
+  assert.deepEqual(plan.auditVerdict({ check: ["A"], confirmed: [], deviceNoFp: undefined }), { exact: false, gone: [] });
+});
+
+test("reconcile - revisión nocturna: quien fue borrado desde el teclado sale de la caché y se vuelve a crear", async () => {
+  const c = await prisma.client_company.create({
+    data: { name: P + "AUD", tax_id: "J-2", sites: { create: { name: "S" } } },
+    include: { sites: true },
+  });
+  made.companies.push(c.id);
+  await prisma.devices.create({ data: { dev_id: DEV_AUD, site_id: c.sites[0].id } });
+
+  const borrado = await employee("50000011", c.id); // vinculado, sin huella… pero lo borraron en el teclado
+  const sigue = await employee("50000012", c.id); // vinculado, sin huella, sigue en el equipo
+  for (const [emp, id] of [[borrado, "50000011"], [sigue, "50000012"]] as const) {
+    await db.runAsync(`INSERT INTO users (dev_id, user_id, user_name, user_privilege) VALUES (?, ?, 'x', 'USER')`, [DEV_AUD, id]);
+    await prisma.employee_device_enrollment.create({ data: { employee_id: emp, dev_id: DEV_AUD, device_user_id: id } });
+  }
+  await db.runAsync(`INSERT INTO users (dev_id, user_id, user_name, user_privilege) VALUES (?, '9001', 'Admin', 'MANAGER')`, [DEV_AUD]);
+  await db.runAsync(`INSERT INTO enroll_data (dev_id, user_id, backup_number, data) VALUES (?, '9001', 0, ?)`, [DEV_AUD, template(9001)]);
+
+  const stepAud = async (opId: number, result: Parameters<typeof step>[1]) => {
+    const cmds = await ops.getOperationCommands(opId);
+    const cmd = cmds[cmds.length - 1];
+    await advance.advanceOperationForCommand({
+      opId, devId: DEV_AUD, transId: cmd.trans_id, cmdCode: cmd.cmd_code, ok: result.ok,
+      returnCode: result.returnCode ?? (result.ok ? "OK" : "Error"),
+      resultJson: (result.resultJson ?? null) as Record<string, any> | null, binaries: result.binaries ?? [],
+    });
+  };
+
+  const opId = (await reconcile.startReconcileDevice(DEV_AUD, { trigger: "cron", audit: true }))!;
+  // El equipo: 9001 (con huella) + 50000012 (sin huella) = 2 usuarios, 1 huella.
+  await stepAud(opId, { ok: true, resultJson: { fp_count: "1", total_user_count: "2" } });
+  await stepAud(opId, idList([9001]));
+  // Se consulta a los que conocemos sin huella: 50000011 no contesta, 50000012 sí.
+  const asked: string[] = [];
+  for (let i = 0; i < 2; i++) {
+    const cmd = (await ops.getOperationCommands(opId)).at(-1)!;
+    assert.equal(cmd.cmd_code, "GET_USER_INFO");
+    const uid = JSON.parse(cmd.cmd_param ?? "{}").user_id as string;
+    asked.push(uid);
+    await stepAud(opId, uid === "50000012" ? { ok: true, resultJson: { user_id: uid, user_name: "x", user_privilege: "USER" } } : { ok: false, returnCode: "TIMEOUT" });
+  }
+  assert.deepEqual(asked.sort(), ["50000011", "50000012"]);
+
+  const op = await ops.getOperation(opId);
+  assert.equal(op?.stage, "done");
+  const run = await prisma.sync_run.findFirst({ where: { op_id: opId } });
+  const stats = run!.stats as Record<string, unknown>;
+  assert.equal(stats.audit, true);
+  assert.equal(stats.cache_exact, true);
+  assert.deepEqual(stats.audit_gone, ["50000011"]);
+
+  assert.equal(await prisma.users.count({ where: { dev_id: DEV_AUD, user_id: "50000011" } }), 0, "fuera de la caché");
+  assert.equal(await prisma.users.count({ where: { dev_id: DEV_AUD, user_id: "50000012" } }), 1, "el que contestó queda");
+  const link = await prisma.employee_device_enrollment.findFirst({ where: { employee_id: borrado, dev_id: DEV_AUD } });
+  assert.equal(link?.status, "inactive");
+  const readd = await db.getAsync(`SELECT 1 FROM operations WHERE dev_id = ? AND kind = 'ADD_EMPLOYEE_TO_DEVICE' AND user_id = ?`, [DEV_AUD, `emp:${borrado}`]);
+  assert.ok(readd, "sigue en el alcance → se lo vuelve a crear en el equipo");
+  const keep = await db.getAsync(`SELECT 1 FROM operations WHERE dev_id = ? AND kind = 'ADD_EMPLOYEE_TO_DEVICE' AND user_id = ?`, [DEV_AUD, `emp:${sigue}`]);
+  assert.equal(keep, undefined, "al que sigue no se lo toca");
 });

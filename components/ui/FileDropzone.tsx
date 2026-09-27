@@ -6,7 +6,7 @@ import { Icon } from "./icons";
 
 export type DropzoneState =
   | { status: "idle" }
-  | { status: "loaded"; name: string; meta: string }
+  | { status: "loaded"; name: string; meta: string; /** Miniatura (imágenes): reemplaza al ✓, DENTRO del recuadro. */ previewSrc?: string }
   | { status: "error"; message: string; hint?: string };
 
 const STRIPES = "bg-[repeating-linear-gradient(135deg,#fff_0px,#fff_6px,#f6f7f8_6px,#f6f7f8_12px)]";
@@ -50,12 +50,35 @@ export function FileDropzone({
   return (
     <div className="flex flex-col gap-[6px]">
       <span className="font-mono text-label uppercase tracking-[0.12em] max-md:tracking-[0.1em] text-neutral-800">{label}</span>
+      {/* Un solo input para todos los estados: el de error también abre el selector. */}
+      <input
+        ref={inputRef}
+        id={inputId}
+        type="file"
+        accept={accept}
+        disabled={disabled}
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          e.target.value = "";
+          if (file) onFile(file);
+        }}
+      />
 
       {state.status === "loaded" ? (
         <div className="flex items-center gap-[14px] px-[16px] py-[14px] max-md:p-[16px] bg-surface border border-accent">
-          <span className="w-[38px] h-[38px] max-md:w-[44px] max-md:h-[44px] flex-none flex items-center justify-center bg-accent text-white text-[20px] max-md:text-[22px] leading-none">
-            ✓
-          </span>
+          {state.previewSrc ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={state.previewSrc}
+              alt=""
+              className="w-[38px] h-[38px] max-md:w-[44px] max-md:h-[44px] flex-none border border-accent bg-surface object-contain p-[2px]"
+            />
+          ) : (
+            <span className="w-[38px] h-[38px] max-md:w-[44px] max-md:h-[44px] flex-none flex items-center justify-center bg-accent text-white text-[20px] max-md:text-[22px] leading-none">
+              ✓
+            </span>
+          )}
           <span className="flex flex-col gap-[2px] min-w-0 flex-1">
             <span className="text-sm font-semibold truncate">{state.name}</span>
             <span className="font-mono text-2xs uppercase tracking-[0.08em] max-md:tracking-[0.06em] text-neutral-700">{state.meta}</span>
@@ -73,16 +96,43 @@ export function FileDropzone({
           )}
         </div>
       ) : state.status === "error" ? (
-        <div className="flex items-center gap-[14px] px-[16px] py-[14px] max-md:p-[16px] bg-danger-100 border border-dashed border-danger-600">
-          <span className="w-[38px] h-[38px] max-md:w-[44px] max-md:h-[44px] flex-none flex items-center justify-center border border-danger-600 text-danger-600 text-[21px] leading-none">
-            !
-          </span>
-          <span className="flex flex-col gap-[2px]">
-            <span className="text-sm font-semibold text-danger-700">{state.message}</span>
-            {state.hint && (
-              <span className="font-mono text-2xs uppercase tracking-[0.08em] max-md:tracking-[0.06em] text-danger-700">{state.hint}</span>
-            )}
-          </span>
+        // Error: sigue siendo una zona de carga — clic o arrastre para elegir otro
+        // archivo (antes era una caja sin salida: había que cerrar el diálogo).
+        <div
+          className={cx(
+            "flex items-center gap-[14px] px-[16px] py-[14px] max-md:p-[16px] bg-danger-100 border border-dashed",
+            dragOver ? "border-accent" : "border-danger-600"
+          )}
+          onDragOver={(e) => {
+            e.preventDefault();
+            if (!disabled) setDragOver(true);
+          }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={disabled ? undefined : (e) => handleDrop(e as unknown as DragEvent<HTMLLabelElement>)}
+        >
+          <label htmlFor={inputId} className="flex min-w-0 flex-1 cursor-pointer items-center gap-[14px]">
+            <span className="w-[38px] h-[38px] max-md:w-[44px] max-md:h-[44px] flex-none flex items-center justify-center border border-danger-600 text-danger-600 text-[21px] leading-none">
+              !
+            </span>
+            <span className="flex flex-col gap-[2px] min-w-0">
+              <span className="text-sm font-semibold text-danger-700">{state.message}</span>
+              <span className="text-xs text-danger-700">
+                Arrastrá otro archivo o <span className="border-b border-danger-600 font-semibold">buscá en el equipo</span>
+                {state.hint ? ` · ${state.hint}` : ""}
+              </span>
+            </span>
+          </label>
+          {onRemove && (
+            <button
+              type="button"
+              title="Quitar el error"
+              aria-label="Quitar el error"
+              onClick={onRemove}
+              className="w-[34px] h-[34px] max-md:w-[36px] max-md:h-[36px] flex-none flex items-center justify-center bg-transparent border border-danger-600 text-danger-600 text-[19px] leading-none cursor-pointer"
+            >
+              ×
+            </button>
+          )}
         </div>
       ) : (
         <label
@@ -109,19 +159,6 @@ export function FileDropzone({
             </span>
             <span className="font-mono text-2xs uppercase tracking-[0.08em] max-md:tracking-[0.06em] text-neutral-700">{hint}</span>
           </span>
-          <input
-            ref={inputRef}
-            id={inputId}
-            type="file"
-            accept={accept}
-            disabled={disabled}
-            className="hidden"
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              e.target.value = "";
-              if (file) onFile(file);
-            }}
-          />
         </label>
       )}
     </div>
