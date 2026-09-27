@@ -13,13 +13,14 @@
 //
 // Env: DATABASE_URL, SYNC_FINGERPRINTS_INTERVAL_MIN (30), SYNC_ATTENDANCE_CRON
 // ("0 2 * * *"), SYNC_TZ ("America/Caracas"), SYNC_MAX_REMOVALS_PER_DEVICE (5),
-// SYNC_MAX_REMOVALS_PCT (20).
+// SYNC_MAX_REMOVALS_PCT (20), WORKER_HEALTH_PORT (3001; 0 = sin healthcheck).
 import { readdirSync } from "node:fs";
 import path from "node:path";
 import PgBoss from "pg-boss";
 import { reconcileAll } from "@/lib/sync/reconcile";
 import { attendancePullAll, attendanceComputeAll } from "@/lib/sync/attendance";
 import { closeDb, prisma } from "@/lib/db";
+import { startHealthServer, setWorkerState, reportWorkerError } from "./health";
 
 const FINGERPRINTS = "sync-fingerprints";
 const ATTENDANCE = "sync-attendance";
@@ -61,6 +62,7 @@ async function waitForMigrations(): Promise<void> {
       return;
     }
     if (!warned) {
+      setWorkerState("waiting_migrations");
       console.log(`[worker] esperando a que la app aplique ${pending.length} migración(es): ${pending.join(", ")}`);
       warned = true;
     }
@@ -71,12 +73,18 @@ async function waitForMigrations(): Promise<void> {
 async function main() {
   const url = process.env.DATABASE_URL;
   if (!url) throw new Error("DATABASE_URL no está definida.");
+  // Arriba antes que nada: Coolify lo consulta desde que arranca el contenedor.
+  const health = startHealthServer();
   await waitForMigrations();
+  setWorkerState("starting");
   const tz = process.env.SYNC_TZ ?? "America/Caracas";
 
   // Tablas propias en el schema `pgboss` (las crea la librería; no son de Prisma).
   const boss = new PgBoss({ connectionString: url, schema: "pgboss" });
-  boss.on("error", (err) => console.error("[worker] pg-boss:", err));
+  boss.on("error", (err) => {
+    console.error("[worker] pg-boss:", err);
+    reportWorkerError(err);
+  });
   await boss.start();
 
   for (const q of [FINGERPRINTS, ATTENDANCE]) await boss.createQueue(q);
@@ -93,11 +101,14 @@ async function main() {
     console.log(`[worker] asistencia: ${n} pull(s) encolado(s)`);
   });
 
+  setWorkerState("running");
   console.log(`[worker] listo — huellas ${fingerprintsCron()}, asistencia ${process.env.SYNC_ATTENDANCE_CRON ?? "0 2 * * *"} (${tz})`);
 
   const stop = async () => {
     console.log("[worker] deteniendo…");
+    setWorkerState("stopping");
     await boss.stop({ graceful: true });
+    health?.close();
     await closeDb();
     process.exit(0);
   };

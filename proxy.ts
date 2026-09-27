@@ -10,6 +10,8 @@ import type { NextRequest } from "next/server";
 // "no hay cookie" de forma pareja para todas las rutas /admin y /api, incluidas
 // las navegaciones soft donde el layout no se re-ejecuta.
 export function proxy(request: NextRequest) {
+  // Healthcheck de Coolify: sin sesión (lo llama curl desde el contenedor).
+  if (request.nextUrl.pathname === "/api/health") return NextResponse.next();
   if (request.cookies.get("session")?.value) return NextResponse.next();
 
   if (request.nextUrl.pathname.startsWith("/api/")) {

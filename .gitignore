@@ -64,3 +64,6 @@ docs/adempiere/screenshots/**
 !docs/adempiere/screenshots/README.md
 docs/adempiere/exports/**
 !docs/adempiere/exports/README.md
+
+# Exports de Adempiere para la importación manual (docs/12): datos personales, nunca al repo.
+/imports/
