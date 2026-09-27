@@ -42,7 +42,7 @@ export async function queueCommandAction(
   const devId = String(formData.get("dev_id") || "");
   const cmdCode = String(formData.get("cmd_code") || "");
 
-  if (!devId) return { status: "error", message: "Selecciona un dispositivo." };
+  if (!devId) return { status: "error", message: "Selecciona un equipo." };
   const template = COMMAND_TEMPLATES[cmdCode];
   if (!template) return { status: "error", message: "Selecciona un comando válido." };
 
@@ -260,6 +260,28 @@ export async function syncDeviceNowAction(_prev: OpActionState, formData: FormDa
     }
     await afterStart();
     return { status: "ok", id };
+  } catch (err) {
+    return opError(err);
+  }
+}
+
+/**
+ * "Actualizar" del equipo (docs/11 E4): con sede activa corre la
+ * sincronización completa (que ya empieza leyendo el estado); sin sede
+ * (congelado) solo lee el estado — no agrega ni quita a nadie.
+ */
+export async function updateDeviceAction(_prev: OpActionState, formData: FormData): Promise<OpActionState> {
+  const user = await requireUser();
+  const devId = String(formData.get("dev_id") || "");
+  try {
+    const id = await startReconcileDevice(devId, { trigger: "manual", force: true, actorId: user.id });
+    if (id !== null) {
+      await afterStart();
+      return { status: "ok", id };
+    }
+    const { id: statusId, warning } = await startRefreshStatus(devId);
+    await afterStart();
+    return { status: "ok", id: statusId, warning };
   } catch (err) {
     return opError(err);
   }

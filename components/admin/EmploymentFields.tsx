@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { EmploymentLookups } from "@/lib/lookups";
 import { FIELD_INPUT as INPUT, FIELD_LABEL as LABEL } from "@/components/ui/fieldStyles";
+import { Combobox } from "@/components/ui/Combobox";
 
 export interface EmploymentDefaults {
   company_id?: number | null;
@@ -17,21 +18,24 @@ export interface EmploymentDefaults {
 /**
  * Campos de un contrato de trabajo: empresa + horario (filtrado por empresa,
  * client-side) + departamento/puesto + inicio + ref nómina. Reusado por alta de
- * contrato y por traslado. Los `name` son fijos (`company_id`, …). Sin sede: la
+ * contrato y por su edición. Los `name` son fijos (`company_id`, …). Sin sede: la
  * pertenencia es con la empresa, y el alcance de la huella sale de sus sedes
- * (y las de su grupo) — docs/10 R4.
+ * (y las de su grupo) — docs/10 R4. Al editar, la empresa queda fija
+ * (`lockCompany`, docs/11 P2): otra empresa = baja + contrato nuevo.
  */
 export function EmploymentFields({
   lookups,
   defaults,
   startLabel = "Fecha de inicio *",
-  onCompanyChange,
+  lockCompany,
+  onStartDateChange,
 }: {
   lookups: EmploymentLookups;
   defaults?: EmploymentDefaults;
   startLabel?: string;
-  /** Para el aviso de impacto del traslado: avisa qué empresa se eligió. */
-  onCompanyChange?: (companyId: number | null) => void;
+  /** Edición: muestra la empresa sin poder cambiarla (se usa el nombre si ya no está activa). */
+  lockCompany?: { id: number; name: string };
+  onStartDateChange?: (date: string) => void;
 }) {
   const [companyId, setCompanyId] = useState<number | "">(defaults?.company_id ?? "");
   const [positionSel, setPositionSel] = useState<string>(
@@ -50,29 +54,26 @@ export function EmploymentFields({
 
   return (
     <div className="flex flex-col sm:grid sm:grid-cols-2 gap-2">
-      <label className={LABEL}>
-        Empresa *
-        <select
-          name="company_id"
-          required
-          className={INPUT}
-          value={companyId}
-          onChange={(e) => {
-            const v = e.target.value === "" ? "" : Number(e.target.value);
-            setCompanyId(v);
-            onCompanyChange?.(v === "" ? null : v);
-          }}
-        >
-          <option value="" disabled>
-            — elegí —
-          </option>
-          {lookups.companies.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-            </option>
-          ))}
-        </select>
-      </label>
+      {lockCompany ? (
+        <div className={LABEL}>
+          Empresa
+          <input type="hidden" name="company_id" value={lockCompany.id} />
+          <span className="flex min-h-9 items-center text-sm font-medium text-text">{lockCompany.name}</span>
+        </div>
+      ) : (
+        <div className={LABEL}>
+          Empresa *
+          <Combobox
+            name="company_id"
+            required
+            ariaLabel="Empresa"
+            options={lookups.companies.map((c) => ({ value: String(c.id), label: c.name, hint: c.tax_id ?? undefined }))}
+            value={companyId === "" ? "" : String(companyId)}
+            onChange={(v) => setCompanyId(v === "" ? "" : Number(v))}
+            placeholder="Buscar empresa o RIF…"
+          />
+        </div>
+      )}
 
       <label className={LABEL}>
         Horario
@@ -147,7 +148,14 @@ export function EmploymentFields({
 
       <label className={`${LABEL} col-span-2`}>
         {startLabel}
-        <input name="start_date" type="date" required className={INPUT} defaultValue={defaults?.start_date ?? ""} />
+        <input
+          name="start_date"
+          type="date"
+          required
+          className={INPUT}
+          defaultValue={defaults?.start_date ?? ""}
+          onChange={(e) => onStartDateChange?.(e.target.value)}
+        />
       </label>
     </div>
   );

@@ -4,7 +4,7 @@
 //     ⋃ por cada contrato activo c:
 //         empresas = {c.empresa} ∪ (empresas activas del grupo de c.empresa, si el grupo
 //                                   existe, está activo y tiene shared_employees)
-//         dispositivos de todas las sedes activas de esas empresas
+//         equipos de todas las sedes activas de esas empresas
 //
 // Solo lectura — lo usan el reconciliador (lib/sync/reconcile.ts) y la vista
 // previa de impacto de la UI (docs/10 §4.2, R8).

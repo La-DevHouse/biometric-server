@@ -92,3 +92,22 @@ export function DisabledBtn({
     </span>
   );
 }
+
+/**
+ * Descarga de un archivo: `<a>` común con `download`, NO `<Link>` — Next podría
+ * prefetchear la ruta y cada prefetch generaría el archivo (y su registro).
+ */
+export function DownloadBtn({
+  href,
+  variant,
+  block,
+  className,
+  children,
+  ...rest
+}: CommonProps & { href: string; "aria-label"?: string }) {
+  return (
+    <a href={href} download className={buildClasses({ variant, block, className, children })} {...rest}>
+      {children}
+    </a>
+  );
+}

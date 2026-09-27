@@ -7,7 +7,7 @@ import { Tag } from "@/components/ui/Tag";
 import { Card, CardKicker, CardTitle, CardBody, CardMeta } from "@/components/ui/Card";
 import { StatCard } from "@/components/ui/StatCard";
 import { StatusDot } from "@/components/ui/StatusDot";
-import { Table, Th, Td, Tr } from "@/components/ui/Table";
+import { Table, Th, Td, Tr, RowLink } from "@/components/ui/Table";
 import { MobileList, MobileRow } from "@/components/ui/MobileRow";
 import { Collapsible } from "@/components/ui/Collapsible";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -200,7 +200,7 @@ export default async function StyleguidePage() {
 
       <Section
         title="Listas: tabla (desktop) + tarjetas (mobile)"
-        note="Todo listado sigue el mismo patrón: <Table> envuelto en `hidden md:block`, más un <MobileList> de <MobileRow> envuelto en `md:hidden` — nunca solo la tabla."
+        note="Todo listado sigue el mismo patrón: <Table> envuelto en `hidden md:block`, más un <MobileList> de <MobileRow> envuelto en `md:hidden` — nunca solo la tabla. Si la fila tiene un detalle, la fila entera es clickeable: <Tr clickable> + <RowLink> en la celda principal (link real: clic medio y teclado funcionan), y en mobile `href` en <MobileRow>. Las celdas con íconos propios van con <Td actions> para quedar por encima del link."
       >
         <div className="hidden md:block">
           <Table>
@@ -213,14 +213,16 @@ export default async function StyleguidePage() {
               </tr>
             </thead>
             <tbody>
-              <Tr>
-                <Td className="font-medium">Farmalido C.A.</Td>
+              <Tr clickable>
+                <Td className="font-medium">
+                  <RowLink href="/admin/styleguide">Farmalido C.A.</RowLink>
+                </Td>
                 <Td>
                   <Tag variant="accent">Activa</Tag>
                 </Td>
                 <Td>12</Td>
-                <Td>
-                  <Btn variant="ghost">Detalle →</Btn>
+                <Td actions>
+                  <IconBtn icon={Icon.edit} label="Editar (no navega)" />
                 </Td>
               </Tr>
             </tbody>
@@ -230,8 +232,9 @@ export default async function StyleguidePage() {
           <MobileRow
             title="Farmalido C.A."
             tags={<Tag variant="accent">Activa</Tag>}
+            href="/admin/styleguide"
             fields={[{ label: "Contratos", value: 12 }]}
-            actions={<Btn variant="ghost">Detalle →</Btn>}
+            actions={<IconBtn icon={Icon.edit} label="Editar (no navega)" />}
           />
         </MobileList>
         <p className="m-0 text-xs text-text/60">

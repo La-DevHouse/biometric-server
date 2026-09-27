@@ -1,38 +1,37 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { allAsync, initDb, prisma } from "@/lib/db";
+import { initDb, prisma } from "@/lib/db";
+import {
+  companyAttendance,
+  companyAttendanceSites,
+  type CompanyAttendanceRow,
+} from "@/lib/companyAttendance";
 import { requireUser } from "@/lib/auth";
 import { Table, Th, Td, Tr } from "@/components/ui/Table";
 import { MobileList, MobileRow } from "@/components/ui/MobileRow";
-import { Tag } from "@/components/ui/Tag";
-import { Btn } from "@/components/ui/Btn";
+import { Btn, DownloadBtn, DisabledBtn } from "@/components/ui/Btn";
+import { Tip } from "@/components/ui/IconBtn";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { CompanyTabs } from "@/components/admin/CompanyTabs";
 import { MultiOpButton } from "@/components/admin/MultiOpButton";
+import { Icon } from "@/components/ui/icons";
 import { syncCompanyAttendanceAction } from "@/app/admin/actions";
-import { toDayBound, formatIoTime } from "@/lib/ioTime";
-import { FIELD_INPUT as INPUT, FIELD_LABEL as LABEL } from "@/components/ui/fieldStyles";
+import { formatIoTime } from "@/lib/ioTime";
+import {
+  FIELD_INPUT as INPUT,
+  FIELD_LABEL as LABEL,
+} from "@/components/ui/fieldStyles";
 
 export const dynamic = "force-dynamic";
 
 const RESULT_LIMIT = 300;
 
-interface Row {
-  id: number;
-  io_time: string | null;
-  user_id: string;
-  employee_id: number | null;
-  employee_name: string | null;
-  device_user_name: string | null;
-  device_name: string;
-  site_name: string;
-}
-
 /**
- * Empresa > Asistencia (docs/10 §6, R12): marcaciones hechas en los equipos de
- * las sedes de ESTA empresa — el marcaje pertenece a la empresa donde se marca,
- * aunque la persona tenga su contrato en otra empresa del grupo. El día procesado
- * y la exportación se imputan al contrato (Hito 4/5).
+ * Empresa > Asistencia (docs/11 C4): lo MISMO que se exporta a nómina — las
+ * marcaciones de las personas con contrato en esta empresa, en cualquier equipo
+ * de su alcance, dentro del período de su contrato (lib/companyAttendance).
+ * Lo marcado en un equipo sin importar de quién es (IDs sin empleado incluidos)
+ * está en Equipo → Marcaciones.
  */
 export default async function EmpresaAsistenciaPage({
   params,
@@ -49,80 +48,115 @@ export default async function EmpresaAsistenciaPage({
 
   const company = await prisma.client_company.findUnique({
     where: { id },
-    select: { id: true, name: true, sites: { select: { id: true, name: true }, orderBy: { name: "asc" } } },
+    select: { id: true, name: true },
   });
   if (!company) notFound();
 
-  const conditions = ["s.company_id = ?"];
-  const args: unknown[] = [id];
-  const siteId = f.sede ? Number(f.sede) : null;
-  if (siteId && Number.isFinite(siteId)) {
-    conditions.push("s.id = ?");
-    args.push(siteId);
-  }
-  if (f.from) {
-    conditions.push("al.io_time >= ?");
-    args.push(toDayBound(f.from, "start"));
-  }
-  if (f.to) {
-    conditions.push("al.io_time <= ?");
-    args.push(toDayBound(f.to, "end"));
-  }
-
-  // Persona: por el employee_id ya resuelto, o por cédula = user_id (docs/10 §4.6).
-  const rows = await allAsync<Row>(
-    `SELECT al.id, al.io_time, al.user_id,
-            COALESCE(al.employee_id, e.id) AS employee_id,
-            COALESCE(e1.last_name || ', ' || e1.first_name, e.last_name || ', ' || e.first_name) AS employee_name,
-            u.user_name AS device_user_name,
-            COALESCE(d.fk_name, d.dev_id) AS device_name,
-            s.name AS site_name
-       FROM attendance_logs al
-       JOIN devices d ON d.dev_id = al.dev_id
-       JOIN site s ON s.id = d.site_id
-       LEFT JOIN employee e1 ON e1.id = al.employee_id
-       LEFT JOIN employee e ON al.employee_id IS NULL AND regexp_replace(e.national_id, '\\D', '', 'g') = al.user_id
-       LEFT JOIN users u ON u.dev_id = al.dev_id AND u.user_id = al.user_id
-      WHERE ${conditions.join(" AND ")}
-      ORDER BY al.io_time DESC
-      LIMIT ${RESULT_LIMIT + 1}`,
-    args
-  );
+  const siteId =
+    f.sede && Number.isFinite(Number(f.sede)) ? Number(f.sede) : null;
+  const [rows, sites] = await Promise.all([
+    companyAttendance(id, {
+      from: f.from,
+      to: f.to,
+      siteId,
+      limit: RESULT_LIMIT + 1,
+    }),
+    companyAttendanceSites(id),
+  ]);
   const truncated = rows.length > RESULT_LIMIT;
   const logs = rows.slice(0, RESULT_LIMIT);
+  const foreign = (companyId: number, companyName: string) =>
+    companyId === id ? "" : ` (${companyName})`;
 
-  const person = (r: Row) =>
-    r.employee_id ? (
-      <Link href={`/admin/empleados/${r.employee_id}`} className="text-accent no-underline hover:underline">
-        {r.employee_name}
-      </Link>
-    ) : (
-      <span>
-        {r.device_user_name || r.user_id} <Tag variant="neutral">sin empleado</Tag>
-      </span>
-    );
+  // Export (docs/11 R8): exactamente lo filtrado en pantalla; exige rango.
+  const exportParams = new URLSearchParams();
+  if (f.from) exportParams.set("from", f.from);
+  if (f.to) exportParams.set("to", f.to);
+  if (siteId != null) exportParams.set("sede", String(siteId));
+  const canExport = Boolean(f.from && f.to);
+  const exportAction = (
+    <span className="group/tip relative inline-flex">
+      {canExport ? (
+        <DownloadBtn
+          variant="icon"
+          href={`/admin/empresas/${company.id}/asistencia/export?${exportParams.toString()}`}
+          aria-label="Exportar a Excel (Galepso)"
+        >
+          {Icon.export}
+        </DownloadBtn>
+      ) : (
+        <DisabledBtn variant="icon">{Icon.export}</DisabledBtn>
+      )}
+      <Tip
+        label={
+          canExport
+            ? "Exportar a Excel (Galepso)"
+            : "Elegí desde y hasta para exportar"
+        }
+      />
+    </span>
+  );
+
+  const person = (r: CompanyAttendanceRow) => (
+    <Link
+      href={`/admin/empleados/${r.employee_id}`}
+      className="text-accent no-underline hover:underline"
+    >
+      {r.last_name}, {r.first_name}
+    </Link>
+  );
 
   return (
     <div className="flex max-w-5xl flex-col gap-4">
-      <CompanyTabs companyId={company.id} companyName={company.name} active="asistencia" />
+      <CompanyTabs
+        companyId={company.id}
+        companyName={company.name}
+        active="asistencia"
+        actions={
+          <>
+            {exportAction}
+            <MultiOpButton
+              action={syncCompanyAttendanceAction}
+              hidden={{ company_id: String(company.id) }}
+              title="Sincronizar asistencia"
+              variant="icon"
+              description="Trae de los equipos de las sedes de esta empresa las marcaciones desde la última sincronización. Normalmente no hace falta: las marcaciones llegan solas en el momento, y si un equipo estuvo sin red las reenvía al reconectar."
+            >
+              {Icon.sync}
+            </MultiOpButton>
+          </>
+        }
+      />
 
       <div className="flex flex-wrap items-end justify-between gap-3">
         <form method="GET" className="flex flex-wrap items-end gap-2">
           <label className={LABEL}>
             Desde
-            <input type="date" name="from" defaultValue={f.from ?? ""} className={INPUT} />
+            <input
+              type="date"
+              name="from"
+              defaultValue={f.from ?? ""}
+              className={INPUT}
+            />
           </label>
           <label className={LABEL}>
             Hasta
-            <input type="date" name="to" defaultValue={f.to ?? ""} className={INPUT} />
+            <input
+              type="date"
+              name="to"
+              defaultValue={f.to ?? ""}
+              className={INPUT}
+            />
           </label>
           <label className={LABEL}>
             Sede
             <select name="sede" defaultValue={f.sede ?? ""} className={INPUT}>
               <option value="">todas</option>
-              {company.sites.map((s) => (
+              {sites.map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.name}
+                  {foreign(s.company_id, s.company.name)}
+                  {s.status !== "active" ? " — inactiva" : ""}
                 </option>
               ))}
             </select>
@@ -131,20 +165,12 @@ export default async function EmpresaAsistenciaPage({
             Filtrar
           </Btn>
         </form>
-        <MultiOpButton
-          action={syncCompanyAttendanceAction}
-          hidden={{ company_id: String(company.id) }}
-          title="Sincronizar asistencia"
-          description="Trae de los equipos de las sedes de esta empresa las marcaciones desde la última sincronización. Normalmente no hace falta: las marcaciones llegan solas en el momento, y si un equipo estuvo sin red las reenvía al reconectar."
-        >
-          Sincronizar asistencia
-        </MultiOpButton>
       </div>
 
       {logs.length === 0 ? (
         <EmptyState
           title="Sin marcaciones para estos filtros"
-          description="Probá con otro rango de fechas o sede. Solo aparecen marcaciones de equipos asignados a sedes de esta empresa."
+          description="Probá con otro rango de fechas o sede. Solo aparecen marcaciones de personas con contrato en esta empresa, hechas dentro del período de su contrato."
         />
       ) : (
         <>
@@ -154,7 +180,7 @@ export default async function EmpresaAsistenciaPage({
                 <tr>
                   <Th>Fecha y hora</Th>
                   <Th>Persona</Th>
-                  <Th>ID en equipo</Th>
+                  <Th>Cédula</Th>
                   <Th>Sede</Th>
                   <Th>Equipo</Th>
                 </tr>
@@ -164,7 +190,7 @@ export default async function EmpresaAsistenciaPage({
                   <Tr key={r.id}>
                     <Td className="font-mono">{formatIoTime(r.io_time)}</Td>
                     <Td>{person(r)}</Td>
-                    <Td className="font-mono text-xs">{r.user_id}</Td>
+                    <Td className="font-mono text-xs">{r.national_id}</Td>
                     <Td>{r.site_name}</Td>
                     <Td>{r.device_name}</Td>
                   </Tr>
@@ -176,19 +202,27 @@ export default async function EmpresaAsistenciaPage({
             {logs.map((r) => (
               <MobileRow
                 key={r.id}
-                title={r.employee_name ?? r.device_user_name ?? r.user_id}
-                tags={<span className="font-mono text-xs text-text/60">{formatIoTime(r.io_time)}</span>}
+                title={`${r.last_name}, ${r.first_name}`}
+                tags={
+                  <span className="font-mono text-xs text-text/60">
+                    {formatIoTime(r.io_time)}
+                  </span>
+                }
                 fields={[
                   { label: "Sede", value: r.site_name },
                   { label: "Equipo", value: r.device_name },
-                  { label: "ID", value: r.user_id },
+                  { label: "Cédula", value: r.national_id },
                 ]}
               />
             ))}
           </MobileList>
           <p className="m-0 text-xs text-text/70">
             {logs.length} marcación{logs.length === 1 ? "" : "es"}
-            {truncated ? ` (mostrando las ${RESULT_LIMIT} más recientes)` : ""}.
+            {truncated
+              ? ` (mostrando las ${RESULT_LIMIT} más recientes)`
+              : ""}{" "}
+            · por contrato: es lo que se exporta a nómina. Lo marcado en un
+            equipo por cualquier ID está en Equipos → Marcaciones.
           </p>
         </>
       )}

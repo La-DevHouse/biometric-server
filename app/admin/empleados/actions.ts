@@ -315,62 +315,57 @@ export async function endEmploymentAction(
   }
 }
 
-export async function transferEmployeeAction(
+/**
+ * Editar un contrato (docs/11 P2): el mismo formulario del alta, precargado,
+ * sobre la MISMA fila. La empresa no se edita — pasar a alguien a otra empresa
+ * es dar de baja este contrato y crear uno nuevo, para conservar el historial
+ * (docs/09 D5). Si la fecha de inicio cambia, puede entrar o salir del alcance
+ * de hoy: lo resuelve el reconciliador como cualquier cambio de contrato.
+ */
+export async function updateEmploymentAction(
   _prev: AdminActionState,
   fd: FormData
 ): Promise<AdminActionState> {
   const user = await requireUser();
-  const from_employment_id = Number(str(fd, "from_employment_id"));
-  const d = employmentData(fd); // company/schedule/position/department destino + start_date = fecha del traslado
-  const transferDate = d.start_date;
-  if (!Number.isFinite(from_employment_id)) return { status: "error", error: "Contrato origen inválido." };
-  if (!transferDate) return { status: "error", error: "La fecha del traslado es obligatoria." };
-  if (!Number.isFinite(d.company_id)) return { status: "error", error: "Seleccioná la empresa destino." };
+  const id = Number(str(fd, "id"));
+  if (!Number.isFinite(id)) return { status: "error", error: "Contrato inválido." };
 
-  const from = await prisma.employment.findUnique({ where: { id: from_employment_id } });
-  if (!from) return { status: "error", error: "El contrato origen no existe." };
-  if (from.status !== "active") return { status: "error", error: "El contrato origen ya está cerrado." };
-  if (transferDate < from.start_date)
-    return { status: "error", error: "El traslado no puede ser anterior al inicio del contrato origen." };
+  const before = await prisma.employment.findUnique({ where: { id } });
+  if (!before) return { status: "error", error: "El contrato no existe." };
+  if (before.status !== "active") return { status: "error", error: "El contrato está cerrado: no se edita." };
 
-  const pos = await resolvePositionId(fd, d.position_id, d.company_id, user.id);
+  const d = employmentData(fd);
+  if (!d.start_date) return { status: "error", error: "La fecha de inicio es obligatoria." };
+  if (before.end_date && d.start_date > before.end_date)
+    return { status: "error", error: "La fecha de inicio no puede ser posterior a la de baja." };
+  if (d.schedule_group_id != null) {
+    const g = await prisma.schedule_group.findUnique({ where: { id: d.schedule_group_id }, select: { company_id: true } });
+    if (g?.company_id !== before.company_id)
+      return { status: "error", error: "El horario no es de la empresa del contrato." };
+  }
+
+  const pos = await resolvePositionId(fd, d.position_id, before.company_id, user.id);
   if ("error" in pos) return { status: "error", error: pos.error };
-  d.position_id = pos.id;
 
   try {
-    const result = await prisma.$transaction(async (tx) => {
-      const closed = await tx.employment.update({
-        where: { id: from_employment_id },
-        data: { end_date: transferDate, status: "inactive" },
-      });
-      const opened = await tx.employment.create({
-        data: {
-          employee_id: from.employee_id,
-          company_id: d.company_id,
-          schedule_group_id: d.schedule_group_id,
-          position_id: d.position_id,
-          department_id: d.department_id,
-          payroll_ref: d.payroll_ref,
-          payroll_type: d.payroll_type,
-          start_date: transferDate,
-        },
-      });
-      return { closed, opened };
+    const updated = await prisma.employment.update({
+      where: { id },
+      data: {
+        // company_id NO: la empresa del contrato es fija.
+        schedule_group_id: d.schedule_group_id,
+        position_id: pos.id,
+        department_id: d.department_id,
+        payroll_ref: d.payroll_ref,
+        payroll_type: d.payroll_type,
+        start_date: d.start_date,
+      },
     });
-    await writeAudit({
-      actorId: user.id,
-      action: "employee.transfer",
-      entityType: "employee",
-      entityId: from.employee_id,
-      before: { from_employment: result.closed.id, from_company: from.company_id },
-      after: { new_employment: result.opened.id, to_company: d.company_id, date: transferDate },
-    });
-
-    const note = await syncNote(from.employee_id);
-
-    revalidatePath(`/admin/empleados/${from.employee_id}`);
+    await writeAudit({ actorId: user.id, action: "employment.update", entityType: "employment", entityId: id, before, after: updated });
+    const note =
+      updated.start_date.getTime() !== before.start_date.getTime() ? await syncNote(before.employee_id) : "";
+    revalidatePath(`/admin/empleados/${before.employee_id}`);
     revalidatePath("/admin/empleados");
-    return { status: "ok", message: "Traslado registrado." + note };
+    return { status: "ok", message: "Contrato actualizado." + note };
   } catch (e) {
     return { status: "error", error: e instanceof Error ? e.message : String(e) };
   }

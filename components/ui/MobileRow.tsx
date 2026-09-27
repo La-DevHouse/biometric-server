@@ -27,7 +27,7 @@ export function MobileRow({
   accent = "accent",
 }: {
   title: ReactNode;
-  /** Si se pasa, el título entero es un link (patrón "Detalle →" de la tabla). */
+  /** Si se pasa, la tarjeta entera es un link al detalle (docs/11 U3); `actions` quedan por encima. */
   href?: string;
   tags?: ReactNode;
   fields?: { label: string; value: ReactNode }[];
@@ -36,7 +36,10 @@ export function MobileRow({
   accent?: "accent" | "accent2" | "neutral";
 }) {
   const titleEl = href ? (
-    <Link href={href} className="text-lg font-semibold text-text no-underline hover:underline">
+    <Link
+      href={href}
+      className="text-lg font-semibold text-text no-underline hover:underline after:absolute after:inset-0 after:content-['']"
+    >
       {title}
     </Link>
   ) : (
@@ -46,7 +49,8 @@ export function MobileRow({
   return (
     <div
       className={cx(
-        "flex flex-col gap-2.5 bg-surface border border-neutral-400 border-l-[3px] p-3.5",
+        "relative flex flex-col gap-2.5 bg-surface border border-neutral-400 border-l-[3px] p-3.5",
+        href && "active:bg-accent-100",
         ACCENT_BORDER[accent]
       )}
     >
@@ -65,7 +69,7 @@ export function MobileRow({
         </dl>
       )}
       {actions && (
-        <div className="flex flex-wrap items-center gap-2 border-t border-divider pt-2.5">
+        <div className="relative z-10 flex flex-wrap items-center gap-2 border-t border-divider pt-2.5">
           {actions}
         </div>
       )}

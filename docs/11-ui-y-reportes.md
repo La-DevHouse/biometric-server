@@ -1,6 +1,6 @@
 # Ajustes de UI/UX, export a nómina (Galepso) y buscador global
 
-Estado: **plan aprobado (2026-09-27), sin implementar.** Va después de `docs/10`
+Estado: **plan aprobado (2026-09-27). PR 4, PR 5 y PR 6 implementados (en stage).** Va después de `docs/10`
 (PR 1–3, ya implementados) y **antes** de las pruebas con los 2 equipos (T6, T7,
 T10–T12 de `10` §7.2).
 
@@ -83,26 +83,41 @@ Adempiere (`PANADERIA EL CASTILLO  Relación de Asistencia 2023054246
 
 Tres PRs. Los cambios se dejan en stage, sin commit (como siempre).
 
-### PR 4 — Base común (mecánico, toca muchas pantallas)
+### PR 4 — Base común (mecánico, toca muchas pantallas) — ✅ implementado
 
 1. **`<Tabs>` estándar** por ruta (generaliza `CompanyTabs`) + **`<DetailHeader>`** (nombre, estado, íconos de acción). U1.
 2. **Filas clickeables** en `components/ui/Table.tsx` y `MobileRow` (stretched link, acciones por encima). U3.
 3. **Íconos con tooltip**: pasar a `IconBtn` los botones de acción de las barras (sincronizar, OpButton / MultiOpButton con variante ícono). U2.
 4. **`<CompanyCombobox>`** (búsqueda por nombre y RIF, teclado, accesible). U6.
 5. Renombres visibles: **Equipos** (U4), **Contratos de trabajo** (U5). Fix de keys (U7).
-6. Componente **`<Tooltip>`** si el `title` nativo no alcanza (el `title` de `IconBtn` hoy es nativo — suficiente para desktop; en mobile no hay hover, por eso cada ícono lleva también `aria-label`).
+6. Tooltip propio (`Tip`, exportado de `IconBtn`) en lugar del `title` nativo; cada ícono lleva también `aria-label`.
 
-### PR 5 — Vistas
+Notas de implementación: el combobox quedó genérico (`components/ui/Combobox.tsx`, con `hint` para el RIF) en vez de `<CompanyCombobox>`; por ahora se usa en el filtro de empresa de Empleados, el resto de los selects de empresa entra con PR 5. Empresa → "Datos y sedes" se partió en las pestañas **Información** y **Sedes** (`/admin/empresas/[id]/sedes`). Los errores de lint que quedan en archivos tocados ya estaban en `HEAD`.
+
+### PR 5 — Vistas — ✅ implementado
 
 1. **Equipos**: lista (E1, E2), detalle con el patrón nuevo (E3–E7), rutas `/admin/dispositivos/[devId]` (Información), `/usuarios`, `/marcaciones`. Se eliminan `/admin/usuarios`, `/admin/enrolamiento`, `/admin/asistencia` y sus entradas de menú (E8).
 2. **Empresas**: grupos colapsables + logos (C1, C2); detalle con pestañas Información / Sedes / Empleados / Asistencia (C3); Asistencia por contrato (C4).
 3. **Empleados**: pestañas (P1); "Editar contrato" sin empresa editable, fuera "Trasladar" (P2).
 4. **Categorías**: pestañas (P3).
 
-### PR 6 — Export Galepso + buscador
+Notas de implementación:
+- Equipo: `components/admin/DeviceTabs.tsx` (encabezado + pestañas, carga lo suyo). "Actualizar" = `updateDeviceAction`: `startReconcileDevice` y, si devuelve `null` (congelado), `startRefreshStatus`. Rutas `/admin/dispositivos/[devId]{,/usuarios,/marcaciones}`. "Releer usuarios" (lista completa, incluidos los sin huella) queda como ícono en Usuarios.
+- Empresa → Asistencia por contrato: `lib/companyAttendance.ts` (`companyAttendance`, `companyAttendanceSites`) — la misma consulta la va a usar el export (PR 6). El contrato se mira por **fechas** (una baja siempre deja `end_date`). Tests: `__tests__/companyAttendance.test.ts`. **Limitación:** el alcance usa la sede **actual** de cada equipo (no hay historial de asignaciones): mover un equipo de empresa cambia a quién se imputan sus marcaciones viejas.
+- Empresas: grupos colapsables (`CollapsibleGroup.tsx`), mezclados por nombre con las empresas sueltas; logos por `<img loading="lazy">` y la lista ya no trae el binario (antes `include` lo traía). "Contratos" pasa a "Contratos vigentes".
+- Empleado: `EmployeeTabs.tsx`; rutas `/admin/empleados/[id]{,/contratos,/equipos}`. "Editar contrato" = `updateEmploymentAction` (sin `company_id`; valida que el horario sea de la empresa del contrato); si el inicio pasa al futuro muestra el aviso de impacto de `end_contract`. Se quitaron `transferEmployeeAction` y el `ScopeChange` `"transfer"`.
+- Categorías: pestañas por `?tab=` (una sola pantalla).
+- Se borraron `/admin/usuarios`, `/admin/enrolamiento`, `/admin/asistencia` y `AttendanceFilters`.
+
+### PR 6 — Export Galepso + buscador — ✅ implementado
 
 1. **Export `.xlsx`** (R1–R8): generador con una librería de escritura de xlsx (`exceljs`), ruta de descarga autenticada (`GET /admin/empresas/[id]/asistencia/export?from&to&sede`), registro en `export_run`, ícono en Empresa → Asistencia. Tests: estructura del archivo (celdas combinadas, fila de títulos en la 5, textos, pie), alcance por contrato (dentro/fuera del período, otra empresa del grupo, ID sin empleado), orden por hora.
 2. **Buscador global** (S1–S4): `GET /api/search`, `<CommandPalette>` en `AdminShell`, atajo ⌘K, recientes en `localStorage` (con try/catch — puede no estar disponible).
+
+Notas de implementación (PR 6):
+- Export: `lib/export/galepso.ts` (formato; `buildGalepsoXlsx`, `galepsoFileName`) + `app/admin/empresas/[id]/asistencia/export/route.ts`. Filas = `companyAttendance(..., order: "asc")`, la misma consulta de la pantalla. Rango obligatorio (máx. 366 días); la sede se valida contra las del alcance. Cada descarga → `export_run` (`scope = company`) + `audit_log` (`attendance.export`). Descarga con `<a download>` (`DownloadBtn`), no `<Link>`: un prefetch generaría el archivo y su registro. Cédula = solo dígitos (como Adempiere); nombre = nombre completo del sistema (R4). Pie provisorio: "Generado por Control de Asistencia Grupo ALCO (fecha)" — O-UI1. Dependencias: `exceljs` (runtime), `jszip` (dev, tests).
+- Buscador: `lib/search.ts` (`globalSearch`, acentos vía `translate()`, sin extensión `unaccent`; cédula/RIF por dígitos con ≥3 dígitos; 5 por tipo; `LIKE` con comodines escapados) + `GET /api/search` + `components/admin/CommandPalette.tsx` en el encabezado de `AdminShell`. El grupo no tiene página: su resultado abre Empresas con `?grupo=id` expandido.
+- Tests: `__tests__/galepso.test.ts` (formatos, nombre, estructura: A1:C4, fila 5, texto, pie, hoja `Sheet1`), `__tests__/search.test.ts`, y el alcance por contrato en `__tests__/companyAttendance.test.ts`.
 
 **Orden sugerido:** PR 6 puede ir primero si se quiere que ALCO empiece a exportar ya
 (no depende de 4/5); PR 4 antes que PR 5.
@@ -134,11 +149,12 @@ nosotros respetamos el rango elegido.
 
 | # | Tema |
 | --- | --- |
-| O-UI1 | Texto del pie del export (¿"Panel ALCO"?, `09` §7.1 ítem 2) |
+| O-UI1 | Texto del pie del export — hoy "Generado por Control de Asistencia Grupo ALCO" (`FOOTER_BRAND`), a confirmar (`09` §7.1 ítem 2) |
 | O-UI2 | Confirmar con el archivo crudo de Adempiere el nombre de la hoja (§3) |
 | O-UI3 | CSV limpio (R5), cuando lo pidan |
 | O-UI4 | Acciones en el buscador (S2), cuando lo pidan |
 | O-UI5 | Aviso de impacto al desactivar empresa/grupo (hereda `10` O12) |
+| O-UI6 | Historial de asignación equipo → sede: hoy el alcance de la asistencia usa la sede **actual** del equipo; mover un equipo de empresa re-imputa sus marcaciones viejas (y cambia exports ya hechos si se regeneran). Resolver antes de mover equipos entre empresas en producción |
 
 ---
 

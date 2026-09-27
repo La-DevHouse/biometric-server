@@ -1,9 +1,8 @@
 import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
-import { Table, Th, Td, Tr } from "@/components/ui/Table";
+import { Table, Th, Td, Tr, RowLink } from "@/components/ui/Table";
 import { MobileList, MobileRow } from "@/components/ui/MobileRow";
 import { Tag } from "@/components/ui/Tag";
-import { LinkBtn } from "@/components/ui/Btn";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { EmployeeFormDialog } from "@/components/admin/EmployeeFormDialog";
 import { EmployeeFiltersDialog } from "@/components/admin/EmployeeFiltersDialog";
@@ -61,7 +60,7 @@ export default async function EmpleadosPage({ searchParams }: { searchParams: Se
     }),
     prisma.client_company.findMany({
       where: { status: "active" },
-      select: { id: true, name: true },
+      select: { id: true, name: true, tax_id: true },
       orderBy: { name: "asc" },
     }),
     prisma.company_group.findMany({
@@ -97,14 +96,15 @@ export default async function EmpleadosPage({ searchParams }: { searchParams: Se
                   <Th>Empresa(s) con contrato activo</Th>
                   <Th>Huella</Th>
                   <Th>Estado</Th>
-                  <Th />
                 </tr>
               </thead>
               <tbody>
                 {employees.map((e) => (
-                  <Tr key={e.id}>
+                  <Tr key={e.id} clickable>
                     <Td className="font-medium">
-                      {e.last_name}, {e.first_name}
+                      <RowLink href={`/admin/empleados/${e.id}`}>
+                        {e.last_name}, {e.first_name}
+                      </RowLink>
                     </Td>
                     <Td className="font-mono text-xs">{e.national_id}</Td>
                     <Td className="text-xs">
@@ -129,11 +129,6 @@ export default async function EmpleadosPage({ searchParams }: { searchParams: Se
                       ) : (
                         <Tag variant="neutral">Pool</Tag>
                       )}
-                    </Td>
-                    <Td>
-                      <LinkBtn href={`/admin/empleados/${e.id}`} variant="ghost">
-                        Detalle →
-                      </LinkBtn>
                     </Td>
                   </Tr>
                 ))}

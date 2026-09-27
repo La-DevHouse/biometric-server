@@ -92,6 +92,7 @@ export default async function InicioPage() {
           value={`${onlineDevices.length} / ${devices.length}`}
           meta="visto en los últimos 30 s"
           tone="accent"
+          href="/admin/dispositivos?estado=online"
         />
         <StatCard
           kicker="Marcaciones hoy"
@@ -120,7 +121,7 @@ export default async function InicioPage() {
               Sin conexión: {offlineDevices.map((d) => d.fk_name || d.dev_id).join(", ")}
             </CardMeta>
             <LinkBtn href="/admin/dispositivos" variant="primary" className="ml-auto max-sm:w-full">
-              Ver dispositivos →
+              Ver equipos →
             </LinkBtn>
           </div>
         </Card>
@@ -141,7 +142,7 @@ export default async function InicioPage() {
                   <tr>
                     <Th>Hora</Th>
                     <Th>Usuario</Th>
-                    <Th>Dispositivo</Th>
+                    <Th>Equipo</Th>
                     <Th>Verificación</Th>
                   </tr>
                 </thead>
@@ -164,7 +165,7 @@ export default async function InicioPage() {
                   title={r.display_name}
                   tags={<span className="text-xs text-text/60">{fmtTime(r.io_time)}</span>}
                   fields={[
-                    { label: "Dispositivo", value: r.device_name },
+                    { label: "Equipo", value: r.device_name },
                     { label: "Verificación", value: formatVerifyMode(r.verify_mode) },
                   ]}
                 />

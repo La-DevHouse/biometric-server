@@ -1,24 +1,39 @@
+import Link from "next/link";
 import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
-import { Table, Th, Td, Tr } from "@/components/ui/Table";
-import { MobileList, MobileRow } from "@/components/ui/MobileRow";
+import { Table, Th, Td, Tr, RowLink } from "@/components/ui/Table";
+import { MobileList } from "@/components/ui/MobileRow";
 import { Tag } from "@/components/ui/Tag";
-import { LinkBtn } from "@/components/ui/Btn";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { CompanyFormDialog } from "@/components/admin/CompanyFormDialog";
 import { GroupFormDialog } from "@/components/admin/GroupFormDialog";
 import { RecordStatusButton } from "@/components/admin/RecordStatusButton";
+import { CollapsibleGroupRows, CollapsibleGroupCard } from "@/components/admin/CollapsibleGroup";
 import { setGroupStatusAction } from "@/app/admin/empresas/actions";
 
 // force-dynamic: Server Component que pega a Postgres — con `revalidate` Next
 // intentaría prerenderizarlo en `next build`.
 export const dynamic = "force-dynamic";
 
+// Nunca el binario del logo en la lista (hasta 512 KB c/u, docs/11 C2): solo
+// si tiene, y la imagen se pide aparte con carga diferida.
 async function getCompanies() {
-  return prisma.client_company.findMany({
-    orderBy: { name: "asc" },
-    include: { _count: { select: { sites: true, employments: true } } },
-  });
+  const [rows, withLogo] = await Promise.all([
+    prisma.client_company.findMany({
+      orderBy: { name: "asc" },
+      select: {
+        id: true,
+        name: true,
+        tax_id: true,
+        status: true,
+        group_id: true,
+        _count: { select: { sites: true, employments: { where: { status: "active" } } } },
+      },
+    }),
+    prisma.$queryRaw<{ id: number }[]>`SELECT id FROM client_company WHERE logo IS NOT NULL`,
+  ]);
+  const logos = new Set(withLogo.map((r) => r.id));
+  return rows.map((r) => ({ ...r, has_logo: logos.has(r.id) }));
 }
 type CompanyRowData = Awaited<ReturnType<typeof getCompanies>>[number];
 
@@ -27,8 +42,10 @@ async function getGroups() {
 }
 type GroupData = Awaited<ReturnType<typeof getGroups>>[number];
 
-export default async function EmpresasPage() {
+/** Empresas (docs/11 C1): grupos colapsables como una fila más; las empresas sin grupo, filas normales. */
+export default async function EmpresasPage({ searchParams }: { searchParams: Promise<{ grupo?: string }> }) {
   await requireUser();
+  const openGroup = Number((await searchParams).grupo) || null;
   const [companies, groups, businessModels] = await Promise.all([
     getCompanies(),
     getGroups(),
@@ -42,6 +59,12 @@ export default async function EmpresasPage() {
   const groupOptions = groups.filter((g) => g.status === "active").map((g) => ({ id: g.id, name: g.name }));
   const inGroup = (id: number) => companies.filter((c) => c.group_id === id);
   const ungrouped = companies.filter((c) => c.group_id === null);
+
+  // Grupos y empresas sueltas mezclados por nombre, como en Adempiere.
+  const entries = [
+    ...groups.map((g) => ({ kind: "group" as const, name: g.name, g })),
+    ...ungrouped.map((c) => ({ kind: "company" as const, name: c.name, c })),
+  ].sort((a, b) => a.name.localeCompare(b.name, "es"));
 
   return (
     <div className="flex flex-col gap-4">
@@ -70,37 +93,53 @@ export default async function EmpresasPage() {
                   <Th>Empresa</Th>
                   <Th>RIF</Th>
                   <Th>Sedes</Th>
-                  <Th>Contratos</Th>
+                  <Th>Contratos vigentes</Th>
                   <Th>Estado</Th>
                   <Th />
                 </tr>
               </thead>
               <tbody>
-                {groups.flatMap((g) => [
-                  <GroupRow key={`g${g.id}`} g={g} count={inGroup(g.id).length} />,
-                  ...inGroup(g.id).map((c) => <CompanyRow key={c.id} c={c} depth={1} />),
-                ])}
-                {groups.length > 0 && ungrouped.length > 0 && (
-                  <tr>
-                    <td colSpan={6} className="p-2 pt-4 text-xs font-semibold uppercase tracking-wide text-text/60">
-                      Sin grupo
-                    </td>
-                  </tr>
+                {entries.map((e) =>
+                  e.kind === "group" ? (
+                    <CollapsibleGroupRows
+                      key={`g${e.g.id}${e.g.id === openGroup ? "-open" : ""}`}
+                      colSpan={4}
+                      defaultOpen={e.g.id === openGroup}
+                      name={e.g.name}
+                      meta={groupMeta(e.g, inGroup(e.g.id).length)}
+                      status={<StatusTag active={e.g.status === "active"} fem={false} />}
+                      actions={<GroupActions g={e.g} />}
+                    >
+                      {inGroup(e.g.id).map((c) => (
+                        <CompanyRow key={c.id} c={c} nested />
+                      ))}
+                    </CollapsibleGroupRows>
+                  ) : (
+                    <CompanyRow key={e.c.id} c={e.c} />
+                  )
                 )}
-                {ungrouped.map((c) => (
-                  <CompanyRow key={c.id} c={c} depth={0} />
-                ))}
               </tbody>
             </Table>
           </div>
-          <MobileList>
-            {groups.flatMap((g) => [
-              <GroupMobileRow key={`g${g.id}`} g={g} count={inGroup(g.id).length} />,
-              ...inGroup(g.id).map((c) => <CompanyMobileRow key={c.id} c={c} depth={1} />),
-            ])}
-            {ungrouped.map((c) => (
-              <CompanyMobileRow key={c.id} c={c} depth={0} />
-            ))}
+          <MobileList className="gap-1.5">
+            {entries.map((e) =>
+              e.kind === "group" ? (
+                <CollapsibleGroupCard
+                  key={`g${e.g.id}${e.g.id === openGroup ? "-open" : ""}`}
+                  defaultOpen={e.g.id === openGroup}
+                  name={e.g.name}
+                  meta={groupMeta(e.g, inGroup(e.g.id).length)}
+                  status={e.g.status === "active" ? null : <StatusTag active={false} fem={false} />}
+                  actions={<GroupActions g={e.g} />}
+                >
+                  {inGroup(e.g.id).map((c) => (
+                    <CompanyCard key={c.id} c={c} />
+                  ))}
+                </CollapsibleGroupCard>
+              ) : (
+                <CompanyCard key={e.c.id} c={e.c} />
+              )
+            )}
           </MobileList>
         </>
       )}
@@ -108,8 +147,18 @@ export default async function EmpresasPage() {
   );
 }
 
-function sharedLabel(g: GroupData) {
-  return g.shared_employees ? "Comparte empleados" : "No comparte empleados";
+function groupMeta(g: GroupData, count: number) {
+  return `Grupo · ${count} ${count === 1 ? "empresa" : "empresas"} · ${
+    g.shared_employees ? "comparte empleados" : "no comparte empleados"
+  }`;
+}
+
+function StatusTag({ active, fem }: { active: boolean; fem: boolean }) {
+  return (
+    <Tag variant={active ? "accent" : "neutral"}>
+      {active ? (fem ? "Activa" : "Activo") : fem ? "Inactiva" : "Inactivo"}
+    </Tag>
+  );
 }
 
 function GroupActions({ g }: { g: GroupData }) {
@@ -121,102 +170,68 @@ function GroupActions({ g }: { g: GroupData }) {
   );
 }
 
-function GroupRow({ g, count }: { g: GroupData; count: number }) {
+/** Logo chico con carga diferida, o la inicial si no tiene (docs/11 C2). */
+function Logo({ c, size = "sm" }: { c: CompanyRowData; size?: "sm" | "xs" }) {
+  const box = size === "sm" ? "h-7 w-7" : "h-6 w-6";
+  if (!c.has_logo) {
+    return (
+      <span
+        aria-hidden
+        className={`${box} inline-flex shrink-0 items-center justify-center border border-divider bg-chrome font-heading text-xs font-semibold text-text/60`}
+      >
+        {c.name.trim().charAt(0).toUpperCase()}
+      </span>
+    );
+  }
   return (
-    <tr className="bg-chrome">
-      <td className="p-2 border-b border-neutral-200" colSpan={4}>
-        <span className="font-heading font-semibold">{g.name}</span>{" "}
-        <Tag variant="neutral">Grupo</Tag>{" "}
-        <span className="text-xs text-text/70">
-          {sharedLabel(g)} · {count} {count === 1 ? "empresa" : "empresas"}
-        </span>
-      </td>
-      <td className="p-2 border-b border-neutral-200">
-        <Tag variant={g.status === "active" ? "accent" : "neutral"}>
-          {g.status === "active" ? "Activo" : "Inactivo"}
-        </Tag>
-      </td>
-      <td className="p-2 border-b border-neutral-200">
-        <GroupActions g={g} />
-      </td>
-    </tr>
-  );
-}
-
-function GroupMobileRow({ g, count }: { g: GroupData; count: number }) {
-  return (
-    <MobileRow
-      title={g.name}
-      tags={
-        <>
-          <Tag variant="neutral">Grupo</Tag>
-          <Tag variant={g.status === "active" ? "accent" : "neutral"}>
-            {g.status === "active" ? "Activo" : "Inactivo"}
-          </Tag>
-        </>
-      }
-      fields={[
-        { label: "Empleados", value: sharedLabel(g) },
-        { label: "Empresas", value: count },
-      ]}
-      actions={<GroupActions g={g} />}
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={`/admin/empresas/${c.id}/logo`}
+      alt=""
+      loading="lazy"
+      decoding="async"
+      className={`${box} shrink-0 border border-divider bg-surface object-contain p-0.5`}
     />
   );
 }
 
-function CompanyMobileRow({ c, depth }: { c: CompanyRowData; depth: number }) {
+function CompanyRow({ c, nested = false }: { c: CompanyRowData; nested?: boolean }) {
   return (
-    <MobileRow
-      href={`/admin/empresas/${c.id}`}
-      title={
-        <>
-          {depth > 0 ? "↳ " : ""}
-          {c.name}
-        </>
-      }
-      tags={
-        <>
-          <Tag variant={c.status === "active" ? "accent" : "neutral"}>
-            {c.status === "active" ? "Activa" : "Inactiva"}
-          </Tag>
-        </>
-      }
-      fields={[
-        { label: "RIF", value: c.tax_id ?? "—" },
-        { label: "Sedes", value: c._count.sites },
-        { label: "Contratos", value: c._count.employments },
-      ]}
-    />
-  );
-}
-
-function CompanyRow({ c, depth }: { c: CompanyRowData; depth: number }) {
-  return (
-    <Tr>
+    <Tr clickable>
       <Td>
-        <span
-          className={depth > 0 ? "text-text/80" : "font-medium"}
-          style={{ paddingLeft: depth * 18 }}
-        >
-          {depth > 0 ? "↳ " : ""}
-          {c.name}
+        <span className="flex items-center gap-2" style={{ paddingLeft: nested ? 22 : 0 }}>
+          <Logo c={c} />
+          <RowLink href={`/admin/empresas/${c.id}`} className={nested ? "text-text/85" : "font-medium"}>
+            {c.name}
+          </RowLink>
         </span>
       </Td>
-      <Td className="font-mono text-xs">
-        {c.tax_id ?? <span className="text-text/60">—</span>}
-      </Td>
+      <Td className="font-mono text-xs">{c.tax_id ?? <span className="text-text/60">—</span>}</Td>
       <Td>{c._count.sites}</Td>
       <Td>{c._count.employments}</Td>
       <Td>
-        <Tag variant={c.status === "active" ? "accent" : "neutral"}>
-          {c.status === "active" ? "Activa" : "Inactiva"}
-        </Tag>
+        <StatusTag active={c.status === "active"} fem />
       </Td>
-      <Td>
-        <LinkBtn href={`/admin/empresas/${c.id}`} variant="ghost">
-          Detalle →
-        </LinkBtn>
-      </Td>
+      <Td />
     </Tr>
+  );
+}
+
+/** Mobile compacto: una línea por empresa — logo, nombre, RIF y estado solo si está inactiva. */
+function CompanyCard({ c }: { c: CompanyRowData }) {
+  return (
+    <Link
+      href={`/admin/empresas/${c.id}`}
+      className="flex items-center gap-2.5 border border-divider bg-surface px-3 py-2 text-text no-underline hover:bg-accent-100"
+    >
+      <Logo c={c} size="xs" />
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-sm font-medium">{c.name}</span>
+        <span className="block font-mono text-xs text-text/60">
+          {c.tax_id ?? "sin RIF"} · {c._count.employments} contrato(s)
+        </span>
+      </span>
+      {c.status !== "active" && <StatusTag active={false} fem />}
+    </Link>
   );
 }

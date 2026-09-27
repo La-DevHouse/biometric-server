@@ -107,11 +107,9 @@ export default async function DiagnosticoPage({
         escrita a mano desde acá puede ser revertida en la próxima sincronización si no coincide con el alcance
         (contratos, empresa, grupo, sede). Para cambiar quién está en un equipo, cambiá el contrato o la asignación.
       </p>
-      <p className="m-0 text-xs">
-        <Link href="/admin/asistencia" className="text-accent no-underline hover:underline">
-          Asistencia global (todas las marcaciones, por equipo) →
-        </Link>{" "}
-        <span className="text-text/60">— la vista por empresa está en Empresas → Asistencia.</span>
+      <p className="m-0 text-xs text-text/60">
+        Las marcaciones están en Equipos → (equipo) → Marcaciones, y lo que se exporta a nómina en Empresas → (empresa)
+        → Asistencia.
       </p>
 
       <Card>

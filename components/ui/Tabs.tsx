@@ -1,0 +1,69 @@
+import Link from "next/link";
+import { cx } from "@/lib/cx";
+
+export interface TabItem {
+  key: string;
+  label: string;
+  href: string;
+}
+
+/**
+ * Pestañas por ruta (docs/11 U1): cada pestaña es una subruta, así se puede
+ * enlazar, recargar y usar "atrás" del navegador. La primera es siempre
+ * "Información" en los detalles de Empresa / Empleado / Equipo.
+ */
+export function Tabs({ items, active, label }: { items: TabItem[]; active: string; label: string }) {
+  return (
+    <nav className="flex gap-1 overflow-x-auto border-b border-divider" aria-label={label}>
+      {items.map((t) => (
+        <Link
+          key={t.key}
+          href={t.href}
+          aria-current={t.key === active ? "page" : undefined}
+          className={cx(
+            "-mb-px whitespace-nowrap border-b-2 px-3 py-2 text-sm no-underline",
+            t.key === active ? "border-text font-semibold text-text" : "border-transparent text-text/70 hover:text-text"
+          )}
+        >
+          {t.label}
+        </Link>
+      ))}
+    </nav>
+  );
+}
+
+/**
+ * Encabezado estándar de un detalle (docs/11 U1): volver, nombre, insignias de
+ * estado y, a la derecha, las acciones como íconos con tooltip.
+ */
+export function DetailHeader({
+  backHref,
+  backLabel,
+  title,
+  subtitle,
+  badges,
+  actions,
+}: {
+  backHref: string;
+  backLabel: string;
+  title: React.ReactNode;
+  subtitle?: React.ReactNode;
+  badges?: React.ReactNode;
+  actions?: React.ReactNode;
+}) {
+  return (
+    <div className="flex flex-col gap-1">
+      <Link href={backHref} className="self-start text-xs text-accent no-underline hover:underline">
+        ← {backLabel}
+      </Link>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex min-w-0 flex-wrap items-center gap-3">
+          <h2 className="m-0 font-heading text-2xl font-semibold tracking-tight">{title}</h2>
+          {badges}
+          {subtitle && <span className="text-sm text-text/70">{subtitle}</span>}
+        </div>
+        {actions && <div className="flex flex-wrap items-center gap-1.5">{actions}</div>}
+      </div>
+    </div>
+  );
+}

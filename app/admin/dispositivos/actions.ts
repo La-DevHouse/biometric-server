@@ -23,7 +23,7 @@ export async function assignDeviceAction(
 ): Promise<AdminActionState> {
   const user = await requireUser();
   const dev_id = str(fd, "dev_id");
-  if (!dev_id) return { status: "error", error: "Dispositivo inválido." };
+  if (!dev_id) return { status: "error", error: "Equipo inválido." };
 
   const siteRaw = str(fd, "site_id");
   const site_id = siteRaw === "" ? null : Number(siteRaw);
@@ -33,7 +33,7 @@ export async function assignDeviceAction(
     where: { dev_id },
     select: { dev_id: true, site_id: true },
   });
-  if (!device) return { status: "error", error: "El dispositivo no existe." };
+  if (!device) return { status: "error", error: "El equipo no existe." };
 
   if (site_id != null) {
     if (!Number.isFinite(site_id)) return { status: "error", error: "Sede inválida." };
@@ -74,9 +74,9 @@ export async function assignDeviceAction(
     }
   }
   revalidatePath(`/admin/dispositivos/${dev_id}`);
-  revalidatePath("/admin/enrolamiento");
+  revalidatePath("/admin/dispositivos");
   return {
     status: "ok",
-    message: site_id == null ? "Dispositivo sin sede: queda pendiente de asignar." : "Dispositivo asignado.",
+    message: site_id == null ? "Equipo sin sede: queda pendiente de asignar." : "Equipo asignado.",
   };
 }

@@ -23,7 +23,7 @@ export interface UseOperationApi {
 
 /**
  * Encola una operación de alto nivel (server action que arranca una cadena
- * de comandos sobre el dispositivo) y se la entrega al panel global
+ * de comandos sobre el equipo) y se la entrega al panel global
  * "Procesando" (OperationsTracker), que la sigue hasta el final, muestra cada
  * paso y refresca la página cuando termina. El diálogo que la lanzó NO se
  * queda bloqueado esperando al equipo: se cierra en `onStarted`, y el aviso

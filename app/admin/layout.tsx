@@ -16,7 +16,7 @@ export const dynamic = "force-dynamic";
 export default async function AdminLayout({ children }: { children: ReactNode }) {
   const user = await requireUser();
   await initDb();
-  // Badge junto a "Dispositivos" en el menú lateral — se calcula acá (layout,
+  // Badge junto a "Equipos" en el menú lateral — se calcula acá (layout,
   // en cada navegación) en vez de en AdminShell porque ese es client
   // component sin acceso directo a la base.
   const deviceCount = await getAsync<{ n: number }>(`SELECT COUNT(*) AS n FROM devices`);

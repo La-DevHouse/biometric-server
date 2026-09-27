@@ -73,7 +73,7 @@ export interface OperationView {
   finished_at: number | null;
 }
 
-const OFFLINE_WARNING = "El dispositivo está desconectado. La operación quedará en cola.";
+const OFFLINE_WARNING = "El equipo está desconectado. La operación quedará en cola.";
 
 
 interface DeviceRow {
@@ -87,7 +87,7 @@ async function ensureDevice(devId: string): Promise<DeviceRow> {
     `SELECT dev_id, last_seen_at FROM devices WHERE dev_id = ?`,
     [devId]
   );
-  if (!dev) throw new Error(`Dispositivo desconocido: ${devId}`);
+  if (!dev) throw new Error(`Equipo desconocido: ${devId}`);
   return dev;
 }
 
@@ -168,7 +168,7 @@ export async function startSyncUsers(devId: string): Promise<StartResult> {
 
   const warning = combineWarnings(
     recentCreate
-      ? "Se creó un usuario hace poco; el dispositivo puede reportar datos transitorios (privilegio USER, sin huellas) durante unos minutos."
+      ? "Se creó un usuario hace poco; el equipo puede reportar datos transitorios (privilegio USER, sin huellas) durante unos minutos."
       : undefined,
     // Verified against real hardware: GET_USER_ID_LIST silently excludes
     // USER-privilege / no-fingerprint-yet accounts (GET_DEVICE_STATUS
@@ -207,7 +207,7 @@ export async function startRenameUser(
   const truncated = truncateUserName(trimmed);
   const warning = combineWarnings(
     truncated !== trimmed
-      ? `El dispositivo trunca los nombres a 8 caracteres: se guardará "${truncated}".`
+      ? `El equipo trunca los nombres a 8 caracteres: se guardará "${truncated}".`
       : undefined,
     offlineWarning(dev)
   );
@@ -287,7 +287,7 @@ export async function startCreateUser(devId: string, input: CreateUserInput): Pr
   const privilege: Privilege = input.privilege ?? "USER";
   const warning = combineWarnings(
     truncatedName !== userName
-      ? `El dispositivo trunca los nombres a 8 caracteres: se guardará "${truncatedName}".`
+      ? `El equipo trunca los nombres a 8 caracteres: se guardará "${truncatedName}".`
       : undefined,
     privilege !== "USER"
       ? `El privilegio "${privilege}" no quedará aplicado hasta que la persona tenga una huella registrada en este equipo — verificado que este firmware lo ignora en silencio sin eso. Se intenta aparte después de crear, pero puede terminar reportando que no se pudo aplicar todavía.`
@@ -408,7 +408,7 @@ export async function startRefreshStatus(devId: string): Promise<StartResult> {
 
 // ---------------------------------------------------------------------------
 // Migración de huellas entre dispositivos — ver docs/05-commands-catalog.md
-// ("Migración de huellas entre dispositivos") para la receta verificada
+// ("Migración de huellas entre equipos") para la receta verificada
 // contra hardware real. CAPTURE_FINGERPRINT lee la forma limpia de 612 bytes
 // (GET_USER_INFO, nunca GET_ENROLL_DATA) hacia la copia canónica por
 // empleado (`employee_fingerprint`); PUSH_FINGERPRINT la escribe en otro
@@ -578,7 +578,7 @@ export async function startAddEmployeeToDevice(
 
   const warning = combineWarnings(
     truncatedName !== userName
-      ? `El dispositivo trunca los nombres a 8 caracteres: se guardará "${truncatedName}".`
+      ? `El equipo trunca los nombres a 8 caracteres: se guardará "${truncatedName}".`
       : undefined,
     pendingFingerprints.length > 0
       ? `Esta persona ya tiene ${pendingFingerprints.length} huella(s) capturada(s) — se copiarán a este equipo automáticamente tras crear el usuario.`

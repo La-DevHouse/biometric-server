@@ -299,7 +299,7 @@ test("CHANGE_PRIVILEGE - MANAGER that the device applies ends in done", async ()
 
   const op = await ops.getOperation(opId);
   assert.equal(op?.stage, "done");
-  assert.match(op!.note ?? "", /verificado en el dispositivo/);
+  assert.match(op!.note ?? "", /verificado en el equipo/);
 });
 
 // --- CREATE_USER: probes and verifies with GET_USER_INFO ---
@@ -463,7 +463,7 @@ test("CREATE_USER - MANAGER that verifies (fingerprint already on file) ends in 
 
   const op = await ops.getOperation(opId);
   assert.equal(op?.stage, "done");
-  assert.match(op!.note ?? "", /privilegio "MANAGER" \(verificado en el dispositivo\)/);
+  assert.match(op!.note ?? "", /privilegio "MANAGER" \(verificado en el equipo\)/);
 });
 
 // --- DELETE_USER: apply's return code is untrustworthy; the user count decides ---
@@ -1078,7 +1078,7 @@ test("ADD_EMPLOYEE_TO_DEVICE - MANAGER with a fingerprint pushed in the same cha
 
   const op = await ops.getOperation(opId);
   assert.equal(op?.stage, "done");
-  assert.match(op!.note ?? "", /Privilegio "MANAGER" verificado en el dispositivo/);
+  assert.match(op!.note ?? "", /Privilegio "MANAGER" verificado en el equipo/);
 });
 
 // --- Terminal guard against resurrection ---

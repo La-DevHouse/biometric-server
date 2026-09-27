@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { Dialog } from "@/components/ui/Dialog";
 import { Btn } from "@/components/ui/Btn";
+import { IconBtn } from "@/components/ui/IconBtn";
+import { Icon } from "@/components/ui/icons";
 import { useOperation } from "./useOperation";
 import { renameDeviceAction } from "@/app/admin/actions";
 import { FIELD_INPUT as INPUT_CLASS } from "@/components/ui/fieldStyles";
@@ -17,10 +19,8 @@ export function RenameDeviceDialog({ devId, currentName }: { devId: string; curr
 
   return (
     <>
-      <Btn variant="secondary" onClick={() => setOpen(true)}>
-        Renombrar
-      </Btn>
-      <Dialog open={open} onClose={close} closable={!busy} title="Renombrar dispositivo">
+      <IconBtn icon={Icon.edit} label="Renombrar" onClick={() => setOpen(true)} />
+      <Dialog open={open} onClose={close} closable={!busy} title="Renombrar equipo">
         <div className="flex flex-col gap-3">
           <form action={formAction} className="flex flex-col gap-3">
             <input type="hidden" name="dev_id" value={devId} />

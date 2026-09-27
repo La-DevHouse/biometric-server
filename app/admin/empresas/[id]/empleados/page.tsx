@@ -107,7 +107,12 @@ export default async function EmpresaEmpleadosPage({ params }: { params: Promise
 
   return (
     <div className="flex max-w-5xl flex-col gap-4">
-      <CompanyTabs companyId={company.id} companyName={company.name} active="empleados" />
+      <CompanyTabs
+        companyId={company.id}
+        companyName={company.name}
+        active="empleados"
+        actions={<ResyncEnrollmentsButton companyId={company.id} />}
+      />
 
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="m-0 text-sm text-text/75">
@@ -115,9 +120,6 @@ export default async function EmpresaEmpleadosPage({ params }: { params: Promise
           alcance{" "}
           <span className="text-text/60">(sedes de la empresa, y de su grupo si comparte empleados)</span>
         </p>
-        <span className="flex items-center gap-2 text-xs text-text/70">
-          Sincronizar ahora <ResyncEnrollmentsButton companyId={company.id} />
-        </span>
       </div>
 
       {rows.length === 0 ? (

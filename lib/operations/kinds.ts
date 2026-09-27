@@ -70,7 +70,7 @@ export function truncateUserName(name: string): string {
 
 export const OPERATION_LABELS: Record<OperationKind, string> = {
   SYNC_CLOCK: "Sincronizar hora",
-  RENAME_DEVICE: "Renombrar dispositivo",
+  RENAME_DEVICE: "Renombrar equipo",
   SYNC_USERS: "Sincronizar lista de usuarios",
   RENAME_USER: "Renombrar usuario",
   CHANGE_PRIVILEGE: "Cambiar privilegio",
@@ -80,7 +80,7 @@ export const OPERATION_LABELS: Record<OperationKind, string> = {
   CLEAR_LOGS: "Borrar memoria de logs",
   CLEAR_ENROLL: "Borrar todos los biométricos",
   VIEW_BIOMETRICS: "Ver biométricos",
-  REFRESH_STATUS: "Actualizar estado del dispositivo",
+  REFRESH_STATUS: "Actualizar estado del equipo",
   CAPTURE_FINGERPRINT: "Capturar huella",
   PUSH_FINGERPRINT: "Copiar huella a otro equipo",
   ADD_EMPLOYEE_TO_DEVICE: "Agregar empleado al equipo",
@@ -95,11 +95,11 @@ export const MAX_FINGERPRINT_INDEX = 9;
 
 export const STAGE_LABELS: Record<OperationStage, string> = {
   queued: "En cola",
-  sent: "Enviado al dispositivo",
+  sent: "Enviado al equipo",
   waiting: "Esperando al equipo",
   verifying: "Verificando…",
   done: "Completado",
-  mismatch: "El dispositivo no aplicó el cambio",
+  mismatch: "El equipo no aplicó el cambio",
   error: "Error",
   canceled: "Cancelada",
 };

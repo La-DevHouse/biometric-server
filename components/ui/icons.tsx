@@ -22,6 +22,10 @@ export const Icon = {
   unlink: "⏚",
   send: "⇉",
   capture: "⇣",
+  clock: "◷",
+  refresh: "↻",
+  assign: "⌖",
+  export: "⇩",
 } as const;
 
 /**

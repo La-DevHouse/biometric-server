@@ -6,7 +6,7 @@ export async function loadEmploymentLookups() {
     // El modelo de negocio es el de la empresa — ya no se hereda del grupo (docs/10 §2).
     prisma.client_company.findMany({
       where: { status: "active" },
-      select: { id: true, name: true, business_model_id: true },
+      select: { id: true, name: true, tax_id: true, business_model_id: true },
       orderBy: { name: "asc" },
     }),
     prisma.schedule_group.findMany({

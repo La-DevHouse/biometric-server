@@ -20,7 +20,7 @@ export function DiagnosticoCommandForm({
   return (
     <form action={formAction} className="flex flex-col gap-3 max-w-md">
       <label className="flex flex-col gap-1 text-xs text-text/85">
-        Dispositivo
+        Equipo
         <select name="dev_id" required className={INPUT_CLASS} defaultValue="">
           <option value="" disabled>
             Selecciona un equipo…

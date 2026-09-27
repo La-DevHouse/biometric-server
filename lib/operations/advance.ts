@@ -153,7 +153,7 @@ export async function advanceOperationForCommand(input: AdvanceInput): Promise<v
     await finishOperation(
       op.id,
       "error",
-      `El dispositivo devolvió ${input.returnCode} al ejecutar ${input.cmdCode}.`
+      `El equipo devolvió ${input.returnCode} al ejecutar ${input.cmdCode}.`
     );
     return;
   }
@@ -224,7 +224,7 @@ async function advanceSimple(op: OperationRow, input: AdvanceInput): Promise<voi
     // Optimistic local write skipped deliberately — see the fk_name empty-
     // string quirk in protocol-handlers.ts. The device is the source of
     // truth and reports the new name on its own within ~10s.
-    await finishOperation(op.id, "done", "El dispositivo confirmó el cambio de nombre.");
+    await finishOperation(op.id, "done", "El equipo confirmó el cambio de nombre.");
     return;
   }
   if (op.kind === "CLEAR_ENROLL") {
@@ -245,7 +245,7 @@ async function advanceSimple(op: OperationRow, input: AdvanceInput): Promise<voi
   if (op.kind === "REFRESH_STATUS") {
     // handleCommandResult (protocol-handlers.ts) already persisted this via
     // upsertDeviceStatus for any GET_DEVICE_STATUS, before advance ever runs.
-    await finishOperation(op.id, "done", "Estado del dispositivo actualizado.");
+    await finishOperation(op.id, "done", "Estado del equipo actualizado.");
     return;
   }
   if (op.kind === "VIEW_BIOMETRICS") {
@@ -261,7 +261,7 @@ async function advanceSimple(op: OperationRow, input: AdvanceInput): Promise<voi
     return;
   }
   // SYNC_CLOCK
-  await finishOperation(op.id, "done", "Reloj del dispositivo sincronizado con el servidor.");
+  await finishOperation(op.id, "done", "Reloj del equipo sincronizado con el servidor.");
 }
 
 async function advanceSyncUsers(op: OperationRow, input: AdvanceInput): Promise<void> {
@@ -273,16 +273,16 @@ async function advanceSyncUsers(op: OperationRow, input: AdvanceInput): Promise<
     // The list itself failing means the whole operation has nothing to work
     // with — this is fatal, unlike an individual GET_USER_INFO below.
     if (!input.ok) {
-      await finishOperation(op.id, "error", `El dispositivo devolvió ${input.returnCode} al listar usuarios.`);
+      await finishOperation(op.id, "error", `El equipo devolvió ${input.returnCode} al listar usuarios.`);
       return;
     }
     const ids = input.ok ? decodeIdListOrEmpty(input.resultJson, input.binaries) : null;
     if (ids === null) {
-      await finishOperation(op.id, "error", "No se pudo leer la lista de usuarios del dispositivo.");
+      await finishOperation(op.id, "error", "No se pudo leer la lista de usuarios del equipo.");
       return;
     }
     if (ids.length === 0) {
-      await finishOperation(op.id, "done", "El dispositivo no tiene usuarios registrados.");
+      await finishOperation(op.id, "done", "El equipo no tiene usuarios registrados.");
       return;
     }
     const nextPlan: SyncUsersPlan = { phase: "info", pending: ids.slice(1), synced: [], failed: [] };
@@ -346,7 +346,7 @@ async function advanceSyncLogs(op: OperationRow, input: AdvanceInput): Promise<v
   const empty = Number(input.resultJson?.log_count) === 0;
   const entries = empty ? [] : input.resultJson ? decodeLogData(input.resultJson, input.binaries) : null;
   if (entries === null) {
-    await finishOperation(op.id, "error", "No se pudo leer el historial del dispositivo.");
+    await finishOperation(op.id, "error", "No se pudo leer el historial del equipo.");
     return;
   }
   const summary = await insertAttendanceLogs(op.dev_id, entries);
@@ -362,8 +362,8 @@ async function advanceSyncLogs(op: OperationRow, input: AdvanceInput): Promise<v
   );
   const note =
     summary.total === 0
-      ? "El dispositivo no reportó marcaciones."
-      : `${summary.total} registros leídos del dispositivo: ${summary.inserted} nuevos, ${summary.skipped} ya estaban registrados.`;
+      ? "El equipo no reportó marcaciones."
+      : `${summary.total} registros leídos del equipo: ${summary.inserted} nuevos, ${summary.skipped} ya estaban registrados.`;
   await finishOperation(op.id, "done", note);
 }
 
@@ -389,7 +389,7 @@ async function advanceVerified(
       await finishOperation(
         op.id,
         "error",
-        `El dispositivo devolvió ${input.returnCode} al ejecutar ${input.cmdCode}.`
+        `El equipo devolvió ${input.returnCode} al ejecutar ${input.cmdCode}.`
       );
       return;
     }
@@ -408,7 +408,7 @@ async function advanceVerified(
     await finishOperation(
       op.id,
       "mismatch",
-      "No se pudo verificar el cambio; el estado real del dispositivo es desconocido."
+      "No se pudo verificar el cambio; el estado real del equipo es desconocido."
     );
     return;
   }
@@ -417,13 +417,13 @@ async function advanceVerified(
 
   if (actual === expected) {
     const verb = field === "user_name" ? "nombre cambiado a" : "privilegio cambiado a";
-    await finishOperation(op.id, "done", `${verb} "${expected}" (verificado en el dispositivo).`);
+    await finishOperation(op.id, "done", `${verb} "${expected}" (verificado en el equipo).`);
   } else {
     const noun = field === "user_name" ? "nombre" : "privilegio";
     await finishOperation(
       op.id,
       "mismatch",
-      `El dispositivo respondió OK pero el ${noun} sigue siendo "${actual}" (se solicitó "${expected}"). ` +
+      `El equipo respondió OK pero el ${noun} sigue siendo "${actual}" (se solicitó "${expected}"). ` +
         (field === "user_privilege"
           ? "Verificado contra hardware real: un privilegio elevado no se aplica mientras el usuario no " +
             "tenga ninguna huella registrada — registrale la huella físicamente y reintentá."
@@ -686,7 +686,7 @@ async function advanceAddEmployeeToDevice(op: OperationRow, input: AdvanceInput)
       await finishOperation(
         op.id,
         "mismatch",
-        "No se pudo verificar la creación del usuario; el estado real del dispositivo es desconocido."
+        "No se pudo verificar la creación del usuario; el estado real del equipo es desconocido."
       );
       return;
     }
@@ -748,7 +748,7 @@ async function advanceAddEmployeeToDevice(op: OperationRow, input: AdvanceInput)
     await finishOperation(
       op.id,
       plan.fingerprintMismatch ? "mismatch" : "done",
-      `${fingerprintNote} Privilegio "${plan.privilege}" verificado en el dispositivo.`
+      `${fingerprintNote} Privilegio "${plan.privilege}" verificado en el equipo.`
     );
     return;
   }
@@ -762,7 +762,7 @@ async function advanceAddEmployeeToDevice(op: OperationRow, input: AdvanceInput)
       ? "no se pudo aplicar todavía — este firmware solo acepta privilegios elevados una vez que el " +
         'usuario tiene al menos una huella registrada. Volvé a intentar "Cambiar privilegio" después de ' +
         "registrarle la huella."
-      : `el dispositivo respondió OK pero el privilegio sigue siendo "${actualPrivilege ?? "desconocido"}".`;
+      : `el equipo respondió OK pero el privilegio sigue siendo "${actualPrivilege ?? "desconocido"}".`;
   await finishOperation(op.id, "mismatch", `${fingerprintNote} Privilegio "${plan.privilege}" ${reason}`);
 }
 
@@ -963,7 +963,7 @@ async function advanceCreateUser(op: OperationRow, input: AdvanceInput): Promise
       await finishOperation(
         op.id,
         "error",
-        `Ya existe el usuario ${op.user_id} ("${existingName}") en el dispositivo. ` +
+        `Ya existe el usuario ${op.user_id} ("${existingName}") en el equipo. ` +
           `Usa Renombrar o Cambiar privilegio; crear encima destruiría sus huellas.`
       );
       return;
@@ -1005,7 +1005,7 @@ async function advanceCreateUser(op: OperationRow, input: AdvanceInput): Promise
       await finishOperation(
         op.id,
         "mismatch",
-        "No se pudo verificar la creación; el estado real del dispositivo es desconocido."
+        "No se pudo verificar la creación; el estado real del equipo es desconocido."
       );
       return;
     }
@@ -1050,7 +1050,7 @@ async function advanceCreateUser(op: OperationRow, input: AdvanceInput): Promise
     await finishOperation(
       op.id,
       "done",
-      `Usuario ${op.user_id} creado con privilegio "${plan.privilege}" (verificado en el dispositivo).`
+      `Usuario ${op.user_id} creado con privilegio "${plan.privilege}" (verificado en el equipo).`
     );
     return;
   }
@@ -1179,7 +1179,7 @@ export async function sweepStaleOperations(): Promise<number> {
       }
     }
 
-    await finishOperation(op.id, "error", "El dispositivo no respondió a tiempo; la operación se canceló.");
+    await finishOperation(op.id, "error", "El equipo no respondió a tiempo; la operación se canceló.");
     expired++;
   }
   return expired;

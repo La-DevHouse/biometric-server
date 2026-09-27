@@ -3,6 +3,7 @@
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { useTransition } from "react";
 import { FiltersDialog } from "@/components/ui/FiltersDialog";
+import { Combobox } from "@/components/ui/Combobox";
 import { FIELD_INPUT as INPUT_CLASS, FIELD_LABEL as LABEL } from "@/components/ui/fieldStyles";
 
 /**
@@ -15,7 +16,7 @@ export function EmployeeFiltersDialog({
   companies,
 }: {
   groups: { id: number; name: string }[];
-  companies: { id: number; name: string }[];
+  companies: { id: number; name: string; tax_id?: string | null }[];
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -67,22 +68,18 @@ export function EmployeeFiltersDialog({
           ))}
         </select>
       </label>
-      <label className={LABEL}>
+      <div className={LABEL}>
         Empresa
-        <select
-          className={INPUT_CLASS}
+        <Combobox
+          ariaLabel="Empresa"
+          options={companies.map((c) => ({ value: String(c.id), label: c.name, hint: c.tax_id ?? undefined }))}
+          emptyLabel="todas"
           value={empresa}
           disabled={isPending}
-          onChange={(e) => update({ empresa: e.target.value })}
-        >
-          <option value="">todas</option>
-          {companies.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-            </option>
-          ))}
-        </select>
-      </label>
+          onChange={(v) => update({ empresa: v })}
+          placeholder="Buscar empresa o RIF…"
+        />
+      </div>
       <label className={LABEL}>
         Estado
         <select

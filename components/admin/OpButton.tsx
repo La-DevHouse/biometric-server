@@ -3,6 +3,7 @@
 import { useId, useState, type ReactNode } from "react";
 import { Dialog } from "@/components/ui/Dialog";
 import { Btn } from "@/components/ui/Btn";
+import { IconBtn } from "@/components/ui/IconBtn";
 import { useOperation } from "./useOperation";
 import type { OpActionState } from "@/lib/opActionState";
 
@@ -43,9 +44,13 @@ export function OpButton({
 
   return (
     <>
-      <Btn variant={variant} title={label ?? title} aria-label={label ?? title} onClick={() => setOpen(true)}>
-        {children}
-      </Btn>
+      {variant === "icon" ? (
+        <IconBtn icon={children} label={label ?? title} onClick={() => setOpen(true)} />
+      ) : (
+        <Btn variant={variant} title={label ?? title} aria-label={label ?? title} onClick={() => setOpen(true)}>
+          {children}
+        </Btn>
+      )}
       <Dialog
         open={open}
         onClose={close}

@@ -1,9 +1,8 @@
 import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
-import { Table, Th, Td, Tr } from "@/components/ui/Table";
+import { Table, Th, Td, Tr, RowLink } from "@/components/ui/Table";
 import { MobileList, MobileRow } from "@/components/ui/MobileRow";
 import { Tag } from "@/components/ui/Tag";
-import { LinkBtn } from "@/components/ui/Btn";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ScheduleFormDialog } from "@/components/admin/ScheduleFormDialog";
 
@@ -52,13 +51,14 @@ export default async function HorariosPage() {
                   <Th>Turnos</Th>
                   <Th>Contratos</Th>
                   <Th>Estado</Th>
-                  <Th />
                 </tr>
               </thead>
               <tbody>
                 {schedules.map((g) => (
-                  <Tr key={g.id}>
-                    <Td className="font-medium">{g.name}</Td>
+                  <Tr key={g.id} clickable>
+                    <Td className="font-medium">
+                      <RowLink href={`/admin/horarios/${g.id}`}>{g.name}</RowLink>
+                    </Td>
                     <Td>{g.company.name}</Td>
                     <Td className="font-mono text-xs">{g.code ?? <span className="text-text/60">—</span>}</Td>
                     <Td>{g._count.shifts}</Td>
@@ -67,11 +67,6 @@ export default async function HorariosPage() {
                       <Tag variant={g.status === "active" ? "accent" : "neutral"}>
                         {g.status === "active" ? "Activo" : "Inactivo"}
                       </Tag>
-                    </Td>
-                    <Td>
-                      <LinkBtn href={`/admin/horarios/${g.id}`} variant="ghost">
-                        Detalle →
-                      </LinkBtn>
                     </Td>
                   </Tr>
                 ))}

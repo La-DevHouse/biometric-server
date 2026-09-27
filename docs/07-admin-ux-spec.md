@@ -62,19 +62,30 @@ cualquier equipo del alcance alcanza: se detecta y se copia a los demás.
 
 | Vista | Qué muestra / hace |
 | --- | --- |
-| **Empresas** | Lista agrupada por grupo; alta/edición de grupos y empresas (con primera sede) |
-| **Empresa → Datos y sedes** | Ficha, sedes (con equipos por sede), "Sincronizar ahora" |
+| **Empresas** | Grupos como filas colapsables (colapsados por defecto) mezclados por nombre con las empresas sueltas; logo chico por fila; alta/edición de grupos y empresas (con primera sede) |
+| **Empresa → Información** | Ficha (logo grande arriba a la derecha), empresas del grupo; acciones en el encabezado (editar, sincronizar, activar/desactivar) |
+| **Empresa → Sedes** | Sedes con su cantidad de equipos; alta/edición/estado de sede |
 | **Empresa → Empleados** | Contratos vigentes con su estado en los equipos del alcance (huellas, "en N de M", al día / faltan) |
-| **Empresa → Asistencia** | Marcaciones hechas en los equipos de sus sedes (el marcaje es de la empresa donde se marca), filtros por fecha/sede, "Sincronizar asistencia" |
-| **Empleados** | Listado global, filtros por grupo/empresa/estado (sin filtro por sede) |
-| **Ficha de empleado** | Contratos (alta / baja / traslado con **aviso de impacto**), estado por equipo, huellas (orden de captura, origen, en cuántos equipos), "Sincronizar ahora" |
-| **Dispositivos** | Asignar a sede (con aviso de impacto), "Sincronización de huellas" (última corrida, "Sincronizar ahora", aprobar/rechazar bajas frenadas), "Sincronizar todos" |
-| **Enrolamiento** | Solo lectura: por equipo, qué falta, qué está incompleto, qué sobra, admins que no se tocan, IDs sin empleado, y los usuarios del equipo |
-| **Usuarios de equipo** | Por equipo: renombrar, privilegio, ver biométricos, eliminar (aviso si es un empleado del alcance — el reconciliador lo recrearía). **Sin alta manual.** |
-| **Diagnóstico** | Comandos crudos, cola, tráfico; **zona de riesgo** (borrar logs / biométricos, con doble confirmación); enlace a la asistencia global |
+| **Empresa → Asistencia** | **Por contrato** (`11` C4): marcaciones de sus empleados con contrato, en cualquier equipo de su alcance, dentro del período del contrato — lo mismo que se exporta. Filtros fecha/sede, "Sincronizar asistencia" |
+| **Empleados** | Listado global, filtros por grupo/empresa (combobox)/estado (sin filtro por sede) |
+| **Empleado → Información / Contratos de trabajo / Equipos y huellas** | Datos y foto de cédula; contratos (alta, **Editar** sin cambiar la empresa, baja — cada paso con **aviso de impacto**; sin "Trasladar"); estado por equipo y huellas (orden de captura, origen, en cuántos equipos). "Sincronizar ahora" en el encabezado |
+| **Equipos** | Empresa y sede por fila, búsqueda (nombre, serie, empresa, sede), filtros (empresa, en línea / desconectado / pendiente de asignar), "Sincronizar todos" |
+| **Equipo → Información** | Asignación (congelado si no tiene sede), última corrida de sincronización, **bajas frenadas** (aprobar/rechazar), contadores. Íconos: Renombrar, Sincronizar hora, **Actualizar** (con sede: sincronización completa; sin sede: solo lee el estado), Asignar sede (empresa con búsqueda → sede, con aviso de impacto) |
+| **Equipo → Usuarios** | Lo que era "Usuarios de equipo" + "Enrolamiento": empleado vinculado, huellas físicas/copiadas, qué falta/sobra/no se toca; renombrar, privilegio, ver biométricos, eliminar (aviso si está en el alcance). **Sin alta manual** |
+| **Equipo → Marcaciones** | Todo lo marcado en ese equipo, incluidos IDs sin empleado ("dónde se marcó") |
+| **Categorías** | Pestañas Modelos de negocio / Puestos / Departamentos |
+| **Diagnóstico** | Comandos crudos, cola, tráfico; **zona de riesgo** (borrar logs / biométricos, con doble confirmación) |
+
+**Estándares de UI (docs/11 PR 4, 2026-09-27):** detalle con pestañas por ruta
+(`Tabs` + `DetailHeader`, primera pestaña "Información"); filas de tabla y tarjetas
+mobile clickeables completas (stretched link; las acciones de la fila quedan por
+encima); acciones del encabezado como íconos con tooltip propio y `aria-label`
+(`IconBtn`); selects de empresa con búsqueda (`Combobox`, por nombre o RIF, sin
+distinguir acentos); en pantalla se dice **"equipo"** (no "dispositivo") y
+**"contratos de trabajo"** (no "empleos"). Vistas según `docs/11` PR 5 (2026-09-27).
 
 **Aviso de impacto** ("X pierde acceso a Y") antes de guardar: terminar contrato,
-trasladar, apagar "Compartir empleados", cambiar el grupo de una empresa, mover un
+editar un contrato moviendo su inicio al futuro, apagar "Compartir empleados", cambiar el grupo de una empresa, mover un
 equipo de sede. Desactivar una empresa o un grupo todavía no lo muestra (queda el
 freno de borrado masivo como red) — `docs/10` §8 O12.
 

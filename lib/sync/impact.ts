@@ -15,7 +15,6 @@ import { activeEmploymentWhere } from "@/lib/scope";
 
 export type ScopeChange =
   | { kind: "end_contract"; employmentId: number }
-  | { kind: "transfer"; employmentId: number; toCompanyId: number }
   | { kind: "group_shared"; groupId: number; shared: boolean }
   | { kind: "group_status"; groupId: number; active: boolean }
   | { kind: "company_group"; companyId: number; groupId: number | null }
@@ -59,9 +58,6 @@ function applyChange(w: World, ch: ScopeChange): World {
   switch (ch.kind) {
     case "end_contract":
       next.contracts = next.contracts.filter((c) => c.id !== ch.employmentId);
-      break;
-    case "transfer":
-      next.contracts = next.contracts.map((c) => (c.id === ch.employmentId ? { ...c, companyId: ch.toCompanyId } : c));
       break;
     case "group_shared": {
       const g = next.groups.get(ch.groupId);

@@ -3,6 +3,7 @@
 import { useId, useState, type ReactNode } from "react";
 import { Dialog } from "@/components/ui/Dialog";
 import { Btn } from "@/components/ui/Btn";
+import { IconBtn } from "@/components/ui/IconBtn";
 import { useMultiOperation } from "./useOperation";
 import type { MultiOpActionState } from "@/lib/opActionState";
 
@@ -26,7 +27,8 @@ export function MultiOpButton({
   title: string;
   description: ReactNode;
   children: ReactNode;
-  variant?: "primary" | "secondary" | "ghost";
+  /** "icon": ícono con tooltip (`children` = el ícono, `title` = el tooltip) — la norma en barras (docs/11 U2). */
+  variant?: "primary" | "secondary" | "ghost" | "icon";
 }) {
   const [open, setOpen] = useState(false);
   const formId = useId();
@@ -34,9 +36,13 @@ export function MultiOpButton({
 
   return (
     <>
-      <Btn variant={variant} onClick={() => setOpen(true)}>
-        {children}
-      </Btn>
+      {variant === "icon" ? (
+        <IconBtn icon={children} label={title} onClick={() => setOpen(true)} />
+      ) : (
+        <Btn variant={variant} onClick={() => setOpen(true)}>
+          {children}
+        </Btn>
+      )}
       <Dialog
         open={open}
         onClose={() => setOpen(false)}

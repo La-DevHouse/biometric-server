@@ -31,7 +31,7 @@ export function ClearEnrollDialog({ devId }: { devId: string }) {
             <input type="hidden" name="dev_id" value={devId} />
             <p className="text-sm m-0">
               Esto borra las huellas de <strong>todos</strong> los usuarios del equipo. Tendrán que
-              re-enrolarse físicamente en el dispositivo — no hay forma de restaurarlas desde el
+              re-enrolarse físicamente en el equipo — no hay forma de restaurarlas desde el
               servidor.
             </p>
             <label className="flex items-center gap-2 text-sm cursor-pointer">

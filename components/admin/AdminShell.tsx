@@ -9,41 +9,35 @@ import { Tag } from "@/components/ui/Tag";
 import { ToastProvider } from "./Toaster";
 import { OperationsTrackerProvider } from "./OperationsTracker";
 import { logoutAction } from "@/app/login/actions";
+import { CommandPalette } from "./CommandPalette";
 
 // Glifos mono por ítem — parte de la maqueta "Menú lateral" (2026-09-23), no
 // del set de acciones de components/ui/icons.tsx (ese es para botones de
 // toolbar; estos son de navegación, un caso aparte).
 const NAV_ITEMS = [
   { href: "/admin", label: "Inicio", icon: "⌂" },
-  { href: "/admin/dispositivos", label: "Dispositivos", icon: "▤" },
-  { href: "/admin/usuarios", label: "Usuarios de equipo", icon: "◍" },
+  { href: "/admin/dispositivos", label: "Equipos", icon: "▤" },
 ] as const;
 
 const ADMIN_ITEMS = [
   { href: "/admin/empresas", label: "Empresas", icon: "▢" },
   { href: "/admin/empleados", label: "Empleados", icon: "◉" },
-  { href: "/admin/enrolamiento", label: "Enrolamiento", icon: "✚" },
   { href: "/admin/categorias", label: "Categorías", icon: "☰" },
   { href: "/admin/horarios", label: "Horarios y turnos", icon: "◫" },
-  { href: "/admin/cuentas", label: "Cuentas", icon: "⚿" },
-  { href: "/admin/styleguide", label: "Design system", icon: "◈" },
+  { href: "/admin/cuentas", label: "Cuentas", icon: "⚿" }
 ] as const;
 
 const TITLES: Array<{ prefix: string; title: string }> = [
-  { prefix: "/admin/dispositivos/", title: "Detalle de dispositivo" },
-  { prefix: "/admin/dispositivos", title: "Dispositivos" },
-  { prefix: "/admin/usuarios", title: "Usuarios de equipo" },
-  { prefix: "/admin/asistencia", title: "Asistencia" },
+  { prefix: "/admin/dispositivos/", title: "Detalle de equipo" },
+  { prefix: "/admin/dispositivos", title: "Equipos" },
   { prefix: "/admin/empresas/", title: "Detalle de empresa" },
   { prefix: "/admin/empresas", title: "Empresas" },
   { prefix: "/admin/empleados/", title: "Detalle de empleado" },
   { prefix: "/admin/empleados", title: "Empleados" },
-  { prefix: "/admin/enrolamiento", title: "Enrolamiento" },
-  { prefix: "/admin/categorias", title: "Departamentos y Puestos" },
+  { prefix: "/admin/categorias", title: "Categorías" },
   { prefix: "/admin/horarios/", title: "Detalle de horario" },
   { prefix: "/admin/horarios", title: "Horarios y turnos" },
   { prefix: "/admin/cuentas", title: "Cuentas de plataforma" },
-  { prefix: "/admin/styleguide", title: "Design system" },
   { prefix: "/admin/diagnostico", title: "Diagnóstico / Avanzado" },
   { prefix: "/admin", title: "Inicio" },
 ];
@@ -58,7 +52,7 @@ function titleFor(pathname: string): string {
   return TITLES.find((t) => pathname.startsWith(t.prefix))?.title ?? "";
 }
 
-/** Highlights "Dispositivos" while viewing a device's own detail page too. */
+/** Highlights "Equipos" while viewing a device's own detail page too. */
 function isNavActive(pathname: string, href: string): boolean {
   if (href === "/admin") return pathname === "/admin";
   return pathname.startsWith(href);
@@ -72,7 +66,7 @@ export function AdminShell({
 }: {
   userName?: string;
   userRole?: "admin" | "operator" | "viewer";
-  /** Badge junto a "Dispositivos" — total de equipos registrados. */
+  /** Badge junto a "Equipos" — total de equipos registrados. */
   deviceCount?: number;
   children: ReactNode;
 }) {
@@ -219,6 +213,7 @@ export function AdminShell({
               {mobileOpen ? "×" : "☰"}
             </button>
             <h4 className="font-heading text-xl font-semibold tracking-tight m-0 truncate">{titleFor(pathname)}</h4>
+            <CommandPalette />
           </header>
 
           <div className="flex-1 overflow-y-auto p-4 md:p-6">{children}</div>

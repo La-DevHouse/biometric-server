@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { Dialog } from "@/components/ui/Dialog";
 import { Btn } from "@/components/ui/Btn";
+import { IconBtn } from "@/components/ui/IconBtn";
+import { Icon } from "@/components/ui/icons";
 import { useMultiOperation } from "./useOperation";
 import { syncAllDevicesAction } from "@/app/admin/actions";
 
@@ -13,9 +15,7 @@ export function SyncAllButton() {
 
   return (
     <>
-      <Btn variant="secondary" onClick={() => setOpen(true)}>
-        Sincronizar todos
-      </Btn>
+      <IconBtn icon={Icon.sync} label="Sincronizar todos" onClick={() => setOpen(true)} />
       <Dialog open={open} onClose={() => setOpen(false)} closable={!busy} title="Sincronizar huellas en todos los equipos">
         <form action={formAction} className="flex flex-col gap-3">
           <p className="text-sm m-0">

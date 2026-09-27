@@ -1,5 +1,5 @@
 // Manejo de zona horaria. El servidor corre en UTC (Coolify/Hetzner); los
-// dispositivos y los cálculos de asistencia trabajan en hora local de la sede.
+// equipos y los cálculos de asistencia trabajan en hora local de la sede.
 //
 // - `io_time` del protocolo se guarda como texto "YYYYMMDDhhmmss" tal cual lo
 //   manda el equipo: hora de pared local, SIN convertir. La interpretación a

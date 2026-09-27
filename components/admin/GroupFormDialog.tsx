@@ -19,7 +19,7 @@ export interface GroupFormValues {
 
 /**
  * Alta/edición de un grupo de empresas (docs/10 R1). Solo nombre + "Compartir
- * empleados": un grupo no tiene RIF, sedes, dispositivos ni contratos — las
+ * empleados": un grupo no tiene RIF, sedes, equipos ni contratos — las
  * empresas se asignan al grupo desde su propio formulario.
  */
 export function GroupFormDialog({ group }: { group?: GroupFormValues }) {

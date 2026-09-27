@@ -34,7 +34,7 @@ Grupo ALCO presta servicios de RRHH a ~40 empresas cliente. Hoy opera con dos si
 - Reportes por empresa, empleado y rango de fechas.
 - Consolidado del período (días trabajados, horas totales, tardanzas, ausencias, horas extra de referencia) listo como insumo de nómina.
 - Reporte de incidencias del período.
-- Exportación a hoja de cálculo con la estructura que ALCO necesite para cargar a su sistema de nómina actual.
+- Exportación a hoja de cálculo con la estructura que ALCO necesite para cargar a su sistema de nómina actual. **Formato definido e implementado (2026-09-27):** réplica del `.xlsx` "Relación de Asistencia" de Adempiere que se carga en Galepso, por empresa y por contrato — ver `docs/11` R1–R8 y §3.
 
 **Plataforma y accesos**
 
