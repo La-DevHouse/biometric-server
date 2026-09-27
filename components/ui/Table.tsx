@@ -25,8 +25,8 @@ export function Th({ className, children }: { className?: string; children?: Rea
   return (
     <th
       className={cx(
-        "text-left font-mono text-2xs tracking-[0.14em] uppercase text-neutral-700 whitespace-nowrap",
-        "p-2 bg-chrome border-b border-neutral-400",
+        "text-left font-mono text-2xs font-normal tracking-[0.12em] uppercase text-neutral-700 whitespace-nowrap",
+        "px-[14px] py-[9px] bg-chrome border-b border-neutral-400",
         className
       )}
     >
@@ -52,7 +52,7 @@ export function Td({
   colSpan?: number;
 }) {
   return (
-    <td colSpan={colSpan} className={cx("p-2 border-b border-neutral-200", actions && "relative z-10", className)}>
+    <td colSpan={colSpan} className={cx("px-[14px] py-[11px] align-middle border-b border-neutral-200", actions && "relative z-10", className)}>
       {children}
     </td>
   );
@@ -64,7 +64,7 @@ export function Td({
  */
 export function Tr({ className, children, clickable }: { className?: string; children: ReactNode; clickable?: boolean }) {
   return (
-    <tr className={cx("hover:bg-accent-100", clickable && "relative cursor-pointer focus-within:bg-accent-100", className)}>
+    <tr className={cx("hover:bg-[#f3f7fb] [&:last-child>td]:border-b-0", clickable && "relative cursor-pointer focus-within:bg-[#f3f7fb]", className)}>
       {children}
     </tr>
   );

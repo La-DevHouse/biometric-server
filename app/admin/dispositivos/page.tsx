@@ -93,7 +93,7 @@ export default async function DispositivosPage({ searchParams }: { searchParams:
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between gap-3">
-        <Suspense fallback={<div className="min-h-9 flex-1" />}>
+        <Suspense fallback={<div className="h-(--control-h) flex-1" />}>
           <DeviceFilters companies={companies} />
         </Suspense>
         <SyncAllButton />

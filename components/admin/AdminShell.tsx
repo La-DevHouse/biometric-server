@@ -86,7 +86,7 @@ export function AdminShell({
   function navLinkClass(href: string) {
     const active = isNavActive(pathname, href);
     return cx(
-      "flex items-center gap-[10px] h-[32px] px-[16px] text-[13px] font-medium no-underline border-l-2",
+      "flex items-center gap-[12px] h-[40px] px-[18px] text-[15px] font-medium no-underline border-l-2",
       active
         ? "bg-accent text-white font-semibold border-l-text"
         : "text-text border-l-transparent hover:bg-chrome hover:border-l-neutral-500"
@@ -95,8 +95,8 @@ export function AdminShell({
 
   function navIconClass(href: string) {
     return cx(
-      "font-mono text-[15px] w-[16px] flex-none text-center",
-      isNavActive(pathname, href) ? "text-accent-200" : "text-neutral-700"
+      "font-mono text-[18px] leading-none w-[18px] flex-none text-center",
+      isNavActive(pathname, href) ? "text-[#cfe0f1]" : "text-neutral-700"
     );
   }
 
@@ -118,31 +118,31 @@ export function AdminShell({
 
         <aside
           className={cx(
-            "w-full md:w-[232px] flex-none bg-surface border-r border-divider flex flex-col",
+            "w-full md:w-[268px] flex-none bg-surface border-r border-divider flex flex-col",
             "fixed inset-y-0 left-0 z-40 transition-transform duration-200 ease-out",
             "md:static md:translate-x-0",
             mobileOpen ? "translate-x-0" : "-translate-x-full"
           )}
         >
-          <div className="flex items-center gap-[10px] pt-[16px] pr-[16px] pb-[14px] pl-[16px] border-b border-neutral-200">
-            <div className="relative w-10 h-10 flex-none border border-neutral-400 bg-chrome">
-              <Image src="/logo-alco.jpg" alt="" fill sizes="34px" className="object-contain p-0.5" />
+          <div className="flex items-center gap-[12px] pt-[18px] pr-[18px] pb-[16px] pl-[18px] border-b border-neutral-200">
+            <div className="relative w-[40px] h-[40px] flex-none border border-neutral-400 bg-chrome">
+              <Image src="/logo-alco.jpg" alt="" fill sizes="40px" className="object-contain p-0.5" />
             </div>
-            <div className="flex flex-col gap-px min-w-0">
-              <span className="text-[13px] font-semibold tracking-tight truncate">Grupo ALCO</span>
-              <span className="font-mono text-2xs uppercase tracking-[0.14em] text-neutral-700">Biometría</span>
+            <div className="flex flex-col gap-[2px] min-w-0">
+              <span className="text-[15px] font-semibold tracking-[-0.01em] truncate">Grupo ALCO</span>
+              <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-neutral-700">Biometría</span>
             </div>
             <button
               type="button"
               onClick={() => setMobileOpen(false)}
               aria-label="Cerrar menú de navegación"
-              className="ml-auto flex-none w-8 h-8 flex items-center justify-center border border-neutral-500 bg-transparent cursor-pointer text-lg leading-none md:hidden"
+              className="ml-auto flex-none w-[40px] h-[40px] flex items-center justify-center border border-neutral-500 bg-transparent cursor-pointer text-[20px] leading-none md:hidden"
             >
               ×
             </button>
           </div>
 
-          <nav className="flex-1 flex flex-col pt-[10px] pb-[10px] overflow-y-auto">
+          <nav className="flex-1 flex flex-col py-[12px] overflow-y-auto">
             {NAV_ITEMS.map((item) => (
               <Link key={item.href} href={item.href} className={navLinkClass(item.href)}>
                 <span className={navIconClass(item.href)} aria-hidden>
@@ -150,15 +150,15 @@ export function AdminShell({
                 </span>
                 {item.label}
                 {item.href === "/admin/dispositivos" && deviceCount != null && (
-                  <Tag variant="accent" className="ml-auto px-[4px] py-0">
+                  <Tag variant="accent" className="ml-auto px-[5px]! py-[1px]! tracking-normal!">
                     {deviceCount}
                   </Tag>
                 )}
               </Link>
             ))}
 
-            <div className="flex items-center gap-[8px] px-[16px] mt-[14px] mb-[6px]">
-              <span className="font-mono text-2xs uppercase tracking-[0.18em] text-neutral-700">
+            <div className="flex items-center gap-[8px] px-[18px] mt-[16px] mb-[8px]">
+              <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-neutral-700">
                 Administración
               </span>
               <span className="flex-1 h-px bg-neutral-200" />
@@ -175,15 +175,15 @@ export function AdminShell({
           </nav>
 
           {userName && (
-            <div className="border-t border-neutral-200 pt-[10px] pr-[12px] pb-[10px] pl-[12px] flex items-center gap-[10px]">
-              <span className="w-[28px] h-[28px] flex-none bg-text text-white font-mono text-xs font-semibold flex items-center justify-center">
+            <div className="border-t border-neutral-200 py-[12px] px-[14px] flex items-center gap-[12px]">
+              <span className="w-[34px] h-[34px] flex-none bg-text text-white font-mono text-[14px] font-semibold flex items-center justify-center">
                 {userName.trim().charAt(0).toUpperCase() || "?"}
               </span>
               <span className="flex flex-col min-w-0 flex-1">
-                <span className="text-xs font-semibold truncate" title={userName}>
+                <span className="text-[14px] font-semibold truncate" title={userName}>
                   {userName}
                 </span>
-                <span className="font-mono text-2xs uppercase tracking-[0.12em] text-neutral-700">
+                <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-neutral-700">
                   {ROLE_LABEL[userRole ?? "admin"]}
                 </span>
               </span>
@@ -192,7 +192,7 @@ export function AdminShell({
                   type="submit"
                   title="Salir"
                   aria-label="Salir"
-                  className="w-[28px] h-[28px] flex-none flex items-center justify-center bg-transparent border border-neutral-500 hover:border-text text-text text-lg leading-none cursor-pointer"
+                  className="w-[34px] h-[34px] flex-none flex items-center justify-center bg-transparent border border-neutral-500 hover:border-text text-text text-[19px] leading-none cursor-pointer"
                 >
                   ⏻
                 </button>
@@ -202,21 +202,21 @@ export function AdminShell({
         </aside>
 
         <main className="flex-1 flex flex-col min-w-0">
-          <header className="flex items-center gap-3 px-4 md:px-6 py-3.5 border-b border-divider">
+          <header className="flex items-center gap-[12px] px-[14px] md:px-[24px] h-[56px] md:h-[64px] flex-none bg-surface md:bg-transparent border-b border-divider">
             <button
               type="button"
               onClick={() => setMobileOpen((o) => !o)}
               aria-label={mobileOpen ? "Cerrar menú" : "Abrir menú"}
               aria-expanded={mobileOpen}
-              className="flex-none w-9 h-9 flex items-center justify-center border border-divider bg-transparent cursor-pointer text-lg leading-none md:hidden"
+              className="flex-none w-[40px] h-[40px] flex items-center justify-center border border-neutral-500 bg-transparent cursor-pointer text-[20px] leading-none md:hidden"
             >
               {mobileOpen ? "×" : "☰"}
             </button>
-            <h4 className="font-heading text-xl font-semibold tracking-tight m-0 truncate">{titleFor(pathname)}</h4>
+            <h4 className="font-heading text-xl font-semibold tracking-[-0.01em] m-0 truncate">{titleFor(pathname)}</h4>
             <CommandPalette />
           </header>
 
-          <div className="flex-1 overflow-y-auto p-4 md:p-6">{children}</div>
+          <div className="flex-1 overflow-y-auto p-[16px] md:p-[28px]">{children}</div>
         </main>
       </div>
       </OperationsTrackerProvider>

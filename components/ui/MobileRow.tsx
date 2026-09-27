@@ -9,7 +9,7 @@ import { cx } from "@/lib/cx";
  * mostrando uno u otro según el ancho (`hidden md:block` / `md:hidden`).
  */
 export function MobileList({ children, className }: { children: ReactNode; className?: string }) {
-  return <div className={cx("flex flex-col gap-2.5 md:hidden", className)}>{children}</div>;
+  return <div className={cx("flex flex-col gap-[8px] md:hidden", className)}>{children}</div>;
 }
 
 const ACCENT_BORDER: Record<"accent" | "accent2" | "neutral", string> = {
@@ -49,7 +49,7 @@ export function MobileRow({
   return (
     <div
       className={cx(
-        "relative flex flex-col gap-2.5 bg-surface border border-neutral-400 border-l-[3px] p-3.5",
+        "relative flex flex-col gap-[8px] bg-surface border border-neutral-400 border-l-[3px] px-[16px] py-[14px]",
         href && "active:bg-accent-100",
         ACCENT_BORDER[accent]
       )}
@@ -59,7 +59,7 @@ export function MobileRow({
         {tags && <span className="flex flex-wrap items-center gap-1.5">{tags}</span>}
       </div>
       {fields && fields.length > 0 && (
-        <dl className="flex flex-col gap-1.5 text-sm">
+        <dl className="m-0 flex flex-col gap-[6px] text-sm">
           {fields.map((f, i) => (
             <div key={i} className="flex items-baseline justify-between gap-3">
               <dt className="font-mono text-2xs uppercase tracking-[0.08em] text-neutral-700">{f.label}</dt>
@@ -69,7 +69,7 @@ export function MobileRow({
         </dl>
       )}
       {actions && (
-        <div className="relative z-10 flex flex-wrap items-center gap-2 border-t border-divider pt-2.5">
+        <div className="relative z-10 flex flex-wrap items-center gap-[8px] border-t border-neutral-200 pt-[10px]">
           {actions}
         </div>
       )}

@@ -42,7 +42,7 @@ export function FunnelIcon() {
       fill="none"
       stroke="currentColor"
       strokeWidth="2"
-      className="w-[18px] h-[18px] flex-none shrink-0"
+      className="w-[20px] h-[20px] flex-none shrink-0"
       aria-hidden
     >
       <path d="M3 4h18l-7 8.5V19l-4 2v-8.5z" strokeLinejoin="round" strokeLinecap="round" />

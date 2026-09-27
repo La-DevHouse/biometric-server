@@ -22,7 +22,7 @@ export function Card({
   children: ReactNode;
 }) {
   return (
-    <div className={cx("relative flex flex-col gap-2 p-3 bg-surface border border-neutral-400", className)}>
+    <div className={cx("relative flex flex-col gap-2 p-[16px] bg-surface border border-neutral-400", className)}>
       {corner && <Corners tone={corner} />}
       {children}
     </div>
@@ -48,7 +48,7 @@ export function CardKicker({
   children: ReactNode;
 }) {
   return (
-    <span className={cx("font-mono text-2xs tracking-[0.16em] uppercase", KICKER_TONE[tone], className)}>
+    <span className={cx("font-mono text-2xs tracking-[0.14em] max-md:tracking-[0.12em] uppercase", KICKER_TONE[tone], className)}>
       {children}
     </span>
   );
@@ -74,11 +74,11 @@ function Corners({ tone }: { tone: "accent" | "accent2" }) {
   return (
     <>
       <span
-        className={cx("absolute -top-px -left-px w-[8px] h-[8px] border-t-2 border-l-2", color)}
+        className={cx("absolute -top-px -left-px w-[9px] h-[9px] border-t-2 border-l-2", color)}
         aria-hidden
       />
       <span
-        className={cx("absolute -bottom-px -right-px w-[8px] h-[8px] border-b-2 border-r-2", color)}
+        className={cx("absolute -bottom-px -right-px w-[9px] h-[9px] border-b-2 border-r-2", color)}
         aria-hidden
       />
     </>

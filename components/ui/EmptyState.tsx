@@ -16,11 +16,11 @@ export function EmptyState({
 }) {
   return (
     <div
-      className="w-full flex flex-col items-center gap-2 p-[26px] text-center border border-dashed border-neutral-500 bg-[repeating-linear-gradient(135deg,#fff_0px,#fff_6px,#f6f7f8_6px,#f6f7f8_12px)]"
+      className="w-full flex flex-col items-center gap-[7px] p-[30px] max-md:px-[16px] max-md:py-[28px] max-md:gap-[8px] text-center border border-dashed border-neutral-500 bg-[repeating-linear-gradient(135deg,#fff_0px,#fff_6px,#f6f7f8_6px,#f6f7f8_12px)]"
     >
-      <p className="font-heading text-[17px] font-semibold leading-tight tracking-tight">{title}</p>
-      {description && <p className="text-sm text-neutral-800 max-w-sm">{description}</p>}
-      {action && <div className="mt-2">{action}</div>}
+      <p className="m-0 font-heading text-lg font-semibold leading-tight">{title}</p>
+      {description && <p className="m-0 text-xs text-neutral-800 max-w-md">{description}</p>}
+      {action && <div className="mt-[8px] max-md:w-full">{action}</div>}
     </div>
   );
 }

@@ -183,11 +183,11 @@ export function CommandPalette() {
         type="button"
         onClick={openPalette}
         aria-label="Buscar (⌘K)"
-        className="ml-auto flex h-9 w-9 flex-none cursor-pointer items-center justify-center gap-2 border border-divider bg-surface text-sm text-text/60 hover:border-text sm:w-72 sm:justify-start sm:px-3"
+        className="ml-auto flex h-(--control-h) w-(--control-h) flex-none cursor-pointer items-center justify-center gap-[8px] border border-neutral-500 bg-surface text-sm text-neutral-700 hover:border-text md:w-[340px] md:justify-start md:px-[12px] md:text-left whitespace-nowrap"
       >
-        <span aria-hidden className="text-base leading-none">⌕</span>
-        <span className="hidden sm:inline">Buscar empresas, empleados, equipos…</span>
-        <kbd className="ml-auto hidden border border-divider px-1.5 font-mono text-2xs text-text/60 sm:inline">
+        <span aria-hidden className="text-[20px] leading-none">⌕</span>
+        <span className="hidden md:inline">Buscar empresas, empleados, equipos…</span>
+        <kbd className="ml-auto hidden border border-divider px-[6px] font-mono text-2xs text-neutral-700 md:inline">
           {isMac ? "⌘K" : "Ctrl K"}
         </kbd>
       </button>

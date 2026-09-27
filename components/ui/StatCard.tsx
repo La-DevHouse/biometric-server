@@ -25,8 +25,8 @@ export function StatCard({
   const card = (
     <Card corner={tone}>
       <CardKicker tone={tone}>{kicker}</CardKicker>
-      {/* mono 32/600/-2% — el escalón "número grande" de la escala tipográfica, no font-heading. */}
-      <span className="font-mono text-[32px] font-semibold leading-none tracking-tight">{value}</span>
+      {/* mono 36/600/-2% (34 en mobile) — el escalón "número grande" de la escala, no font-heading. */}
+      <span className="mt-[5px] font-mono text-stat font-semibold tracking-[-0.02em]">{value}</span>
       {meta && <CardMeta>{meta}</CardMeta>}
       {linkHref && linkLabel && (
         <LinkBtn href={linkHref} variant="ghost" className="self-start mt-1">

@@ -76,7 +76,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             <button
               type="button"
               onClick={dismiss}
-              className="self-end min-h-9 px-4 text-sm font-heading font-semibold bg-text text-white hover:bg-accent border-none cursor-pointer"
+              className="self-end h-(--control-h) px-[18px] text-sm font-heading font-semibold bg-text text-white hover:bg-accent border-none cursor-pointer"
             >
               Cerrar
             </button>

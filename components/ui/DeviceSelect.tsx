@@ -2,6 +2,7 @@
 
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { useTransition } from "react";
+import { FIELD_INPUT } from "./fieldStyles";
 
 export interface DeviceOption {
   dev_id: string;
@@ -40,7 +41,7 @@ export function DeviceSelect({
 
   return (
     <select
-      className="min-h-9 px-2.5 text-sm bg-surface border border-divider rounded-none disabled:opacity-60"
+      className={FIELD_INPUT + " w-auto!"}
       value={current}
       onChange={onChange}
       disabled={isPending}

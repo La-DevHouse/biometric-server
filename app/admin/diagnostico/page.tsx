@@ -119,7 +119,7 @@ export default async function DiagnosticoPage({
       </Card>
 
       <div className="flex items-center gap-3">
-        <Suspense fallback={<div className="min-h-9 w-40 bg-surface border border-divider" />}>
+        <Suspense fallback={<div className="h-(--control-h) w-40 bg-surface border border-divider" />}>
           <DeviceSelect devices={deviceOptions} allowAll />
         </Suspense>
         <span className="text-xs text-text/70">filtra la cola y el tráfico de abajo</span>

@@ -35,18 +35,20 @@ const COLORS: { token: string; className: string; label: string }[] = [
 // divisor. `spec` incluye el +2px de compromiso sobre el tamaño de la
 // maqueta en los 4 escalones de lectura — no es el número que dice la
 // maqueta, es el que quedó adoptado.
+// Escritorio / mobile (< md) — los tokens cambian solos de escala (app/globals.css).
 const TYPE_SCALE: { spec: string; cls: string; weight?: "font-semibold"; label: string }[] = [
-  { spec: "26 / 600 / -2%", cls: "text-2xl", weight: "font-semibold", label: "Título de página" },
-  { spec: "20 / 600 / -1%", cls: "text-xl", weight: "font-semibold", label: "Título de sección y diálogo" },
-  { spec: "17 / 600", cls: "text-lg", weight: "font-semibold", label: "Nombre de fila, card title" },
-  { spec: "15 / 400", cls: "text-sm", label: "Cuerpo — el 95% del panel, celdas, inputs" },
-  { spec: "12 / 400", cls: "text-xs", label: "Texto secundario, hints, ayuda" },
+  { spec: "28 · 22 / 600 / -2%", cls: "text-2xl tracking-[-0.02em]", weight: "font-semibold", label: "Título de página" },
+  { spec: "20 · 17 / 600", cls: "text-xl tracking-[-0.01em]", weight: "font-semibold", label: "Título de sección y diálogo" },
+  { spec: "17 · 16 / 600", cls: "text-lg", weight: "font-semibold", label: "Nombre de fila, card title" },
+  { spec: "15 · 16 / 400", cls: "text-sm", label: "Cuerpo — el 95% del panel, celdas, inputs" },
+  { spec: "13 / 400", cls: "text-xs text-neutral-800", label: "Texto secundario, hints, ayuda" },
+  { spec: "mono 12 / +.12em", cls: "font-mono text-label uppercase tracking-[0.12em] text-neutral-800", label: "Label de campo" },
   {
-    spec: "mono 10 / +.10–18em",
-    cls: "font-mono text-2xs uppercase tracking-[0.14em]",
-    label: "Label de campo, header de tabla, kicker, nav, tag",
+    spec: "mono 11 / +.16em",
+    cls: "font-mono text-2xs uppercase tracking-[0.16em] text-neutral-700",
+    label: "Encabezado de tabla, kicker, nav",
   },
-  { spec: "mono 32 / 600 / -2%", cls: "font-mono text-[32px] font-semibold tracking-tight", label: "1.284" },
+  { spec: "mono 36 · 34 / 600", cls: "font-mono text-stat font-semibold tracking-[-0.02em]", label: "1.284" },
 ];
 
 function Section({ title, note, children }: { title: string; note?: string; children: React.ReactNode }) {
@@ -164,11 +166,11 @@ export default async function StyleguidePage() {
         </p>
         <label className={FIELD_LABEL}>
           Checkbox con FIELD_LABEL, estructura libre
-          {/* font-sans normal-case text-[13px]: corta la herencia de font-mono/uppercase/
-              text-[11px] del <label> — el texto de una opción de checkbox es contenido real,
+          {/* font-sans normal-case text-sm: corta la herencia de font-mono/uppercase/
+              text-label del <label> — el texto de una opción de checkbox es contenido real,
               no chrome de UI, y va al tamaño de cuerpo de la maqueta, no al de un label. */}
-          <span className="mt-1 flex items-center gap-2 text-[13px] font-sans normal-case tracking-normal text-text">
-            <input type="checkbox" className="w-[15px] h-[15px] accent-accent rounded-none" /> Compartir con todo el
+          <span className="mt-1 flex items-center gap-[10px] text-sm font-sans normal-case tracking-normal text-text">
+            <input type="checkbox" /> Compartir con todo el
             grupo
           </span>
         </label>

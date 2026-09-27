@@ -61,7 +61,7 @@ export function ClearLogsDialog({ devId }: { devId: string }) {
             <input
               value={typed}
               onChange={(e) => setTyped(e.target.value)}
-              className="min-h-9 border border-neutral-400 bg-surface px-2 font-mono text-sm"
+              className="h-(--control-h) border border-neutral-500 bg-surface px-(--control-px) font-mono text-sm"
               autoComplete="off"
             />
           </label>

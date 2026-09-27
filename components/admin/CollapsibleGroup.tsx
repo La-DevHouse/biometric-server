@@ -36,7 +36,7 @@ export function CollapsibleGroupRows({
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
       >
-        <td className="border-b border-neutral-200 p-2" colSpan={colSpan}>
+        <td className="border-b border-neutral-200 px-[14px] py-[11px]" colSpan={colSpan}>
           <button
             type="button"
             className="inline-flex items-center gap-2 border-0 bg-transparent p-0 text-left font-sans text-sm text-text"
@@ -51,8 +51,8 @@ export function CollapsibleGroupRows({
           </button>{" "}
           <span className="text-xs text-text/70">{meta}</span>
         </td>
-        <td className="border-b border-neutral-200 p-2">{status}</td>
-        <td className="border-b border-neutral-200 p-2" onClick={(e) => e.stopPropagation()}>
+        <td className="border-b border-neutral-200 px-[14px] py-[11px]">{status}</td>
+        <td className="border-b border-neutral-200 px-[14px] py-[11px]" onClick={(e) => e.stopPropagation()}>
           {actions}
         </td>
       </tr>

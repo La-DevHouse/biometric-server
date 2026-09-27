@@ -58,7 +58,7 @@ export function EmploymentFields({
         <div className={LABEL}>
           Empresa
           <input type="hidden" name="company_id" value={lockCompany.id} />
-          <span className="flex min-h-9 items-center text-sm font-medium text-text">{lockCompany.name}</span>
+          <span className="flex h-(--control-h) items-center text-sm font-medium normal-case tracking-normal font-sans text-text">{lockCompany.name}</span>
         </div>
       ) : (
         <div className={LABEL}>

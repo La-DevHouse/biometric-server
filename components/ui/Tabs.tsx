@@ -21,7 +21,7 @@ export function Tabs({ items, active, label }: { items: TabItem[]; active: strin
           href={t.href}
           aria-current={t.key === active ? "page" : undefined}
           className={cx(
-            "-mb-px whitespace-nowrap border-b-2 px-3 py-2 text-sm no-underline",
+            "-mb-px whitespace-nowrap border-b-2 px-[14px] py-[10px] max-md:py-[12px] text-sm font-medium no-underline",
             t.key === active ? "border-text font-semibold text-text" : "border-transparent text-text/70 hover:text-text"
           )}
         >
@@ -53,12 +53,12 @@ export function DetailHeader({
 }) {
   return (
     <div className="flex flex-col gap-1">
-      <Link href={backHref} className="self-start text-xs text-accent no-underline hover:underline">
+      <Link href={backHref} className="self-start text-xs font-semibold text-accent-700 no-underline hover:underline">
         ← {backLabel}
       </Link>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex min-w-0 flex-wrap items-center gap-3">
-          <h2 className="m-0 font-heading text-2xl font-semibold tracking-tight">{title}</h2>
+          <h2 className="m-0 font-heading text-2xl font-semibold tracking-[-0.02em]">{title}</h2>
           {badges}
           {subtitle && <span className="text-sm text-text/70">{subtitle}</span>}
         </div>

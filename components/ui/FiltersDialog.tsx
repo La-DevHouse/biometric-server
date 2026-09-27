@@ -32,7 +32,7 @@ export function FiltersDialog({
       <div className="relative inline-flex">
         <IconBtn icon={<FunnelIcon />} label={title} onClick={() => setOpen(true)} />
         {activeCount > 0 && (
-          <span className="absolute -top-1.5 -right-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-accent px-1 text-[10px] font-semibold leading-none text-bg">
+          <span className="absolute -top-[6px] -right-[6px] flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-accent px-[4px] font-mono text-2xs font-semibold leading-none text-white">
             {activeCount}
           </span>
         )}

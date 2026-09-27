@@ -80,25 +80,34 @@ export function Dialog({
         // todo el alto disponible (hasta el max-h). El UA trae
         // height:fit-content justamente por eso; h-fit lo restablece.
         "m-auto h-fit border border-text shadow-hard",
-        "w-[calc(100vw-2rem)] max-h-[calc(100dvh-2rem)]",
-        "sm:w-[min(92vw,28rem)] sm:max-h-[85dvh]"
+        "md:w-[min(92vw,460px)] md:max-h-[85dvh]",
+        // Mobile: hoja modal desde abajo ("bottom sheet" de la maqueta móvil),
+        // a todo el ancho, con la manija arriba.
+        "max-md:mb-0 max-md:w-full max-md:max-w-full max-md:max-h-[90dvh] max-md:shadow-[0_-6px_0_rgb(16_18_21/4%)]"
       )}
     >
-      <div className="flex items-center justify-between p-4 border-b border-divider bg-chrome flex-none">
-        <h3 className="font-heading text-xl font-semibold tracking-tight m-0">{title}</h3>
+      <div className="flex justify-center pt-[8px] md:hidden" aria-hidden>
+        <span className="h-[4px] w-[36px] bg-neutral-400" />
+      </div>
+      <div className="flex items-center justify-between gap-[10px] px-[14px] py-[12px] max-md:px-[16px] max-md:py-[14px] border-b border-divider md:bg-chrome flex-none">
+        <h3 className="font-heading text-xl font-semibold tracking-[-0.01em] m-0">{title}</h3>
         {closable && (
           <button
             type="button"
             aria-label="Cerrar"
-            className="w-7 h-7 flex-none flex items-center justify-center text-lg leading-none cursor-pointer bg-transparent border border-neutral-500 hover:border-text"
+            className="w-[32px] h-[32px] max-md:w-[36px] max-md:h-[36px] flex-none flex items-center justify-center text-xl leading-none cursor-pointer bg-transparent border border-neutral-500 hover:border-text"
             onClick={() => ref.current?.close()}
           >
             ×
           </button>
         )}
       </div>
-      <div className="flex flex-col gap-3 p-4 flex-1 min-h-0 overflow-y-auto">{children}</div>
-      {footer && <div className="flex-none border-t border-divider bg-chrome p-4">{footer}</div>}
+      <div className="flex flex-col gap-[14px] px-[14px] py-[16px] max-md:p-[16px] flex-1 min-h-0 overflow-y-auto">{children}</div>
+      {footer && (
+        <div className="flex-none flex justify-end gap-[10px] max-md:flex-col max-md:gap-[8px] border-t border-divider md:bg-chrome px-[14px] py-[12px] max-md:px-[16px] max-md:py-[14px]">
+          {footer}
+        </div>
+      )}
     </dialog>
   );
 }

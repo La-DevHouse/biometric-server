@@ -4,11 +4,12 @@ import type { ButtonHTMLAttributes, ReactNode } from "react";
 
 type Variant = "primary" | "secondary" | "ghost" | "icon";
 
+// Alto de control del sistema: 40px escritorio / 48px mobile (--control-h).
 const BASE =
   "inline-flex items-center justify-center gap-1.5 cursor-pointer no-underline " +
-  "font-heading font-semibold text-sm leading-tight " +
+  "font-heading font-semibold " +
   "border rounded-none " +
-  "px-4 py-2 " +
+  "h-(--control-h) " +
   "disabled:bg-neutral-200 disabled:text-neutral-600 disabled:border-neutral-300 disabled:cursor-not-allowed disabled:hover:bg-neutral-200";
 
 // Border-radius:0 on every variant matches the "blueprint" square-corner
@@ -18,10 +19,12 @@ const VARIANT: Record<Variant, string> = {
   // Primary: fondo tinta (no accent) — el azul queda reservado para hover y
   // para los estados "activo"/link. Invierte a accent en hover, no a un
   // negro más oscuro.
-  primary: "bg-text text-white border-text hover:bg-accent hover:border-accent active:bg-accent-700 active:border-accent-700",
-  secondary: "bg-surface text-text border-text hover:bg-text hover:text-white active:bg-neutral-800 active:border-neutral-800",
-  ghost: "bg-transparent text-neutral-800 border-transparent hover:bg-neutral-200 hover:text-text active:bg-neutral-300",
-  icon: "w-9 h-9 p-0 bg-surface text-text border-neutral-500 hover:border-text text-xl",
+  // primary/secondary: ancho completo en mobile ("Botones · 48px, ancho completo").
+  primary: "text-sm leading-tight px-[18px] max-md:px-[16px] max-md:w-full bg-text text-white border-text hover:bg-accent hover:border-accent active:bg-accent-700 active:border-accent-700",
+  secondary: "text-sm leading-tight px-[18px] max-md:px-[16px] max-md:w-full bg-surface text-text border-text hover:bg-text hover:text-white active:bg-neutral-800 active:border-neutral-800",
+  ghost: "text-sm leading-tight px-[13px] bg-transparent text-neutral-800 border-transparent hover:bg-neutral-200 hover:text-text active:bg-neutral-300",
+  // Glifo a 22–26px dentro de la caja de 40 (48 en mobile).
+  icon: "w-(--control-h) p-0 flex-none bg-surface text-text border-neutral-500 hover:border-text text-(length:--icon-glyph) leading-none",
 };
 
 interface CommonProps {

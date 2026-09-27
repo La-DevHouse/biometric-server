@@ -24,7 +24,8 @@ export function Tag({
   return (
     <span
       className={cx(
-        "inline-flex items-center font-mono text-2xs uppercase tracking-[0.12em] px-[7px] py-[3px] rounded-none",
+        // Mono 11 / +.10em, 4×9 (mobile +.08em, 5×10) — "Tags" de las maquetas.
+        "inline-flex items-center whitespace-nowrap font-mono text-2xs leading-none uppercase tracking-[0.1em] px-[9px] py-[4px] max-md:tracking-[0.08em] max-md:px-[10px] max-md:py-[5px] rounded-none",
         VARIANT[variant],
         className
       )}
