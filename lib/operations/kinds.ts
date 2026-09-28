@@ -20,6 +20,7 @@ export type OperationKind =
   | "CAPTURE_FINGERPRINT"
   | "PUSH_FINGERPRINT"
   | "ADD_EMPLOYEE_TO_DEVICE"
+  | "ADD_EMPLOYEES_BATCH"
   | "RECONCILE_DEVICE";
 
 export type OperationStage =
@@ -84,6 +85,7 @@ export const OPERATION_LABELS: Record<OperationKind, string> = {
   CAPTURE_FINGERPRINT: "Capturar huella",
   PUSH_FINGERPRINT: "Copiar huella a otro equipo",
   ADD_EMPLOYEE_TO_DEVICE: "Agregar empleado al equipo",
+  ADD_EMPLOYEES_BATCH: "Agregar empleados al equipo",
   RECONCILE_DEVICE: "Sincronizar huellas del equipo",
 };
 

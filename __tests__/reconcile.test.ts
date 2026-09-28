@@ -109,6 +109,15 @@ after(async () => {
   await prisma.$disconnect();
 });
 
+/** ¿Hay un alta (lote) en curso para este empleado en el equipo? */
+async function batchHas(devId: string, employeeId: number): Promise<boolean> {
+  const rows = await db.allAsync<{ params_json: string }>(
+    `SELECT params_json FROM operations WHERE dev_id = ? AND kind = 'ADD_EMPLOYEES_BATCH'`,
+    [devId]
+  );
+  return rows.some((r) => (JSON.parse(r.params_json).employeeIds as number[]).includes(employeeId));
+}
+
 async function currentCommand(opId: number) {
   const cmds = await ops.getOperationCommands(opId);
   return cmds[cmds.length - 1];
@@ -174,7 +183,7 @@ test("reconcile - corrida completa: altas, ingesta física, bajas con salvaguard
     include: { sites: true },
   });
   made.companies.push(c.id);
-  await prisma.devices.create({ data: { dev_id: DEV, site_id: c.sites[0].id } });
+  await prisma.devices.create({ data: { dev_id: DEV, site_id: c.sites[0].id, last_seen_at: BigInt(Date.now()) } });
 
   const inScope = await employee("50000001", c.id); // contrato vigente, no está en el equipo → alta
   const leaver = await employee("50000002", null); // sin contrato, está en el equipo → baja
@@ -207,11 +216,12 @@ test("reconcile - corrida completa: altas, ingesta física, bajas con salvaguard
   assert.deepEqual(
     children.map((c) => [c.kind, c.user_id, c.priority]),
     [
-      ["ADD_EMPLOYEE_TO_DEVICE", `emp:${inScope}`, 200],
+      ["ADD_EMPLOYEES_BATCH", null, 200],
       ["DELETE_USER", "50000002", 200],
     ],
-    "alta del que falta y baja del que sobra — ni el admin (50000003) ni el ID ajeno (7)"
+    "alta del que falta (en lote) y baja del que sobra — ni el admin (50000003) ni el ID ajeno (7)"
   );
+  assert.ok(await batchHas(DEV, inScope));
 
   // La huella física de 50000002 se ingirió (copia canónica + slot physical) antes de decidir.
   const fp = await prisma.employee_fingerprint.count({ where: { employee_id: leaver } });
@@ -230,7 +240,7 @@ test("reconcile - corrida completa: altas, ingesta física, bajas con salvaguard
   assert.equal(after2?.stage, "done");
   assert.match(after2!.note ?? "", /sin cambios en el equipo/);
   const kinds = await db.allAsync<{ n: number }>(
-    `SELECT COUNT(*) AS n FROM operations WHERE dev_id = ? AND kind IN ('ADD_EMPLOYEE_TO_DEVICE','DELETE_USER')`,
+    `SELECT COUNT(*) AS n FROM operations WHERE dev_id = ? AND kind IN ('ADD_EMPLOYEES_BATCH','DELETE_USER')`,
     [DEV]
   );
   assert.equal(kinds[0].n, 2, "las operaciones en curso se reusan, no se duplican");
@@ -291,7 +301,7 @@ test("reconcile - revisión nocturna: quien fue borrado desde el teclado sale de
     include: { sites: true },
   });
   made.companies.push(c.id);
-  await prisma.devices.create({ data: { dev_id: DEV_AUD, site_id: c.sites[0].id } });
+  await prisma.devices.create({ data: { dev_id: DEV_AUD, site_id: c.sites[0].id, last_seen_at: BigInt(Date.now()) } });
 
   const borrado = await employee("50000011", c.id); // vinculado, sin huella… pero lo borraron en el teclado
   const sigue = await employee("50000012", c.id); // vinculado, sin huella, sigue en el equipo
@@ -339,10 +349,8 @@ test("reconcile - revisión nocturna: quien fue borrado desde el teclado sale de
   assert.equal(await prisma.users.count({ where: { dev_id: DEV_AUD, user_id: "50000012" } }), 1, "el que contestó queda");
   const link = await prisma.employee_device_enrollment.findFirst({ where: { employee_id: borrado, dev_id: DEV_AUD } });
   assert.equal(link?.status, "inactive");
-  const readd = await db.getAsync(`SELECT 1 FROM operations WHERE dev_id = ? AND kind = 'ADD_EMPLOYEE_TO_DEVICE' AND user_id = ?`, [DEV_AUD, `emp:${borrado}`]);
-  assert.ok(readd, "sigue en el alcance → se lo vuelve a crear en el equipo");
-  const keep = await db.getAsync(`SELECT 1 FROM operations WHERE dev_id = ? AND kind = 'ADD_EMPLOYEE_TO_DEVICE' AND user_id = ?`, [DEV_AUD, `emp:${sigue}`]);
-  assert.equal(keep, undefined, "al que sigue no se lo toca");
+  assert.ok(await batchHas(DEV_AUD, borrado), "sigue en el alcance → se lo vuelve a crear en el equipo");
+  assert.equal(await batchHas(DEV_AUD, sigue), false, "al que sigue no se lo toca");
 });
 
 test("reconcile - quien tenía huellas y ya no aparece en la lista (borrado en el teclado): se re-copian en la misma corrida", async () => {
@@ -351,7 +359,7 @@ test("reconcile - quien tenía huellas y ya no aparece en la lista (borrado en e
     include: { sites: true },
   });
   made.companies.push(c.id);
-  await prisma.devices.create({ data: { dev_id: DEV_STALE, site_id: c.sites[0].id } });
+  await prisma.devices.create({ data: { dev_id: DEV_STALE, site_id: c.sites[0].id, last_seen_at: BigInt(Date.now()) } });
   const emp = await employee("50000021", c.id);
   const fp = await prisma.employee_fingerprint.create({ data: { employee_id: emp, template: template(50000021) } });
   // Antes: estaba en el equipo con su huella (caché, vínculo y registro de slot).
@@ -377,6 +385,5 @@ test("reconcile - quien tenía huellas y ya no aparece en la lista (borrado en e
 
   assert.equal((await ops.getOperation(opId))?.stage, "done");
   assert.equal(await prisma.device_fingerprint_slot.count({ where: { dev_id: DEV_STALE } }), 0, "registro de slots limpio");
-  const add = await db.getAsync(`SELECT 1 FROM operations WHERE dev_id = ? AND kind = 'ADD_EMPLOYEE_TO_DEVICE' AND user_id = ?`, [DEV_STALE, `emp:${emp}`]);
-  assert.ok(add, "se vuelve a copiar en esta misma corrida, sin esperar la revisión nocturna");
+  assert.ok(await batchHas(DEV_STALE, emp), "se vuelve a copiar en esta misma corrida, sin esperar la revisión nocturna");
 });

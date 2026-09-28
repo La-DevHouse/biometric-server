@@ -10,6 +10,7 @@ import { runAsync, allAsync, getAsync, prisma, NOW_MS } from "@/lib/db";
 import { TERMINAL_STAGES, OperationKind, MAX_FINGERPRINT_INDEX } from "./kinds";
 import { getOperationRow, setStage, finishOperation, queueCommandForOperation, OperationRow } from "./queue";
 import { insertAttendanceLogs, upsertUserFromInfo, UserInfoResult } from "./persist";
+import { advanceAddEmployeesBatch } from "./batch";
 import {
   ingestUserInfo,
   usedSlots,
@@ -154,6 +155,7 @@ export async function advanceOperationForCommand(input: AdvanceInput): Promise<v
     "DELETE_USER",
     "PUSH_FINGERPRINT",
     "ADD_EMPLOYEE_TO_DEVICE",
+    "ADD_EMPLOYEES_BATCH",
     "RECONCILE_DEVICE",
   ];
   if (!input.ok && !SELF_HANDLED.includes(op.kind)) {
@@ -209,6 +211,12 @@ export async function advanceOperationForCommand(input: AdvanceInput): Promise<v
 
     case "ADD_EMPLOYEE_TO_DEVICE":
       await advanceAddEmployeeToDevice(op, input);
+      break;
+
+    case "ADD_EMPLOYEES_BATCH":
+      // Verifica por conteo o releyendo; los códigos de retorno de sus
+      // escrituras no se usan (lib/operations/batch.ts).
+      await advanceAddEmployeesBatch(op, input);
       break;
 
     case "RECONCILE_DEVICE": {
@@ -279,6 +287,12 @@ async function advanceSyncUsers(op: OperationRow, input: AdvanceInput): Promise<
   if (plan.phase === "list") {
     // The list itself failing means the whole operation has nothing to work
     // with — this is fatal, unlike an individual GET_USER_INFO below.
+    // Sin nadie con huella, el equipo responde ERROR_NO_USER en vez de una lista
+    // vacía (equipo 2023054254, 2026-09-27): no es un fallo.
+    if (!input.ok && input.returnCode === "ERROR_NO_USER") {
+      await finishOperation(op.id, "done", "El equipo no tiene usuarios con huella registrada.");
+      return;
+    }
     if (!input.ok) {
       await finishOperation(op.id, "error", `El equipo devolvió ${input.returnCode} al listar usuarios.`);
       return;
@@ -1082,7 +1096,13 @@ function totalUserCount(input: AdvanceInput): number | null {
  * Devuelve null si se puede crear, o el motivo para no hacerlo.
  */
 function probeListVerdict(input: AdvanceInput, candidateId: string): string | null {
-  const ids = input.ok ? decodeIdListOrEmpty(input.resultJson, input.binaries) : null;
+  // ERROR_NO_USER = nadie tiene huella en el equipo (lista vacía, 2023054254): el ID
+  // no figura en la lista, igual que con cualquier otra lista que no lo trae.
+  const ids = input.ok
+    ? decodeIdListOrEmpty(input.resultJson, input.binaries)
+    : input.returnCode === "ERROR_NO_USER"
+      ? []
+      : null;
   if (ids === null) {
     return (
       `No se pudo confirmar que el ID ${candidateId} esté libre (el equipo no devolvió su lista de usuarios). ` +
@@ -1230,6 +1250,9 @@ async function advanceCreateUser(op: OperationRow, input: AdvanceInput): Promise
 }
 
 const TEN_MINUTES_MS = 10 * 60 * 1000;
+const ONE_HOUR_MS = 60 * 60 * 1000;
+/** Sin consultar hace más de esto = el equipo no está (una consulta cada ~11 s; O9 lo calla ~2 min). */
+const DEVICE_GONE_MS = 5 * 60 * 1000;
 const THREE_MINUTES_MS = 3 * 60 * 1000;
 
 /**
@@ -1285,13 +1308,37 @@ function isPendingProbe(op: OperationRow): boolean {
  */
 export async function sweepStaleOperations(): Promise<number> {
   const now = Date.now();
-  const candidates = await allAsync<OperationRow>(
-    `SELECT * FROM operations WHERE stage IN ('queued','sent','waiting','verifying')`
+  const candidates = await allAsync<OperationRow & { device_last_seen_at: number | null }>(
+    `SELECT o.*, d.last_seen_at AS device_last_seen_at
+       FROM operations o
+       LEFT JOIN devices d ON d.dev_id = o.dev_id
+      WHERE o.stage IN ('queued','sent','waiting','verifying')`
   );
+  const activePerDevice = new Map<string, number>();
+  for (const op of candidates) activePerDevice.set(op.dev_id, (activePerDevice.get(op.dev_id) ?? 0) + 1);
 
   let expired = 0;
   for (const op of candidates) {
     const age = now - op.updated_at;
+    if (op.stage === "queued") {
+      // Nunca entregada. Si hay otra operación del mismo equipo en curso, espera
+      // su turno (candado por equipo, protocol-handlers): con el equipo
+      // consultando eso no es "colgada" y se le da hasta 1 h. Sola, o con el
+      // equipo sin consultar, vence a los 10 min como siempre.
+      const deviceGone = !op.device_last_seen_at || now - op.device_last_seen_at > DEVICE_GONE_MS;
+      const waitingTurn = !deviceGone && (activePerDevice.get(op.dev_id) ?? 0) > 1;
+      if (age < (waitingTurn ? ONE_HOUR_MS : TEN_MINUTES_MS)) continue;
+      if (op.current_trans_id) {
+        await runAsync(
+          `UPDATE commands SET status = 'ERROR', cmd_return_code = 'TIMEOUT', updated_at = ${NOW_MS}
+            WHERE trans_id = ? AND status IN ('WAIT','RUN')`,
+          [op.current_trans_id]
+        );
+      }
+      await finishOperation(op.id, "error", "El equipo no respondió a tiempo; la operación se canceló.");
+      expired++;
+      continue;
+    }
     const isVerifying = op.stage === "verifying";
     const pendingProbe = isPendingProbe(op);
     const threshold = isVerifying

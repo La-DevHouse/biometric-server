@@ -140,6 +140,34 @@ export async function desiredFingerprints(employeeId: number) {
   });
 }
 
+/**
+ * desiredFingerprints para muchas personas en UNA consulta: por empleado, los ids
+ * de sus 10 huellas activas más antiguas (mismo orden) y cuántas activas tiene en
+ * total (para la alerta de R10). Quien no tiene huellas no aparece en el mapa.
+ */
+export async function desiredFingerprintIdsMany(
+  employeeIds: number[]
+): Promise<Map<number, { ids: number[]; total: number }>> {
+  const out = new Map<number, { ids: number[]; total: number }>();
+  if (employeeIds.length === 0) return out;
+  const rows = await prisma.$queryRaw<{ id: number; employee_id: number; total: number }[]>(Prisma.sql`
+    SELECT id, employee_id, total::int AS total FROM (
+      SELECT id, employee_id,
+             row_number() OVER (PARTITION BY employee_id ORDER BY captured_at ASC, id ASC) AS rn,
+             count(*)     OVER (PARTITION BY employee_id) AS total
+        FROM employee_fingerprint
+       WHERE status = 'active' AND employee_id = ANY(${employeeIds}::int[])
+    ) t
+     WHERE rn <= ${MAX_FINGERPRINTS}
+     ORDER BY employee_id, rn`);
+  for (const r of rows) {
+    const entry = out.get(r.employee_id) ?? { ids: [], total: r.total };
+    entry.ids.push(r.id);
+    out.set(r.employee_id, entry);
+  }
+  return out;
+}
+
 /** Cuántas huellas activas tiene la persona más allá del límite de 10 (para la alerta de R10). */
 export async function fingerprintOverflow(employeeId: number): Promise<number> {
   const n = await prisma.employee_fingerprint.count({ where: { employee_id: employeeId, status: "active" } });

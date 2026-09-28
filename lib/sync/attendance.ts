@@ -11,6 +11,8 @@ import { startSyncLogs } from "@/lib/operations";
 import type { SyncTrigger } from "./reconcile";
 
 const DAY_MS = 24 * 3600 * 1000;
+/** Igual que DEVICE_GONE_MS del reconciliador: sin consultar hace más de esto, no está. */
+const DEVICE_GONE_MS = 5 * 60 * 1000;
 
 /** Encola el pull para estos equipos (congelados/sin sede activa se saltan). Devuelve los ids de operación. */
 export async function attendancePullDevices(
@@ -23,10 +25,14 @@ export async function attendancePullDevices(
       ...(devIds ? { dev_id: { in: devIds } } : {}),
       site: { status: "active", company: { status: "active" } },
     },
-    select: { dev_id: true, last_sync_at: true },
+    select: { dev_id: true, last_sync_at: true, last_seen_at: true },
   });
   const ids: number[] = [];
   for (const d of devices) {
+    // El pull del cron a un equipo que no está quedaría colgado hasta vencer (la
+    // noche del 2026-09-27, 6 h). Se salta: al volver, onDeviceReconnect lo pide.
+    const gone = d.last_seen_at == null || Date.now() - Number(d.last_seen_at) > DEVICE_GONE_MS;
+    if (trigger === "cron" && gone) continue;
     try {
       const last = d.last_sync_at != null ? Number(d.last_sync_at) : null;
       const since = new Date((last ?? Date.now() - 7 * DAY_MS) - DAY_MS);

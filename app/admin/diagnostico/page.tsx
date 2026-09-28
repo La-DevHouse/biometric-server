@@ -7,6 +7,7 @@ import { Card, CardKicker, CardTitle } from "@/components/ui/Card";
 import { Tag } from "@/components/ui/Tag";
 import { EmptyState } from "@/components/ui/EmptyState";
 import Link from "next/link";
+import { formatDateTime } from "@/lib/formatRelativeTime";
 import { ClearLogsDialog } from "@/components/admin/ClearLogsDialog";
 import { ClearEnrollDialog } from "@/components/admin/ClearEnrollDialog";
 
@@ -157,8 +158,11 @@ export default async function DiagnosticoPage({
                     <span className="font-heading text-sm">{cmd.cmd_code}</span>
                     {statusTag(cmd.status)}
                     {cmd.op_id && <Tag variant="outline">op #{cmd.op_id}</Tag>}
-                    <span className="ml-auto text-xs text-text/70">
-                      {new Date(cmd.updated_at).toLocaleString()}
+                    <span
+                      className="ml-auto text-xs text-text/70"
+                      title={`Último cambio: ${formatDateTime(cmd.updated_at)}`}
+                    >
+                      {formatDateTime(cmd.created_at)}
                     </span>
                   </summary>
                   <div className="p-3 pt-0 flex flex-col gap-2 text-xs">
@@ -208,7 +212,7 @@ export default async function DiagnosticoPage({
                     <span className="font-mono">{item.request_code || "—"}</span>
                     {item.dev_id && <span className="text-text/70">{item.dev_id}</span>}
                     <span className="ml-auto text-text/70">
-                      {new Date(item.created_at).toLocaleTimeString()}
+                      {new Date(item.created_at).toLocaleTimeString("es-VE", { timeZone: "America/Caracas" })}
                     </span>
                   </div>
                   {Object.keys(headers).length > 0 && (

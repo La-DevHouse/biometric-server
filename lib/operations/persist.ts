@@ -62,17 +62,23 @@ async function upsertEnrollDataFromInfo(
   const entries = resultJson.enroll_data_array;
   if (!userId || !entries || entries.length === 0) return;
 
+  // Una sola sentencia para todas las huellas del usuario (hasta 10 + clave/tarjeta).
+  // Deduplicado por backup_number: ON CONFLICT DO UPDATE no admite tocar la
+  // misma fila dos veces en una sentencia.
+  const byBackup = new Map<number, Buffer>();
   for (const entry of entries) {
     const data = resolveBinaryRef(entry.enroll_data, binaries);
-    if (!data) continue;
-    await runAsync(
-      `INSERT INTO enroll_data (dev_id, user_id, backup_number, data)
-       VALUES (?, ?, ?, ?)
-       ON CONFLICT(dev_id, user_id, backup_number)
-       DO UPDATE SET data = excluded.data, updated_at = ${NOW_MS}`,
-      [devId, userId, entry.backup_number, data]
-    );
+    if (data) byBackup.set(entry.backup_number, data);
   }
+  if (byBackup.size === 0) return;
+  const rows = [...byBackup];
+  await runAsync(
+    `INSERT INTO enroll_data (dev_id, user_id, backup_number, data)
+     VALUES ${rows.map(() => "(?, ?, ?, ?)").join(", ")}
+     ON CONFLICT(dev_id, user_id, backup_number)
+     DO UPDATE SET data = excluded.data, updated_at = ${NOW_MS}`,
+    rows.flatMap(([backup, data]) => [devId, userId, backup, data])
+  );
 }
 
 export interface AttendanceInsertSummary {
@@ -81,40 +87,48 @@ export interface AttendanceInsertSummary {
   skipped: number;
 }
 
+/** Filas por sentencia: el equipo puede mandar decenas de miles de marcaciones de una. */
+const ATTENDANCE_BATCH = 5000;
+
 /**
  * Insert decoded GET_LOG_DATA records, deduplicated against whatever
  * realtime_glog already delivered.
  *
- * Natural key: (dev_id, user_id, io_time). Deliberately excludes
- * verify_mode (realtime_glog JSON-stringifies array values like "[1]" while
- * decodeLogData always emits a plain numeric string — the same physical
- * event could otherwise look like two) and io_mode (realtime sends the
- * string "0", the decoder a raw byte). The device's own 12-byte record
- * stores seconds as a single byte with no sub-second field, so it cannot
- * represent two distinct events for the same user in the same second —
- * (dev_id, user_id, io_time) is already the device's own maximum
+ * Natural key: (dev_id, user_id, io_time) — unique index ux_attendance_natural.
+ * Deliberately excludes verify_mode (realtime_glog JSON-stringifies array
+ * values like "[1]" while decodeLogData always emits a plain numeric string —
+ * the same physical event could otherwise look like two) and io_mode
+ * (realtime sends the string "0", the decoder a raw byte). The device's own
+ * 12-byte record stores seconds as a single byte with no sub-second field, so
+ * it cannot represent two distinct events for the same user in the same
+ * second — (dev_id, user_id, io_time) is already the device's own maximum
  * resolution, verified against 64 real records with zero repeated keys.
  *
- * INSERT…SELECT…WHERE NOT EXISTS rather than INSERT OR IGNORE: works whether
- * or not the best-effort unique index (lib/db.ts) exists, and `changes`
- * gives the "N new / M already had" counts for the operation's result note
- * for free. Never overwrites, so a realtime row (which may carry log_image)
- * always wins over a synced one.
+ * In batches (unnest + ON CONFLICT DO NOTHING), never one INSERT per record:
+ * the device waits with the HTTP request open while this runs, and row by
+ * row a first full read (19 261 records, 2026-09-27) kept it silent 43 s.
+ * DO NOTHING never overwrites, so a realtime row (which may carry log_image)
+ * always wins over a synced one, and repeated keys inside one batch are fine.
  */
 export async function insertAttendanceLogs(
   devId: string,
   entries: DecodedLogEntry[]
 ): Promise<AttendanceInsertSummary> {
   let inserted = 0;
-  for (const e of entries) {
+  for (let i = 0; i < entries.length; i += ATTENDANCE_BATCH) {
+    const batch = entries.slice(i, i + ATTENDANCE_BATCH);
     const { changes } = await runAsync(
       `INSERT INTO attendance_logs (dev_id, user_id, verify_mode, io_mode, io_time)
-       SELECT ?, ?, ?, ?, ?
-       WHERE NOT EXISTS (
-         SELECT 1 FROM attendance_logs
-          WHERE dev_id = ? AND user_id = ? AND io_time = ?
-       )`,
-      [devId, e.user_id, e.verify_mode, e.io_mode, e.io_time, devId, e.user_id, e.io_time]
+       SELECT ?, t.user_id, t.verify_mode, t.io_mode, t.io_time
+         FROM unnest(?::text[], ?::text[], ?::int[], ?::text[]) AS t(user_id, verify_mode, io_mode, io_time)
+       ON CONFLICT (dev_id, user_id, io_time) DO NOTHING`,
+      [
+        devId,
+        batch.map((e) => e.user_id),
+        batch.map((e) => e.verify_mode),
+        batch.map((e) => e.io_mode),
+        batch.map((e) => e.io_time),
+      ]
     );
     inserted += changes;
   }

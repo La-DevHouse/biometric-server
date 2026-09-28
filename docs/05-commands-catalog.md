@@ -1037,6 +1037,13 @@ Parameters: {}
 > libre (usa `GET_USER_INFO` sobre ese ID puntual) ni para podar una caché
 > local de usuarios que ya no están (una versión anterior del panel lo hacía
 > y borraba cuentas reales que seguían existiendo en el equipo).
+>
+> **Sin nadie con huella responde `ERROR_NO_USER`, no una lista vacía**
+> (equipo `2023054254`, 2026-09-27: `GET_DEVICE_STATUS` con `total_user_count: 0`
+> y `fp_count: 0`, 15 listados seguidos con `ERROR_NO_USER`). El reconciliador lo
+> toma como lista vacía **solo si** el `GET_DEVICE_STATUS` de la misma corrida dijo
+> `fp_count: 0`; `SYNC_USERS` y la verificación de la sonda (`probeListVerdict`)
+> también lo toman como vacía.
 
 **Parámetros JSON:** (vacío)
 ```json

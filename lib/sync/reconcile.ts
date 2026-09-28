@@ -9,10 +9,15 @@
 //               lib/sync/plan.ts) → caché `users` + ingesta de huellas
 //               (lib/fingerprints.ts: vincula por cédula, huellas físicas nuevas →
 //               copia canónica; las propagadas por nosotros nunca vuelven como nuevas).
-//   4. decide — planReconcile (lib/sync/plan.ts) y ejecución: altas/completar con
-//               ADD_EMPLOYEE_TO_DEVICE, bajas con DELETE_USER (verificado por conteo),
-//               todo en segundo plano (prioridad 200). Freno de borrado masivo → sync_hold.
+//   4. decide — planReconcile (lib/sync/plan.ts) y ejecución: altas/completar en
+//               lotes de SYNC_BATCH_SIZE (ADD_EMPLOYEES_BATCH, lib/operations/batch.ts),
+//               salvo quien no se pudo leer en esta corrida (ADD_EMPLOYEE_TO_DEVICE, con
+//               sonda); bajas con DELETE_USER (verificado por conteo). Todo en segundo
+//               plano (prioridad 200). Freno de borrado masivo → sync_hold.
 // Un equipo sin sede, o cuya sede/empresa está inactiva, está congelado: no se corre.
+// Un equipo que no consulta hace más de 5 min no recibe corridas automáticas
+// (cron / por evento): quedarían colgadas hasta vencer. Al volver a consultar,
+// onDeviceReconnect le lanza la que se perdió (D4).
 import { prisma } from "@/lib/db";
 import { decodeUserIdList } from "@/lib/protocol";
 import { writeAudit } from "@/lib/audit";
@@ -21,7 +26,8 @@ import type { OperationRow } from "@/lib/operations/queue";
 import { OPERATION_LABELS } from "@/lib/operations/kinds";
 import { upsertUserFromInfo, type UserInfoResult } from "@/lib/operations/persist";
 import { startAddEmployeeToDevice, startDeleteUser } from "@/lib/operations";
-import { ingestUserInfo, employeeIdsByCedula, cedulaDigits, desiredFingerprints, fingerprintOverflow } from "@/lib/fingerprints";
+import { batchSize, employeesWithActiveAdd, startAddEmployeesBatch } from "@/lib/operations/batch";
+import { ingestUserInfo, employeeIdsByCedula, cedulaDigits, desiredFingerprintIdsMany } from "@/lib/fingerprints";
 import { activeEmploymentWhere, scopeCompanyIds, applicableDevices } from "@/lib/scope";
 import { planReconcile, selectUsersToRead, auditVerdict, type ReconcilePlan, type ScopedEmployee } from "./plan";
 
@@ -86,15 +92,49 @@ async function deviceCompany(devId: string): Promise<number | null> {
   return site.company_id;
 }
 
+/** Sin consultar hace más de esto = el equipo no está (O9 lo calla ~2 min: no cuenta). */
+export const DEVICE_GONE_MS = 5 * 60 * 1000;
+
+async function deviceReachable(devId: string): Promise<boolean> {
+  const d = await prisma.devices.findUnique({ where: { dev_id: devId }, select: { last_seen_at: true } });
+  return d?.last_seen_at != null && Date.now() - Number(d.last_seen_at) < DEVICE_GONE_MS;
+}
+
+/**
+ * El equipo volvió a consultar después de más de DEVICE_GONE_MS sin hacerlo (o es
+ * su primera consulta). Mientras no estaba, el cron y los cambios no le lanzaron
+ * nada (D4): se le lanza ahora una corrida — con revisión si la de las 03:00 no
+ * le llegó en las últimas 24 h — y el pull de asistencia si el diario se perdió.
+ */
+export async function onDeviceReconnect(devId: string): Promise<void> {
+  const DAY = 24 * 3600 * 1000;
+  const lastAudit = await prisma.sync_run.findFirst({
+    where: { dev_id: devId, kind: "fingerprints", ok: true, stats: { path: ["audit"], equals: true } },
+    orderBy: { started_at: "desc" },
+    select: { started_at: true },
+  });
+  const audit = !lastAudit || Date.now() - lastAudit.started_at.getTime() > DAY;
+  await startReconcileDevice(devId, { trigger: "event", audit, why: audit ? "al reconectarse, con revisión" : "al reconectarse" });
+
+  const dev = await prisma.devices.findUnique({ where: { dev_id: devId }, select: { last_sync_at: true } });
+  const lastPull = dev?.last_sync_at != null ? Number(dev.last_sync_at) : null;
+  if (lastPull === null || Date.now() - lastPull > DAY) {
+    const { attendancePullDevices } = await import("./attendance");
+    await attendancePullDevices([devId], "event", { background: true });
+  }
+}
+
 /**
  * Encola una corrida para un equipo. Idempotente: si ya hay una en curso, devuelve
  * esa. Devuelve null si el equipo está congelado (sin sede activa) — docs/10 §3.3.
  */
 export async function startReconcileDevice(
   devId: string,
-  opts: { trigger: SyncTrigger; force?: boolean; actorId?: number; audit?: boolean } = { trigger: "manual" }
+  opts: { trigger: SyncTrigger; force?: boolean; actorId?: number; audit?: boolean; why?: string } = { trigger: "manual" }
 ): Promise<number | null> {
   if ((await deviceCompany(devId)) === null) return null;
+  // Automáticas solo con el equipo presente (D4); "Sincronizar ahora" siempre.
+  if (opts.trigger !== "manual" && !(await deviceReachable(devId))) return null;
 
   const active = await prisma.operations.findFirst({
     where: { kind: "RECONCILE_DEVICE", dev_id: devId, stage: { in: ["queued", "sent", "waiting", "verifying"] } },
@@ -107,7 +147,9 @@ export async function startReconcileDevice(
   });
   // La revisión siempre lee (force): su valor es justamente mirar aunque "no cambió nada".
   const plan: ReconcilePlanState = { phase: "status", runId: run.id, force: !!opts.force || !!opts.audit, audit: !!opts.audit };
-  const why = opts.audit
+  const why = opts.why
+    ? opts.why
+    : opts.audit
     ? "revisión nocturna"
     : opts.trigger === "cron"
       ? "automática"
@@ -234,7 +276,12 @@ export async function advanceReconcile(op: OperationRow, input: AdvanceInput): P
 
   if (plan.phase === "list") {
     const count = input.resultJson?.user_id_count;
-    const listed = !input.ok ? null : count === 0 ? [] : decodeUserIdList(input.resultJson, input.binaries);
+    // La lista trae solo a quien tiene ≥1 huella (T2). Sin ninguna, este firmware
+    // no manda una lista vacía: responde ERROR_NO_USER (equipo 2023054254,
+    // 2026-09-27). Se toma como vacía solo si el estado de ESTA corrida ya dijo
+    // 0 huellas; si no, sigue siendo una lectura fallida.
+    const emptyByError = !input.ok && input.returnCode === "ERROR_NO_USER" && plan.fpCount === 0;
+    const listed = emptyByError ? [] : !input.ok ? null : count === 0 ? [] : decodeUserIdList(input.resultJson, input.binaries);
     if (listed === null) {
       await finishRun(plan.runId, false, { error: "lista de usuarios ilegible" });
       await finishOperation(op.id, "error", "No se pudo leer la lista de usuarios del equipo; se reintenta en la próxima corrida.");
@@ -337,34 +384,42 @@ async function nextInfo(op: OperationRow, plan: ReconcilePlanState): Promise<voi
   await queueCommandForOperation(op.id, op.dev_id, "GET_USER_INFO", { user_id: next });
 }
 
-/** Empleados en el alcance de este equipo + qué copias les faltan acá. */
+/**
+ * Empleados en el alcance de este equipo + qué copias les faltan acá. En lote: una
+ * consulta para las huellas deseadas de todos y otra para los slots del equipo
+ * (antes eran dos por persona — 1 000 consultas por corrida con 500 empleados).
+ */
 async function scopedEmployees(devId: string, companyId: number): Promise<ScopedEmployee[]> {
   const companyIds = await scopeCompanyIds(companyId);
   const employees = await prisma.employee.findMany({
     where: { employments: { some: { company_id: { in: companyIds }, company: { status: "active" }, ...activeEmploymentWhere() } } },
     select: { id: true, national_id: true, first_name: true, last_name: true },
   });
-  const out: ScopedEmployee[] = [];
-  for (const e of employees) {
-    const cedula = cedulaDigits(e.national_id);
-    if (!cedula) continue;
-    const desired = await desiredFingerprints(e.id);
-    const onDevice = new Set(
-      (
-        await prisma.device_fingerprint_slot.findMany({
-          where: { dev_id: devId, device_user_id: cedula, fingerprint_id: { not: null } },
-          select: { fingerprint_id: true },
-        })
-      ).map((s) => s.fingerprint_id)
-    );
-    out.push({
-      employeeId: e.id,
-      cedula,
-      name: `${e.first_name} ${e.last_name}`.trim(),
-      missingFingerprints: desired.filter((f) => !onDevice.has(f.id)).length,
-    });
+  const withCedula = employees.map((e) => ({ ...e, cedula: cedulaDigits(e.national_id) })).filter((e) => e.cedula);
+  const [desired, slots] = await Promise.all([
+    desiredFingerprintIdsMany(withCedula.map((e) => e.id)),
+    prisma.device_fingerprint_slot.findMany({
+      where: { dev_id: devId, device_user_id: { in: withCedula.map((e) => e.cedula) }, fingerprint_id: { not: null } },
+      select: { device_user_id: true, fingerprint_id: true },
+    }),
+  ]);
+  const onDevice = new Map<string, Set<number>>();
+  for (const s of slots) {
+    const set = onDevice.get(s.device_user_id) ?? new Set<number>();
+    set.add(s.fingerprint_id!);
+    onDevice.set(s.device_user_id, set);
   }
-  return out;
+  return withCedula.map((e) => {
+    const want = desired.get(e.id);
+    const have = onDevice.get(e.cedula);
+    return {
+      employeeId: e.id,
+      cedula: e.cedula,
+      name: `${e.first_name} ${e.last_name}`.trim(),
+      missingFingerprints: (want?.ids ?? []).filter((id) => !have?.has(id)).length,
+      overflow: Math.max(0, (want?.total ?? 0) - 10),
+    };
+  });
 }
 
 export interface DeviceSyncState {
@@ -466,7 +521,10 @@ async function decideAndApply(op: OperationRow, plan: ReconcilePlanState, readDe
     maxRemovalsPct: cfg.maxRemovalsPct,
   });
 
-  const notes = await apply(devId, decision);
+  // No leídos en esta corrida = estado dudoso → alta de a uno, con sonda. Salvo
+  // quien la revisión confirmó por conteo que ya no está: ese no tiene dudas.
+  const gone = new Set(audit?.gone ?? []);
+  const notes = await apply(devId, decision, new Set((plan.infoFailed ?? []).filter((id) => !gone.has(id))));
 
   // Huellas físicas nuevas ingeridas acá → los demás equipos de esas personas
   // tienen que recibirlas: se les dispara su propia corrida (docs/10 §4.3).
@@ -476,11 +534,7 @@ async function decideAndApply(op: OperationRow, plan: ReconcilePlanState, readDe
   }
   const propagated = others.size ? (await triggerReconcile(others, "event")).length : 0;
 
-  const overflow: Array<{ employee_id: number; extra: number }> = [];
-  for (const e of inScope) {
-    const extra = await fingerprintOverflow(e.employeeId);
-    if (extra > 0) overflow.push({ employee_id: e.employeeId, extra });
-  }
+  const overflow = inScope.filter((e) => (e.overflow ?? 0) > 0).map((e) => ({ employee_id: e.employeeId, extra: e.overflow! }));
 
   const stats = {
     fp_count: plan.fpCount,
@@ -516,14 +570,39 @@ async function decideAndApply(op: OperationRow, plan: ReconcilePlanState, readDe
   await finishOperation(op.id, "done", `${parts.join(" · ")}.`);
 }
 
-/** Ejecuta el plan. Devuelve los fallos no fatales (uno por acción). */
-async function apply(devId: string, d: ReconcilePlan): Promise<string[]> {
+/**
+ * Ejecuta el plan. Devuelve los fallos no fatales (uno por acción).
+ *
+ * Altas y completar huellas van en lotes (ADD_EMPLOYEES_BATCH): sin sonda y
+ * verificadas por los totales del equipo. Excepción: quien figura en el equipo
+ * pero no se pudo leer en esta corrida (`unreadable`) — no sabemos qué tiene, así
+ * que va por el camino de a uno, con sonda, que nunca escribe sobre un ID dudoso.
+ */
+async function apply(devId: string, d: ReconcilePlan, unreadable: Set<string>): Promise<string[]> {
   const notes: string[] = [];
-  for (const e of [...d.add, ...d.complete]) {
+  const busy = await employeesWithActiveAdd(devId);
+  const todo = [...d.add, ...d.complete].filter((e) => !busy.has(e.employeeId));
+  const single = todo.filter((e) => unreadable.has(e.cedula));
+  const batch = todo.filter((e) => !unreadable.has(e.cedula));
+  for (const e of single) {
     try {
       await startAddEmployeeToDevice(devId, { employeeId: e.employeeId, userName: e.name, privilege: "USER" }, { background: true });
     } catch (err) {
       notes.push(`${e.cedula}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+  const size = batchSize();
+  const parts = Math.ceil(batch.length / size);
+  for (let i = 0; i < parts; i++) {
+    const chunk = batch.slice(i * size, (i + 1) * size);
+    try {
+      await startAddEmployeesBatch(
+        devId,
+        chunk.map((e) => ({ employeeId: e.employeeId, cedula: e.cedula, name: e.name })),
+        { index: i + 1, total: parts }
+      );
+    } catch (err) {
+      notes.push(`lote ${i + 1}: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
   for (const r of d.remove) {

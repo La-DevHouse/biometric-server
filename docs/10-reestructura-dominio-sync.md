@@ -245,6 +245,42 @@ entrega al equipo sigue siendo por polling. No hay I/O síncrono con el equipo.
      slots del registro.
 5. Se escribe `sync_run` con los contadores.
 
+**Escritura en lote (2026-09-28, O13).** Las altas y las huellas faltantes no salen
+como una `ADD_EMPLOYEE_TO_DEVICE` por persona sino en lotes de `SYNC_BATCH_SIZE` (20)
+personas: `ADD_EMPLOYEES_BATCH` (`lib/operations/batch.ts`).
+
+- `GET_DEVICE_STATUS` → `SET_USER_INFO` de cada persona que no está en la caché,
+  seguidos → `GET_DEVICE_STATUS` (el total de usuarios tiene que subir exactamente lo
+  enviado) → `SET_ENROLL_DATA` de cada huella a slots libres, seguidos →
+  `GET_DEVICE_STATUS` (el total de huellas tiene que subir exactamente lo enviado).
+  Si un total cierra, todo el lote queda verificado con una lectura. Si no, se relee
+  (`GET_USER_INFO`, 25 s cada uno) solo a los afectados; quien no contesta queda para
+  la próxima corrida.
+- **Sin sonda (D2):** quien tiene huellas está en la caché (la corrida recién leyó la
+  lista) y a un ID en caché nunca se le manda `SET_USER_INFO`. Lo peor posible es pisar
+  a un usuario **sin huellas** que no conocíamos: no pierde nada y el conteo lo delata
+  (+0). Quien figura en el equipo pero no se pudo leer en la corrida va por el camino
+  de a uno, con sonda. *Pendiente validar en hardware (`13` H2).*
+- Costo: ~370 ms por comando encadenado (T0). 100 personas con 2 huellas ≈ 300
+  comandos ≈ 2 min, en una sola corrida. Por eso el intervalo del cron no necesita
+  bajar de 30 min: lo que mueve los datos son los eventos; el cron es la red de
+  seguridad.
+
+**Candado por equipo (D1).** El equipo corre **una operación a la vez**: la que ya
+arrancó (salió de `queued`) sigue hasta terminar, y recién entonces pasa la siguiente
+por prioridad (panel 100 antes que fondo 200). Las verificaciones por conteo suponen
+que nadie más escribe en el equipo a la vez; sin el candado, dos altas o un alta y una
+baja del panel se cruzaban. Una operación que espera su turno no vence mientras el
+equipo consulte (hasta 1 h); si el equipo no consulta, vence a los 10 min
+(`sweepStaleOperations`, que el worker corre cada minuto). Los comandos sueltos
+(Diagnóstico) no esperan.
+
+**Equipos fuera (D4).** Un equipo que no consulta hace más de 5 min no recibe
+corridas automáticas (cron, evento, revisión) ni el pull de asistencia del cron:
+quedarían colgadas hasta vencer. "Sincronizar ahora" sí se encola. Cuando vuelve a
+consultar, `onDeviceReconnect` le lanza una corrida (con revisión si la de las 03:00
+no le llegó en 24 h) y el pull de asistencia si el diario se perdió.
+
 **Idempotencia:** la garantiza el registro de procedencia, no el error del equipo.
 Una huella `propagated` nunca se vuelve a ingerir como nueva, lo que corta el ciclo
 de ida y vuelta entre equipos. `DUPLICATED ERROR` queda como segunda red de seguridad
@@ -540,6 +576,7 @@ Pendientes: T6 (propagación A→B con el reconciliador), T7, T10–T14.
 | O10 | `export_run` con `scope = group`: apuntaba a la empresa raíz (`scope_company_id`), que ya no existe como concepto. Cuando se implemente el Hito 5, agregar `scope_group_id` (FK a `company_group`) — **cerrado (2026-09-27, `11` R2/R7): no hay export por grupo, no hace falta** | — |
 | O11 | Contratos con fecha de inicio futura: el fan-out del PR 1 solo enrola contratos **vigentes hoy** (§4.1). Hasta que exista el cron (PR 2), un contrato futuro se enrola con "Re-sincronizar enrolamientos" en la empresa cuando empieza | PR 2 lo resuelve solo |
 | O12 | Aviso de impacto al desactivar una empresa o un grupo (hoy solo lo protege el freno de borrado masivo) | — |
+| O13 | **Producción (2026-09-27/28, equipo `2023054254`, `scripts/sql/diagnostico-equipo.sql`).** (a) Con 0 huellas, `GET_USER_ID_LIST` responde `ERROR_NO_USER`: el reconciliador fallaba cada 30 min ("lista ilegible"). (b) La primera lectura completa (19 261 marcaciones) se guardaba fila por fila: 43 s con el equipo esperando la respuesta. (c) La expiración de operaciones (`sweepStaleOperations`) solo corría cuando un equipo consultaba o alguien abría el panel: de noche no consultó ninguno, una corrida quedó "activa" 9 h y se tragó todas las siguientes de ese equipo, **incluida la revisión de las 03:00** (una corrida activa absorbe a las nuevas, §4.2). (d) Las corridas (`sync_run`) de operaciones expiradas y los pulls de asistencia quedaban con `ok = null` para siempre | ✅ **Corregido (2026-09-28):** (a) `ERROR_NO_USER` = lista vacía si el estado de la misma corrida dijo `fp_count: 0`; (b) marcaciones en lotes de 5 000 (`unnest` + `ON CONFLICT DO NOTHING`), huellas de un usuario en una sola sentencia; (c) el worker expira operaciones cada minuto (cola `sweep-operations`); (d) `finishOperation` cierra la corrida de su operación. **Además (misma fecha):** escritura en lote, candado por equipo y equipos fuera (§4.2), y el cálculo del alcance en 2 consultas en vez de 2 por empleado |
 
 ---
 

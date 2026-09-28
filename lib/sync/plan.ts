@@ -14,6 +14,8 @@ export interface ScopedEmployee {
   name: string;
   /** Copias canónicas deseadas (las 10 primeras) que todavía no están en ningún slot del equipo. */
   missingFingerprints: number;
+  /** Huellas activas más allá del límite de 10 (alerta de R10). */
+  overflow?: number;
 }
 
 export interface ReconcileInput {

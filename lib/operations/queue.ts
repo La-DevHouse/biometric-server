@@ -128,6 +128,18 @@ export async function finishOperation(
       WHERE id = ?`,
     [stage, note, opId]
   );
+  // La corrida (sync_run) que lanzó esta operación se cierra con ella. El
+  // reconciliador ya cierra la suya con estadísticas antes de llegar acá (la
+  // condición finished_at IS NULL la deja intacta); esto cubre el pull de
+  // asistencia y cualquier operación que expira sin respuesta del equipo, que
+  // antes dejaban la corrida abierta para siempre (ok = null).
+  await runAsync(
+    `UPDATE sync_run
+        SET finished_at = now(), ok = ?,
+            stats = COALESCE(stats, '{}'::jsonb) || jsonb_build_object(?::text, ?::text)
+      WHERE op_id = ? AND finished_at IS NULL`,
+    [stage === "done", stage === "done" ? "note" : "error", note, opId]
+  );
 }
 
 export interface OperationRow {

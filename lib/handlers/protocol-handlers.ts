@@ -21,6 +21,8 @@ import { finishOperation, getOperationRow } from "@/lib/operations/queue";
 import { maybeAutoSyncClock } from "@/lib/deviceClock";
 
 const NO_CMD_STRATEGY = process.env.NO_CMD_STRATEGY || "ok_empty";
+/** Hueco entre consultas que cuenta como "estuvo fuera" (= DEVICE_GONE_MS de lib/sync/reconcile). */
+const RECONNECT_GAP_MS = 5 * 60 * 1000;
 
 export async function handleReceiveCmd(
   request: NextRequest,
@@ -56,6 +58,11 @@ export async function handleReceiveCmd(
     ? JSON.stringify(rawEnrollData)
     : null;
 
+  // Cuándo consultó por última vez ANTES de esta: si hace más de 5 min (o nunca),
+  // estuvo fuera y el cron no le lanzó nada (D4) — se le lanza al volver.
+  const prev = await getAsync<{ last_seen_at: number | null }>(`SELECT last_seen_at FROM devices WHERE dev_id = ?`, [devId]);
+  const reconnected = !prev?.last_seen_at || Date.now() - prev.last_seen_at > RECONNECT_GAP_MS;
+
   await runAsync(
     `INSERT INTO devices (dev_id, fk_name, firmware, fk_bin_data_lib, supported_enroll_data, last_seen_at)
      VALUES (?, ?, ?, ?, ?, ${NOW_MS})
@@ -68,22 +75,48 @@ export async function handleReceiveCmd(
     [devId, fkName, firmware, fkBinDataLib, supportedEnrollData]
   );
 
+  if (reconnected) {
+    // No espera: la respuesta al equipo no se demora por esto. Import dinámico:
+    // lib/sync/reconcile importa lib/operations, que importa este archivo.
+    void import("@/lib/sync/reconcile")
+      .then(({ onDeviceReconnect }) => onDeviceReconnect(devId))
+      .catch((err) => console.error("[sync] no se pudo lanzar la corrida al reconectarse", devId, err));
+  }
+
   // Reloj desviado → "Sincronizar hora" sola (lib/deviceClock). No espera: la
   // respuesta al equipo no se demora por esto.
   maybeAutoSyncClock(devId, json?.fk_time ?? null);
 
   // Next WAIT command: lowest priority first (panel 100 before reconciler
   // 200 — docs/10 §3.1), then oldest.
+  //
+  // Candado por equipo (docs/10 §4.2, D1): UNA operación a la vez. La que ya
+  // arrancó (salió de 'queued': el equipo recibió alguno de sus comandos) sigue hasta terminar;
+  // recién ahí pasa la siguiente por prioridad. Las verificaciones por conteo
+  // (+1 usuario, +N huellas) suponen que nadie más escribe en el equipo
+  // mientras tanto: sin esto, dos altas o un alta y una baja del panel se
+  // cruzaban y ningún conteo cerraba. Los comandos sueltos (Diagnóstico, sin
+  // operación) no esperan.
   const command = await getAsync<{
     trans_id: number;
     cmd_code: string;
     cmd_param: string | null;
     cmd_binary: Buffer | null;
   }>(
-    `SELECT trans_id, cmd_code, cmd_param, cmd_binary FROM commands
-     WHERE dev_id = ? AND status = 'WAIT'
-     ORDER BY priority ASC, created_at ASC, trans_id ASC LIMIT 1`,
-    [devId]
+    `WITH active AS (
+       SELECT o.id, o.priority, o.created_at, o.stage <> 'queued' AS started
+         FROM operations o
+        WHERE o.dev_id = ? AND o.stage IN ('queued','sent','waiting','verifying')
+     ), head AS (
+       SELECT id FROM active ORDER BY started DESC, priority ASC, created_at ASC, id ASC LIMIT 1
+     )
+     SELECT c.trans_id, c.cmd_code, c.cmd_param, c.cmd_binary FROM commands c
+      WHERE c.dev_id = ? AND c.status = 'WAIT'
+        AND (c.op_id IS NULL
+             OR c.op_id = (SELECT id FROM head)
+             OR c.op_id NOT IN (SELECT id FROM active))
+      ORDER BY c.priority ASC, c.created_at ASC, c.trans_id ASC LIMIT 1`,
+    [devId, devId]
   );
 
   if (command) {

@@ -165,7 +165,7 @@ Estado inicial: A → S1a (E1), B → S2 (E2), G comparte. P1 (E1) y P5 (E2), am
 | F1 | Con `SYNC_FINGERPRINTS_INTERVAL_MIN=2`, no tocar nada 5 min | Log del worker: `huellas: 2 corrida(s) encolada(s)` cada 2 min; en Información de cada equipo, "Última corrida" se actualiza (disparo `cron`). Sin cambios en los equipos | — |
 | F2 | Parar el worker, hacer un cambio de contrato, arrancarlo | El cambio igual se aplica al momento (los disparos por evento los hace la app, no el worker); el worker retoma el cron | — |
 | F3 | Parar la app 1 min con el worker corriendo | Worker: `/health` sigue en 200; las corridas que encola esperan a que los equipos consulten | — |
-| F4 | **Equipo desconectado:** sacar de la red a B, dar de alta un contrato (P7 en E2), esperar 12 min, reconectar | Mientras está desconectado, la operación queda en cola y **a los 10 min se cancela** (comportamiento actual). Al reconectar, B se pone al día **en la siguiente corrida del cron** (≤ 2 min en prueba, ≤ 30 en producción) | — |
+| F4 | **Equipo desconectado:** sacar de la red a B, esperar 6 min, dar de alta un contrato (P7 en E2), reconectar | Mientras está fuera, **no se le encola nada** (ni por el cambio ni por el cron). Al reconectar, en la primera consulta se lanza "Sincronizar huellas del equipo (al reconectarse…)" y P7 llega a B en esa corrida, sin esperar al cron | — |
 | F5 | "Sincronizar ahora" sobre B desconectado | Anotar el mensaje. Hoy no avisa antes de confirmar (pendiente de decidir, ver conversación de equipos desconectados) | — |
 | F6 | Reiniciar el worker durante una corrida | No se duplican corridas del mismo equipo (una activa por equipo) | — |
 
@@ -178,6 +178,15 @@ Estado inicial: A → S1a (E1), B → S2 (E2), G comparte. P1 (E1) y P5 (E2), am
 | G3 | Con `SYNC_ATTENDANCE_CRON="*/10 * * * *"` | Log del worker: `asistencia: N pull(s)`; no aparecen marcaciones duplicadas | T13 |
 | G4 | Exportar E1 → Asistencia (rango de hoy) a Excel | Están las marcaciones de P1 en A y en B, con el nombre completo; ninguna de `9001` ni `777` | — |
 | G5 | Dar de baja a P1 con fecha de ayer y exportar el día de hoy | Las marcaciones de hoy de P1 **no** salen (fuera del período del contrato) | — |
+
+## H. Escritura en lote y candado por equipo
+
+| # | Pasos | Esperado | T |
+| --- | --- | --- | --- |
+| H1 | Dar de alta 25 contratos en E1 de una (Adempiere o a mano, gente con y sin huellas) | En A y B salen **2 lotes** "Agregar empleados al equipo: 20 / 5 persona(s)". Cada lote: 1 `GET_DEVICE_STATUS`, los `SET_USER_INFO` seguidos, 1 `GET_DEVICE_STATUS`, los `SET_ENROLL_DATA` seguidos, 1 `GET_DEVICE_STATUS`. **Ningún `GET_USER_INFO`** si los totales cierran. El equipo no aparece desconectado. Anotar cuánto tarda cada lote | — |
+| H2 | **Validar D2 (obligatorio antes de producción):** crear por teclado en A un usuario con la cédula de P9 y **sin dedo**; dar de alta a P9 en E1 | El lote le manda `SET_USER_INFO` (no lo conocía): el total de usuarios sube **+0** en vez de +1 → el lote relee a P9, contesta, queda vinculado. P9 no pierde nada. Anotar el nombre que queda en el equipo. Si el total **baja** o el usuario desaparece, D2 no es seguro: avisar | — |
+| H3 | Con un lote en curso en A (H1), cambiar el nombre de un usuario desde el panel | El cambio del panel **espera** a que termine el lote (no se intercala) y después sale primero, antes que el siguiente lote | — |
+| H4 | Sacar a A de la red a mitad de un lote, esperar 12 min, reconectar | El lote vence; los lotes siguientes en cola vencen a los 10 min (equipo fuera). Al reconectar, la corrida "al reconectarse" termina lo que faltó sin duplicar a nadie | — |
 
 ---
 

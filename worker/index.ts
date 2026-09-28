@@ -15,17 +15,25 @@
 // ("0 2 * * *"), SYNC_TZ ("America/Caracas"), SYNC_MAX_REMOVALS_PER_DEVICE (5),
 // SYNC_MAX_REMOVALS_PCT (20), SYNC_AUDIT_CRON ("0 3 * * *": revisión nocturna de
 // usuarios de cada equipo, docs/10 §4.2), WORKER_HEALTH_PORT (3001; 0 = sin healthcheck).
+//
+// Además, cada minuto, expira las operaciones colgadas (sweepStaleOperations).
+// Antes solo corría cuando algún equipo consultaba o alguien abría el panel: la
+// noche del 2026-09-27 no consultó ninguno y una corrida quedó "activa" 9 h,
+// tragándose todas las corridas siguientes de ese equipo (incluida la revisión
+// de las 03:00).
 import { readdirSync } from "node:fs";
 import path from "node:path";
 import PgBoss from "pg-boss";
 import { reconcileAll } from "@/lib/sync/reconcile";
 import { attendancePullAll, attendanceComputeAll } from "@/lib/sync/attendance";
+import { sweepStaleOperations } from "@/lib/operations/advance";
 import { closeDb, prisma } from "@/lib/db";
 import { startHealthServer, setWorkerState, reportWorkerError } from "./health";
 
 const FINGERPRINTS = "sync-fingerprints";
 const ATTENDANCE = "sync-attendance";
 const AUDIT = "sync-audit";
+const SWEEP = "sweep-operations";
 
 function fingerprintsCron(): string {
   const n = Number(process.env.SYNC_FINGERPRINTS_INTERVAL_MIN ?? 30);
@@ -89,10 +97,11 @@ async function main() {
   });
   await boss.start();
 
-  for (const q of [FINGERPRINTS, ATTENDANCE, AUDIT]) await boss.createQueue(q);
+  for (const q of [FINGERPRINTS, ATTENDANCE, AUDIT, SWEEP]) await boss.createQueue(q);
   await boss.schedule(FINGERPRINTS, fingerprintsCron(), {}, { tz });
   await boss.schedule(ATTENDANCE, process.env.SYNC_ATTENDANCE_CRON ?? "0 2 * * *", {}, { tz });
   await boss.schedule(AUDIT, process.env.SYNC_AUDIT_CRON ?? "0 3 * * *", {}, { tz });
+  await boss.schedule(SWEEP, "* * * * *", {}, { tz });
 
   await boss.work(FINGERPRINTS, async () => {
     const ids = await reconcileAll("cron");
@@ -104,6 +113,10 @@ async function main() {
   await boss.work(AUDIT, async () => {
     const ids = await reconcileAll("cron", undefined, { audit: true });
     console.log(`[worker] revisión nocturna: ${ids.length} equipo(s)`);
+  });
+  await boss.work(SWEEP, async () => {
+    const n = await sweepStaleOperations();
+    if (n > 0) console.log(`[worker] ${n} operación(es) expirada(s) sin respuesta del equipo`);
   });
   await boss.work(ATTENDANCE, async () => {
     const n = await attendancePullAll("cron");

@@ -71,3 +71,4 @@ docs/adempiere/exports/**
 # Resultados de consultas de diagnóstico exportadas desde DBeaver (pueden tener cédulas).
 /results/
 /results.json
+/scripts/results/
