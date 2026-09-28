@@ -1,5 +1,6 @@
 "use server";
 
+import { userErrorMessage } from "@/lib/serverErrors";
 import { revalidatePath } from "next/cache";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
@@ -49,7 +50,7 @@ export async function createAccountAction(
   } catch (e) {
     if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002")
       return { status: "error", error: `Ya existe una cuenta con el email ${email}.` };
-    return { status: "error", error: e instanceof Error ? e.message : String(e) };
+    return { status: "error", error: userErrorMessage(e) };
   }
 }
 
@@ -83,7 +84,7 @@ export async function updateAccountAction(
   } catch (e) {
     if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002")
       return { status: "error", error: `El email ${email} ya está en uso por otra cuenta.` };
-    return { status: "error", error: e instanceof Error ? e.message : String(e) };
+    return { status: "error", error: userErrorMessage(e) };
   }
 }
 

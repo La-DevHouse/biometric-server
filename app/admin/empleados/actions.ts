@@ -1,5 +1,6 @@
 "use server";
 
+import { userErrorMessage } from "@/lib/serverErrors";
 import { revalidatePath } from "next/cache";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
@@ -134,7 +135,7 @@ export async function createEmployeeAction(
   try {
     cedulaPhoto = await cedulaPhotoFromForm(fd);
   } catch (e) {
-    return { status: "error", error: e instanceof Error ? e.message : String(e) };
+    return { status: "error", error: userErrorMessage(e) };
   }
 
   try {
@@ -145,7 +146,7 @@ export async function createEmployeeAction(
   } catch (e) {
     if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002")
       return { status: "error", error: `Ya existe una persona con el documento ${d.national_id}.` };
-    return { status: "error", error: e instanceof Error ? e.message : String(e) };
+    return { status: "error", error: userErrorMessage(e) };
   }
 }
 
@@ -169,7 +170,7 @@ export async function updateEmployeeAction(
   try {
     cedulaPhoto = await cedulaPhotoFromForm(fd);
   } catch (e) {
-    return { status: "error", error: e instanceof Error ? e.message : String(e) };
+    return { status: "error", error: userErrorMessage(e) };
   }
 
   try {
@@ -184,7 +185,7 @@ export async function updateEmployeeAction(
   } catch (e) {
     if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002")
       return { status: "error", error: `El documento ${d.national_id} ya está en uso por otra persona.` };
-    return { status: "error", error: e instanceof Error ? e.message : String(e) };
+    return { status: "error", error: userErrorMessage(e) };
   }
 }
 
@@ -280,7 +281,7 @@ export async function createEmploymentAction(
     revalidatePath("/admin/empleados");
     return { status: "ok", message: "Contrato registrado." + note };
   } catch (e) {
-    return { status: "error", error: e instanceof Error ? e.message : String(e) };
+    return { status: "error", error: userErrorMessage(e) };
   }
 }
 
@@ -311,7 +312,7 @@ export async function endEmploymentAction(
     revalidatePath("/admin/empleados");
     return { status: "ok", message: "Baja registrada." + note };
   } catch (e) {
-    return { status: "error", error: e instanceof Error ? e.message : String(e) };
+    return { status: "error", error: userErrorMessage(e) };
   }
 }
 
@@ -367,6 +368,6 @@ export async function updateEmploymentAction(
     revalidatePath("/admin/empleados");
     return { status: "ok", message: "Contrato actualizado." + note };
   } catch (e) {
-    return { status: "error", error: e instanceof Error ? e.message : String(e) };
+    return { status: "error", error: userErrorMessage(e) };
   }
 }

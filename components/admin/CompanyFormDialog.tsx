@@ -20,6 +20,7 @@ import {
   parseRifPdfAction,
   extractRifPhotoAction,
 } from "@/app/admin/empresas/actions";
+import { extractCedulaAction } from "@/app/admin/empleados/actions";
 import { ADMIN_ACTION_INITIAL } from "@/lib/adminActionState";
 import type { RifExtractedFields } from "@/lib/rifParser";
 import { FIELD_INPUT as INPUT, FIELD_LABEL as LABEL, FIELD_OPTIONAL, FIELD_HINT } from "@/components/ui/fieldStyles";
@@ -37,6 +38,7 @@ export interface CompanyFormValues {
   legal_rep_name: string | null;
   legal_rep_national_id: string | null;
   legal_rep_phone: string | null;
+  has_legal_rep_photo: boolean;
   late_tolerance_min: number | null;
   early_leave_tolerance_min: number | null;
   absence_rule: "no_check_in" | "no_marks" | "under_hours" | null;
@@ -61,6 +63,9 @@ export function CompanyFormDialog({
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
   const [logoError, setLogoError] = useState<string | null>(null);
   const [removeExistingLogo, setRemoveExistingLogo] = useState(false);
+  const [repParsing, setRepParsing] = useState(false);
+  const [repCaptureOpen, setRepCaptureOpen] = useState(false);
+  const [repPreview, setRepPreview] = useState<string | null>(null);
   const [state, formAction, pending] = useActionState(
     editing ? updateCompanyAction : createCompanyAction,
     ADMIN_ACTION_INITIAL
@@ -70,12 +75,54 @@ export function CompanyFormDialog({
   const formId = useId();
   const formRef = useRef<HTMLFormElement>(null);
   const logoInputRef = useRef<HTMLInputElement>(null);
+  const repPhotoInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     return () => {
       if (logoPreview) URL.revokeObjectURL(logoPreview);
     };
   }, [logoPreview]);
+
+  useEffect(() => {
+    return () => {
+      if (repPreview) URL.revokeObjectURL(repPreview);
+    };
+  }, [repPreview]);
+
+  // Cédula del representante legal: el mismo escaneo que la del empleado
+  // (extractCedulaAction). La foto va al form (input oculto) y se guarda al
+  // enviar; la lectura solo precarga nombre y cédula.
+  async function handleRepCedula(file: File) {
+    const dt = new DataTransfer();
+    dt.items.add(file);
+    if (repPhotoInputRef.current) repPhotoInputRef.current.files = dt.files;
+    setRepPreview((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return URL.createObjectURL(file);
+    });
+
+    const form = formRef.current;
+    if (!form) return;
+    setRepParsing(true);
+    try {
+      const fd = new FormData();
+      fd.set("photo", file);
+      const res = await extractCedulaAction(fd);
+      if (!res.ok) {
+        push("error", res.error);
+        return; // la foto queda igual para el envío, aunque no se haya podido leer
+      }
+      const { prefix, number, firstName, lastName } = res.fields;
+      (form.elements.namedItem("legal_rep_ced_prefix") as HTMLSelectElement).value = prefix;
+      (form.elements.namedItem("legal_rep_ced_number") as HTMLInputElement).value = number;
+      (form.elements.namedItem("legal_rep_name") as HTMLInputElement).value = `${firstName} ${lastName}`.trim();
+      push("ok", "Cédula del representante leída — revisá los datos antes de guardar.");
+    } catch (err) {
+      push("error", describeActionError(err));
+    } finally {
+      setRepParsing(false);
+    }
+  }
 
   useEffect(() => {
     if (state.status === "ok") {
@@ -330,6 +377,38 @@ export function CompanyFormDialog({
           />
 
           <Collapsible title="Representante legal">
+            <input ref={repPhotoInputRef} type="file" name="legal_rep_cedula_photo" className="hidden" />
+            <div className={LABEL}>
+              <span>
+                Escanear cédula <span className={FIELD_OPTIONAL}>precarga los datos</span>
+              </span>
+              <div className="flex items-center gap-3">
+                <IconBtn
+                  type="button"
+                  icon={Icon.camera}
+                  label="Escanear cédula del representante con cámara"
+                  disabled={repParsing}
+                  onClick={() => setRepCaptureOpen(true)}
+                />
+                <FileIconButton
+                  icon={Icon.upload}
+                  label="Subir foto de la cédula del representante"
+                  accept="image/*"
+                  disabled={repParsing}
+                  onFile={handleRepCedula}
+                />
+                {repParsing && <span className={FIELD_HINT}>Leyendo…</span>}
+                {(repPreview || company?.has_legal_rep_photo) && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={repPreview ?? `/admin/empresas/${company?.id}/representante`}
+                    alt="cédula del representante"
+                    className="h-10 w-auto border border-divider bg-surface object-contain p-0.5"
+                  />
+                )}
+              </div>
+              <span className={FIELD_HINT}>La foto se guarda con la empresa.</span>
+            </div>
             <label className={LABEL}>
               Nombre
               <input
@@ -413,6 +492,14 @@ export function CompanyFormDialog({
         guide="document"
         title="Escanear RIF"
         instructions="Alineá la hoja del RIF dentro del recuadro, bien iluminada, y capturá."
+      />
+      <DocumentCameraCapture
+        open={repCaptureOpen}
+        onClose={() => setRepCaptureOpen(false)}
+        onCapture={handleRepCedula}
+        guide="id-card"
+        title="Escanear cédula del representante"
+        instructions="Alineá la cédula dentro del recuadro, bien iluminada, y capturá."
       />
     </>
   );

@@ -1,5 +1,6 @@
 "use server";
 
+import { userErrorMessage } from "@/lib/serverErrors";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
@@ -106,9 +107,22 @@ async function logoFromForm(fd: FormData): Promise<Uint8Array<ArrayBuffer> | nul
   return new Uint8Array(Buffer.from(await f.arrayBuffer()));
 }
 
-/** Reemplaza el blob del logo por un resumen para no volcarlo al audit_log. */
-function auditView<T extends { logo?: Uint8Array<ArrayBufferLike> | null }>(row: T) {
-  return { ...row, logo: row.logo ? `[${row.logo.byteLength} bytes]` : null };
+/**
+ * Foto de la cédula del representante legal. `undefined` = no se adjuntó nada
+ * (no tocar la que hubiera). Como la del empleado, se conserva una vez cargada.
+ */
+async function legalRepPhotoFromForm(fd: FormData): Promise<Uint8Array<ArrayBuffer> | undefined> {
+  const f = fd.get("legal_rep_cedula_photo");
+  if (!(f instanceof File) || f.size === 0) return undefined;
+  if (f.size > 8 * 1024 * 1024) throw new Error("La foto de la cédula del representante no puede superar 8 MB.");
+  if (f.type && !f.type.startsWith("image/")) throw new Error("La foto de la cédula del representante debe ser una imagen.");
+  return new Uint8Array(Buffer.from(await f.arrayBuffer()));
+}
+
+/** Reemplaza los blobs (logo, foto de cédula) por un resumen para no volcarlos al audit_log. */
+function auditView<T extends { logo?: Uint8Array<ArrayBufferLike> | null; legal_rep_cedula_photo?: Uint8Array<ArrayBufferLike> | null }>(row: T) {
+  const size = (b?: Uint8Array<ArrayBufferLike> | null) => (b ? `[${b.byteLength} bytes]` : null);
+  return { ...row, logo: size(row.logo), legal_rep_cedula_photo: size(row.legal_rep_cedula_photo) };
 }
 
 /** El grupo elegido debe existir. null = empresa sin grupo (docs/10 R1). */
@@ -149,10 +163,12 @@ export async function createCompanyAction(
   if (!siteName) return { status: "error", error: "La primera sede es obligatoria: poné su nombre." };
 
   let logo: Uint8Array<ArrayBuffer> | null | undefined;
+  let repPhoto: Uint8Array<ArrayBuffer> | undefined;
   try {
     logo = await logoFromForm(fd);
+    repPhoto = await legalRepPhotoFromForm(fd);
   } catch (e) {
-    return { status: "error", error: e instanceof Error ? e.message : String(e) };
+    return { status: "error", error: userErrorMessage(e) };
   }
 
   try {
@@ -162,6 +178,7 @@ export async function createCompanyAction(
       data: {
         ...f,
         logo: logo ?? null,
+        legal_rep_cedula_photo: repPhoto ?? null,
         sites: { create: { name: siteName, code: siteCode, timezone: siteTimezone } },
       },
     });
@@ -175,7 +192,7 @@ export async function createCompanyAction(
     revalidatePath("/admin/empresas");
     return { status: "ok", message: `Empresa "${f.name}" creada con la sede "${siteName}".` };
   } catch (e) {
-    return { status: "error", error: e instanceof Error ? e.message : String(e) };
+    return { status: "error", error: userErrorMessage(e) };
   }
 }
 
@@ -199,10 +216,12 @@ export async function updateCompanyAction(
   if (groupErr) return { status: "error", error: groupErr };
 
   let logo: Uint8Array<ArrayBuffer> | null | undefined;
+  let repPhoto: Uint8Array<ArrayBuffer> | undefined;
   try {
     logo = await logoFromForm(fd);
+    repPhoto = await legalRepPhotoFromForm(fd);
   } catch (e) {
-    return { status: "error", error: e instanceof Error ? e.message : String(e) };
+    return { status: "error", error: userErrorMessage(e) };
   }
 
   // Si cambia de grupo, cambia el alcance: equipos del grupo viejo ∪ del nuevo.
@@ -211,7 +230,11 @@ export async function updateCompanyAction(
   try {
     const updated = await prisma.client_company.update({
       where: { id },
-      data: logo === undefined ? f : { ...f, logo },
+      data: {
+        ...f,
+        ...(logo === undefined ? {} : { logo }),
+        ...(repPhoto === undefined ? {} : { legal_rep_cedula_photo: repPhoto }),
+      },
     });
     await writeAudit({
       actorId: user.id,
@@ -226,7 +249,7 @@ export async function updateCompanyAction(
     revalidatePath(`/admin/empresas/${id}`);
     return { status: "ok", message: "Cambios guardados." };
   } catch (e) {
-    return { status: "error", error: e instanceof Error ? e.message : String(e) };
+    return { status: "error", error: userErrorMessage(e) };
   }
 }
 
@@ -287,7 +310,7 @@ export async function createSiteAction(
     revalidatePath(`/admin/empresas/${company_id}`);
     return { status: "ok", message: `Sede "${name}" creada.` };
   } catch (e) {
-    return { status: "error", error: e instanceof Error ? e.message : String(e) };
+    return { status: "error", error: userErrorMessage(e) };
   }
 }
 
@@ -320,7 +343,7 @@ export async function updateSiteAction(
     revalidatePath(`/admin/empresas/${before.company_id}`);
     return { status: "ok", message: "Sede actualizada." };
   } catch (e) {
-    return { status: "error", error: e instanceof Error ? e.message : String(e) };
+    return { status: "error", error: userErrorMessage(e) };
   }
 }
 
@@ -379,7 +402,7 @@ export async function createGroupAction(
     revalidatePath("/admin/empresas");
     return { status: "ok", message: `Grupo "${f.name}" creado.` };
   } catch (e) {
-    return { status: "error", error: e instanceof Error ? e.message : String(e) };
+    return { status: "error", error: userErrorMessage(e) };
   }
 }
 
@@ -401,7 +424,7 @@ export async function updateGroupAction(
     revalidatePath("/admin/empresas");
     return { status: "ok", message: "Grupo actualizado." };
   } catch (e) {
-    return { status: "error", error: e instanceof Error ? e.message : String(e) };
+    return { status: "error", error: userErrorMessage(e) };
   }
 }
 

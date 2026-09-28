@@ -1,5 +1,6 @@
 "use server";
 
+import { userErrorMessage } from "@/lib/serverErrors";
 import { revalidatePath } from "next/cache";
 import { initDb, runAsync, prisma } from "@/lib/db";
 import { COMMAND_TEMPLATES } from "@/lib/commandTemplates";
@@ -76,7 +77,7 @@ export async function queueCommandAction(
 // ---------------------------------------------------------------------------
 
 function opError(err: unknown): OpActionState {
-  return { status: "error", message: err instanceof Error ? err.message : String(err) };
+  return { status: "error", message: userErrorMessage(err) };
 }
 
 async function afterStart(): Promise<void> {
@@ -296,7 +297,7 @@ export async function syncAllDevicesAction(_prev: MultiOpActionState, _formData:
     await afterStart();
     return { status: "ok", ids };
   } catch (err) {
-    return { status: "error", message: err instanceof Error ? err.message : String(err) };
+    return { status: "error", message: userErrorMessage(err) };
   }
 }
 
@@ -314,7 +315,7 @@ export async function resolveSyncHoldAction(
       message: approve ? `Aprobado: ${started} baja(s) encolada(s).` : "Rechazado: no se borra a nadie.",
     };
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    return { ok: false, error: userErrorMessage(err) };
   }
 }
 
@@ -324,7 +325,7 @@ export async function previewImpactAction(change: ScopeChange): Promise<ImpactRe
   try {
     return await previewImpact(change);
   } catch (err) {
-    return { error: err instanceof Error ? err.message : String(err) };
+    return { error: userErrorMessage(err) };
   }
 }
 
@@ -341,7 +342,7 @@ export async function syncEmployeeNowAction(_prev: MultiOpActionState, formData:
     await afterStart();
     return { status: "ok", ids };
   } catch (err) {
-    return { status: "error", message: err instanceof Error ? err.message : String(err) };
+    return { status: "error", message: userErrorMessage(err) };
   }
 }
 
@@ -357,6 +358,6 @@ export async function syncCompanyAttendanceAction(_prev: MultiOpActionState, for
     await afterStart();
     return { status: "ok", ids };
   } catch (err) {
-    return { status: "error", message: err instanceof Error ? err.message : String(err) };
+    return { status: "error", message: userErrorMessage(err) };
   }
 }

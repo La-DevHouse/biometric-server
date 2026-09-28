@@ -1,7 +1,7 @@
 "use client";
 
 import { docPrefixes, type DocKind } from "@/lib/documento";
-import { FIELD_INPUT as INPUT } from "@/components/ui/fieldStyles";
+import { FIELD_INPUT as INPUT, FIELD_LABEL as LABEL, FIELD_HINT } from "@/components/ui/fieldStyles";
 
 /**
  * Tipo de documento (prefijo en <select>) + número (campo numérico).
@@ -31,10 +31,12 @@ export function DocumentField({
 }) {
   const prefixes = docPrefixes(kind);
   return (
-    <div className={`flex flex-col gap-1 text-xs text-text/85 ${className ?? ""}`}>
+    // Mismo estilo de etiqueta que el resto de los campos (FIELD_LABEL: mono,
+    // mayúsculas): antes salía en letra normal y desentonaba en el formulario.
+    // La ayuda va debajo del campo, como pide FIELD_HINT.
+    <div className={`${LABEL} ${className ?? ""}`}>
       <span>
         {label} {required && "*"}
-        {hint && <span className="text-text/60"> {hint}</span>}
       </span>
       <div className="flex gap-2">
         <select
@@ -60,6 +62,7 @@ export function DocumentField({
           className={INPUT}
         />
       </div>
+      {hint && <span className={FIELD_HINT}>{hint}</span>}
     </div>
   );
 }

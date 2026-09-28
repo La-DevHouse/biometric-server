@@ -1,5 +1,6 @@
 "use server";
 
+import { userErrorMessage } from "@/lib/serverErrors";
 import { revalidatePath } from "next/cache";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
@@ -57,7 +58,7 @@ export async function createScheduleAction(
     revalidatePath("/admin/horarios");
     return { status: "ok", message: `Horario "${d.name}" creado.` };
   } catch (e) {
-    return { status: "error", error: e instanceof Error ? e.message : String(e) };
+    return { status: "error", error: userErrorMessage(e) };
   }
 }
 
@@ -83,7 +84,7 @@ export async function updateScheduleAction(
     revalidatePath(`/admin/horarios/${id}`);
     return { status: "ok", message: "Horario actualizado." };
   } catch (e) {
-    return { status: "error", error: e instanceof Error ? e.message : String(e) };
+    return { status: "error", error: userErrorMessage(e) };
   }
 }
 
@@ -177,7 +178,7 @@ export async function createShiftAction(
     revalidatePath(`/admin/horarios/${schedule_group_id}`);
     return { status: "ok", message: `Turno "${parsed.data!.name}" creado.` };
   } catch (e) {
-    return { status: "error", error: e instanceof Error ? e.message : String(e) };
+    return { status: "error", error: userErrorMessage(e) };
   }
 }
 
@@ -199,7 +200,7 @@ export async function updateShiftAction(
     revalidatePath(`/admin/horarios/${before.schedule_group_id}`);
     return { status: "ok", message: "Turno actualizado." };
   } catch (e) {
-    return { status: "error", error: e instanceof Error ? e.message : String(e) };
+    return { status: "error", error: userErrorMessage(e) };
   }
 }
 

@@ -147,6 +147,7 @@ model client_company {
   legal_rep_name        String?
   legal_rep_national_id String?
   legal_rep_phone       String?
+  legal_rep_cedula_photo Bytes?  // foto de la cédula del rep. legal (escaneo en el form de empresa)
 
   late_tolerance_min        Int?                       // fallback de umbrales (07 §1.9)
   early_leave_tolerance_min Int?
@@ -599,6 +600,7 @@ app_user ──< export_run
 | `20260927100000_fingerprint_provenance_and_sync` | 2026-09-27 | docs/10 PR 2: `employee_fingerprint.finger_index` → `source_backup_number` (rename, sin pérdida; se quita el unique `(employee_id, finger_index)`), `status`; `device_fingerprint_slot` (procedencia por slot, backfill desde las huellas existentes); `sync_run`; `sync_hold`; `commands.priority` + `operations.priority`; enums `fingerprint_origin`, `fingerprint_slot_state`, `sync_kind`, `sync_trigger`, `sync_hold_resolution`. |
 | `20260926200000_company_group_and_site_scope` | 2026-09-26 | docs/10 PR 1: `company_group` + `client_company.group_id` (backfill desde las filas `is_group`/padres; las filas-grupo con algo colgando quedan como empresa miembro), sede "Principal" para toda empresa sin sede activa, equipos con empresa y sin sede → esa sede; drop `parent_id`/`is_group`/`shared_employees`, trigger de 2 niveles, CHECK de RIF, `devices.company_id`, `employment.site_id`; constraint trigger diferido "≥1 sede activa". |
 | `20260910120000_restore_hierarchy_and_domain_refinements` | 2026-09-10 | Reunión 3: restaura jerarquía (columnas + FK + índice + trigger 2 niveles + CHECK de RIF), agrega `business_model` + `position_business_model` + enum `payroll_type` + `employment.payroll_type` + `client_company.{logo, legal_rep_*}` + `device.company_linked_at`. |
+| `20260928120000_company_legal_rep_photo` | 2026-09-28 | `client_company.legal_rep_cedula_photo` (BYTEA, opcional): la cédula del representante legal se escanea en el form de empresa como la del empleado (precarga nombre y cédula) y la foto se conserva. |
 
 **Seeds mínimos** (script aparte, no migración): 1 `app_user` inicial para poder
 entrar al panel una vez que exista auth.

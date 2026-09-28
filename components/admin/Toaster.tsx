@@ -67,12 +67,14 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       <dialog
         ref={dialogRef}
         onCancel={(e) => e.preventDefault()}
-        className="backdrop:bg-text/40 border border-text bg-surface p-0 w-[min(92vw,24rem)] shadow-hard m-auto"
+        className="backdrop:bg-text/40 border border-text bg-surface p-0 w-[min(92vw,24rem)] max-h-[85dvh] shadow-hard m-auto"
       >
         {current && (
-          <div className={cx("flex flex-col gap-3 p-4 border-t-4", KIND_CLASS[current.kind])}>
+          // Con un mensaje largo, el texto se desplaza por dentro y "Cerrar" queda
+          // siempre a la vista (antes un error crudo lo empujaba fuera de la pantalla).
+          <div className={cx("flex max-h-[85dvh] flex-col gap-3 p-4 border-t-4", KIND_CLASS[current.kind])}>
             <h3 className="font-heading text-xl font-semibold tracking-tight m-0">{KIND_LABEL[current.kind]}</h3>
-            <p className="text-sm m-0 whitespace-pre-wrap">{current.message}</p>
+            <p className="text-sm m-0 min-h-0 overflow-y-auto whitespace-pre-wrap [overflow-wrap:anywhere]">{current.message}</p>
             <button
               type="button"
               onClick={dismiss}

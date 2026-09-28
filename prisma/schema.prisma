@@ -317,6 +317,7 @@ model client_company {
   legal_rep_name        String? // representante legal (docs/09 §3.11)
   legal_rep_national_id String? // cédula del rep. legal (PREFIJO-dígitos)
   legal_rep_phone       String?
+  legal_rep_cedula_photo Bytes? // foto de la cédula del rep. legal (escaneo del form de empresa); se conserva como la de empleado
 
   // fallback de umbrales de asistencia (docs/07 §1.9). null → sin default de empresa
   late_tolerance_min        Int?

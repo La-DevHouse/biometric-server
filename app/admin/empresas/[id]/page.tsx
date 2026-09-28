@@ -70,6 +70,7 @@ export default async function EmpresaDetailPage({
     legal_rep_name: company.legal_rep_name,
     legal_rep_national_id: company.legal_rep_national_id,
     legal_rep_phone: company.legal_rep_phone,
+    has_legal_rep_photo: company.legal_rep_cedula_photo != null,
     late_tolerance_min: company.late_tolerance_min,
     early_leave_tolerance_min: company.early_leave_tolerance_min,
     absence_rule: company.absence_rule,
@@ -114,9 +115,25 @@ export default async function EmpresaDetailPage({
           <Row
             label="Representante legal"
             value={
-              company.legal_rep_name
-                ? `${company.legal_rep_name}${company.legal_rep_national_id ? ` · ${company.legal_rep_national_id}` : ""}${company.legal_rep_phone ? ` · ${company.legal_rep_phone}` : ""}`
-                : "—"
+              company.legal_rep_name || company.legal_rep_cedula_photo ? (
+                <span className="flex flex-wrap items-center gap-3">
+                  <span>
+                    {[company.legal_rep_name, company.legal_rep_national_id, company.legal_rep_phone].filter(Boolean).join(" · ") || "—"}
+                  </span>
+                  {company.legal_rep_cedula_photo && (
+                    <a href={`/admin/empresas/${company.id}/representante`} target="_blank" rel="noreferrer" title="Ver cédula">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={`/admin/empresas/${company.id}/representante`}
+                        alt="cédula del representante"
+                        className="h-10 w-auto border border-divider bg-surface object-contain p-0.5"
+                      />
+                    </a>
+                  )}
+                </span>
+              ) : (
+                "—"
+              )
             }
           />
           <Row label="Sedes" value={String(company.sites.length)} />

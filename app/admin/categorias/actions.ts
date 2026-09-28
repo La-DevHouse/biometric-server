@@ -1,5 +1,6 @@
 "use server";
 
+import { userErrorMessage } from "@/lib/serverErrors";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
@@ -31,7 +32,7 @@ export async function createDepartmentAction(
     revalidatePath(PATH);
     return { status: "ok", message: `Departamento "${name}" creado.` };
   } catch (e) {
-    return { status: "error", error: e instanceof Error ? e.message : String(e) };
+    return { status: "error", error: userErrorMessage(e) };
   }
 }
 
@@ -55,7 +56,7 @@ export async function updateDepartmentAction(
     revalidatePath(PATH);
     return { status: "ok", message: "Departamento actualizado." };
   } catch (e) {
-    return { status: "error", error: e instanceof Error ? e.message : String(e) };
+    return { status: "error", error: userErrorMessage(e) };
   }
 }
 
@@ -118,7 +119,7 @@ export async function createPositionAction(
     revalidatePath(PATH);
     return { status: "ok", message: `Puesto "${d.name}" creado.` };
   } catch (e) {
-    return { status: "error", error: e instanceof Error ? e.message : String(e) };
+    return { status: "error", error: userErrorMessage(e) };
   }
 }
 
@@ -151,7 +152,7 @@ export async function updatePositionAction(
     revalidatePath(PATH);
     return { status: "ok", message: "Puesto actualizado." };
   } catch (e) {
-    return { status: "error", error: e instanceof Error ? e.message : String(e) };
+    return { status: "error", error: userErrorMessage(e) };
   }
 }
 
@@ -197,7 +198,7 @@ export async function createBusinessModelAction(
     revalidatePath(PATH);
     return { status: "ok", message: `Modelo de negocio "${d.name}" creado.` };
   } catch (e) {
-    return { status: "error", error: e instanceof Error ? e.message : String(e) };
+    return { status: "error", error: userErrorMessage(e) };
   }
 }
 
@@ -220,7 +221,7 @@ export async function updateBusinessModelAction(
     revalidatePath(PATH);
     return { status: "ok", message: "Modelo de negocio actualizado." };
   } catch (e) {
-    return { status: "error", error: e instanceof Error ? e.message : String(e) };
+    return { status: "error", error: userErrorMessage(e) };
   }
 }
 
