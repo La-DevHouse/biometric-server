@@ -313,10 +313,10 @@ model client_company {
   business_model_id Int?
   business_model    business_model? @relation(fields: [business_model_id], references: [id], onDelete: SetNull)
 
-  logo                  Bytes? // logo de la empresa → recibo de pago (docs/09 §3.11)
-  legal_rep_name        String? // representante legal (docs/09 §3.11)
-  legal_rep_national_id String? // cédula del rep. legal (PREFIJO-dígitos)
-  legal_rep_phone       String?
+  logo                   Bytes? // logo de la empresa → recibo de pago (docs/09 §3.11)
+  legal_rep_name         String? // representante legal (docs/09 §3.11)
+  legal_rep_national_id  String? // cédula del rep. legal (PREFIJO-dígitos)
+  legal_rep_phone        String?
   legal_rep_cedula_photo Bytes? // foto de la cédula del rep. legal (escaneo del form de empresa); se conserva como la de empleado
 
   // fallback de umbrales de asistencia (docs/07 §1.9). null → sin default de empresa
@@ -332,6 +332,7 @@ model client_company {
   employments     employment[]
   schedule_groups schedule_group[]
   export_runs     export_run[]
+  import_runs     import_run[]
 
   @@index([group_id])
   @@index([business_model_id])
@@ -438,6 +439,7 @@ model position {
 
   employments     employment[]
   business_models position_business_model[]
+  aliases         position_alias[]
 
   @@index([department_id])
 }
@@ -675,6 +677,7 @@ model app_user {
   audit_logs  audit_log[]
   corrections attendance_correction[]
   export_runs export_run[]
+  import_runs import_run[]
 }
 
 /// Sesión de login. Token opaco en cookie httpOnly; la fila es la fuente de verdad.
@@ -721,4 +724,40 @@ model export_run {
   row_count        Int?
 
   @@index([period_start, period_end])
+}
+
+/// Importación desde Excel (docs/14): un archivo subido. `file` se guarda entre
+/// la vista previa y la confirmación y se borra a los 30 días. `status`:
+/// preview | applied | failed | expired (CHECK en la migración).
+model import_run {
+  id                Int             @id @default(autoincrement())
+  actor_app_user_id Int?
+  actor             app_user?       @relation(fields: [actor_app_user_id], references: [id], onDelete: SetNull)
+  company_id        Int?
+  company           client_company? @relation(fields: [company_id], references: [id], onDelete: SetNull)
+  file_name         String
+  file_hash         String
+  file              Bytes?
+  template_version  String?
+  status            String          @default("preview")
+  plan_hash         String?
+  summary           Json?
+  created_at        DateTime        @default(now()) @db.Timestamptz(6)
+  applied_at        DateTime?       @db.Timestamptz(6)
+
+  @@index([created_at(sort: Desc)])
+  @@index([company_id])
+}
+
+/// Cargo tal como viene en un archivo importado, asignado a un puesto existente
+/// desde la vista previa (docs/14). Se recuerda para los próximos archivos.
+model position_alias {
+  id          Int      @id @default(autoincrement())
+  alias_key   String   @unique // clave normalizada (lib/import/normalize.normKey)
+  alias       String // texto tal como vino
+  position_id Int
+  position    position @relation(fields: [position_id], references: [id], onDelete: Cascade)
+  created_at  DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([position_id])
 }

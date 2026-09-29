@@ -1,7 +1,9 @@
 # Importación de empresas, empleados y contratos desde Adempiere
 
-Estado: **diseño (2026-09-27), sin implementar.** Hay 3 decisiones abiertas (§6) —
-dos de ellas bloquean la primera corrida real.
+Estado: **reemplazado (2026-09-28) por [`14-importacion-excel.md`](./14-importacion-excel.md)**
+— importación por empresa desde el export de Galepso (trae fecha de ingreso; los
+apellidos se separan del nombre completo con vista previa editable). Se conserva
+como referencia del formato del export de Adempiere (§1).
 
 Cómo cargar a la plataforma lo que hoy vive en Adempiere, a partir del reporte
 que ALCO exporta ("reportFrame"). No es una función de la plataforma: es un

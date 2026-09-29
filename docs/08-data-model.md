@@ -601,6 +601,8 @@ app_user ──< export_run
 | `20260926200000_company_group_and_site_scope` | 2026-09-26 | docs/10 PR 1: `company_group` + `client_company.group_id` (backfill desde las filas `is_group`/padres; las filas-grupo con algo colgando quedan como empresa miembro), sede "Principal" para toda empresa sin sede activa, equipos con empresa y sin sede → esa sede; drop `parent_id`/`is_group`/`shared_employees`, trigger de 2 niveles, CHECK de RIF, `devices.company_id`, `employment.site_id`; constraint trigger diferido "≥1 sede activa". |
 | `20260910120000_restore_hierarchy_and_domain_refinements` | 2026-09-10 | Reunión 3: restaura jerarquía (columnas + FK + índice + trigger 2 niveles + CHECK de RIF), agrega `business_model` + `position_business_model` + enum `payroll_type` + `employment.payroll_type` + `client_company.{logo, legal_rep_*}` + `device.company_linked_at`. |
 | `20260928120000_company_legal_rep_photo` | 2026-09-28 | `client_company.legal_rep_cedula_photo` (BYTEA, opcional): la cédula del representante legal se escanea en el form de empresa como la del empleado (precarga nombre y cédula) y la foto se conserva. |
+| `20260928140000_import_run` | 2026-09-28 | Tabla `import_run` (importación desde Excel, docs/14): archivo entre vista previa y confirmación (se borra a los 30 días), versión de plantilla, estado (`preview`/`applied`/`failed`/`expired`, CHECK), huella del plan y resumen. |
+| `20260929100000_company_import` | 2026-09-29 | `import_run.company_id` (cada importación es de una empresa) y tabla `position_alias` (cargo del archivo → puesto existente, se recuerda entre importaciones; `alias_key` único normalizado). docs/14. |
 
 **Seeds mínimos** (script aparte, no migración): 1 `app_user` inicial para poder
 entrar al panel una vez que exista auth.

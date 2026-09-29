@@ -8,6 +8,7 @@ import { Tag } from "@/components/ui/Tag";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { CompanyTabs } from "@/components/admin/CompanyTabs";
 import { ResyncEnrollmentsButton } from "@/components/admin/ResyncEnrollmentsButton";
+import { ImportEmployeesButton } from "@/components/admin/ImportEmployeesButton";
 import { activeEmploymentWhere, devicesInCompanyScope } from "@/lib/scope";
 import { cedulaDigits, MAX_FINGERPRINTS } from "@/lib/fingerprints";
 
@@ -111,7 +112,12 @@ export default async function EmpresaEmpleadosPage({ params }: { params: Promise
         companyId={company.id}
         companyName={company.name}
         active="empleados"
-        actions={<ResyncEnrollmentsButton companyId={company.id} />}
+        actions={
+          <>
+            <ImportEmployeesButton companyId={company.id} />
+            <ResyncEnrollmentsButton companyId={company.id} />
+          </>
+        }
       />
 
       <div className="flex flex-wrap items-center justify-between gap-2">
