@@ -15,7 +15,10 @@ export const MAX_FILE_BYTES = 5 * 1024 * 1024;
 const VIEW_LIMIT = 1000;
 const RETENTION_DAYS = 30;
 
-export type PreviewPerson = Pick<PersonOp, "row" | "cedula" | "employee" | "firstName" | "lastName" | "split" | "fileName" | "contract" | "startDate" | "cargoKey" | "changes">;
+export type PreviewPerson = Pick<
+  PersonOp,
+  "row" | "cedula" | "employee" | "firstName" | "lastName" | "split" | "fileName" | "birthDate" | "personChanges" | "contract" | "startDate" | "cargoKey" | "changes"
+>;
 
 export interface PreviewView {
   runId: number;
@@ -25,7 +28,16 @@ export interface PreviewView {
   ok: boolean;
   warnings: string[];
   rejected: Rejection[];
-  counts: { people: number; newPeople: number; existingPeople: number; newContracts: number; updatedContracts: number; sameContracts: number; ambiguous: number };
+  counts: {
+    people: number;
+    newPeople: number;
+    existingPeople: number;
+    updatedPeople: number;
+    newContracts: number;
+    updatedContracts: number;
+    sameContracts: number;
+    ambiguous: number;
+  };
   people: PreviewPerson[];
   peopleTotal: number;
   cargos: CargoOp[];
@@ -69,14 +81,17 @@ async function buildView(runId: number, fileName: string, plan: CompanyImportPla
       people: plan.people.length,
       newPeople: plan.people.filter((p) => p.employee === "create").length,
       existingPeople: plan.people.filter((p) => p.employee === "existing").length,
+      updatedPeople: plan.people.filter((p) => p.personChanges.length > 0).length,
       newContracts: plan.people.filter((p) => p.contract === "create").length,
       updatedContracts: plan.people.filter((p) => p.contract === "update").length,
       sameContracts: plan.people.filter((p) => p.contract === "same").length,
       ambiguous: plan.people.filter((p) => p.split?.ambiguous).length,
     },
-    people: sorted.slice(0, VIEW_LIMIT).map(({ row, cedula, employee, firstName, lastName, split, fileName: fn, contract, startDate, cargoKey, changes }) => ({
-      row, cedula, employee, firstName, lastName, split, fileName: fn, contract, startDate, cargoKey, changes,
-    })),
+    people: sorted
+      .slice(0, VIEW_LIMIT)
+      .map(({ row, cedula, employee, firstName, lastName, split, fileName: fn, birthDate, personChanges, contract, startDate, cargoKey, changes }) => ({
+        row, cedula, employee, firstName, lastName, split, fileName: fn, birthDate, personChanges, contract, startDate, cargoKey, changes,
+      })),
     peopleTotal: plan.people.length,
     cargos: plan.cargos,
     positions,
@@ -183,6 +198,7 @@ export async function confirmCompanyImport(runId: number, actorId: number | null
   const parts = [
     `${result.employeesCreated} persona(s) nueva(s)`,
     `${result.contractsCreated} contrato(s) nuevo(s)`,
+    result.employeesUpdated && `${result.employeesUpdated} fecha(s) de nacimiento actualizada(s)`,
     result.contractsUpdated && `${result.contractsUpdated} contrato(s) con puesto actualizado`,
     result.positionsCreated && `${result.positionsCreated} puesto(s) creado(s)`,
   ].filter(Boolean);

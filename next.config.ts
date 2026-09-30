@@ -7,7 +7,9 @@ const nextConfig: NextConfig = {
   // Tratarlo como paquete externo del server evita el empaquetado y lo deja
   // resolver sus propios archivos con require() normal. Fix documentado por
   // la librería para Next.js/Vercel/serverless.
-  serverExternalPackages: ["pdf-parse", "@napi-rs/canvas"],
+  // Lo mismo para pdfjs-dist, que lib/import/readPdf.ts usa directo (necesita
+  // la posición de cada texto, que pdf-parse no expone).
+  serverExternalPackages: ["pdf-parse", "pdfjs-dist", "@napi-rs/canvas"],
   // Default de Next es 1MB — lo comprimido del lado del cliente (ver
   // DocumentCameraCapture.tsx) queda bien debajo, pero un PDF de RIF
   // escaneado (sin tope de tamaño propio) puede pasarlo fácil.

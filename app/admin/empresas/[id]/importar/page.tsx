@@ -51,8 +51,8 @@ export default async function EmpresaImportarPage({
       <section className="flex flex-col gap-2">
         <h2 className="m-0 font-heading text-xl font-semibold">Importar trabajadores desde Galepso</h2>
         <p className="m-0 text-sm text-text/80">
-          Subí el <b>listado de trabajadores activos</b> de esta empresa tal como sale de Galepso (NOMBRES Y APELLIDOS, CEDULA,
-          CARGO, FECHA DE INGRESO). A cada persona se le crea su ficha si no existe y un contrato en {company.name} con la fecha
+          Subí el <b>Roster de Personal</b> de esta empresa impreso a PDF desde Galepso (status ACTIVO). A cada persona se le crea
+          su ficha si no existe, con su fecha de nacimiento si el reporte la trae, y un contrato en {company.name} con la fecha
           de ingreso como inicio. Antes de aplicar vas a ver qué se crea, y podés corregir el corte de nombres y a qué puesto va
           cada cargo. Si hay una sola fila con error, no se aplica nada.
         </p>

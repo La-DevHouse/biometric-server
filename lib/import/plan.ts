@@ -7,6 +7,8 @@
 //   D2 — un dato vacío no borra nada. A una persona que ya existe no se le cambia
 //        el nombre (el del sistema puede venir de escanear su cédula; el del
 //        archivo es una sola celda partida por heurística): si difiere, se avisa.
+//        La fecha de nacimiento sí: si el archivo la trae y es otra, se completa o
+//        se corrige (el roster de Galepso a veces no la trae: eso no borra nada).
 //   D3 — no se da de baja a nadie: los que tienen contrato vigente y no están en
 //        el archivo solo se listan.
 //   Cargo → puesto: el que ya existe con ese nombre, o el asignado antes (alias),
@@ -56,6 +58,10 @@ export interface PersonOp {
   split?: { tokens: string[]; boundary: number; ambiguous: boolean };
   /** Persona existente cuyo nombre en el archivo es distinto al del sistema. */
   fileName?: string;
+  /** La del archivo (null = no la trae; nunca borra la del sistema). */
+  birthDate: string | null;
+  /** Persona existente: datos de su ficha que cambian (hoy, la fecha de nacimiento). */
+  personChanges: Change[];
   contract: "create" | "update" | "same";
   contractId?: number;
   startDate: string;
@@ -95,7 +101,7 @@ interface Named {
 
 export interface Snapshot {
   company: { id: number; name: string; status: string; business_model_id: number | null } | null;
-  employeesByCedula: Map<string, { id: number; first_name: string; last_name: string }>;
+  employeesByCedula: Map<string, { id: number; first_name: string; last_name: string; birth_date: string | null }>;
   /** Contratos de esas personas EN ESTA EMPRESA. */
   contractsByEmployee: Map<number, Array<{ id: number; start_date: string; end_date: string | null; status: string; position_id: number | null }>>;
   positionsByKey: Map<string, Named>;
@@ -116,7 +122,10 @@ export async function loadSnapshot(companyId: number, read: ReadResult): Promise
   }
   const [company, employees, positions, aliases, active] = await Promise.all([
     prisma.client_company.findUnique({ where: { id: companyId }, select: { id: true, name: true, status: true, business_model_id: true } }),
-    prisma.employee.findMany({ where: { national_id: { in: [...cedulas] } }, select: { id: true, national_id: true, first_name: true, last_name: true } }),
+    prisma.employee.findMany({
+      where: { national_id: { in: [...cedulas] } },
+      select: { id: true, national_id: true, first_name: true, last_name: true, birth_date: true },
+    }),
     prisma.position.findMany({ select: { id: true, name: true }, orderBy: { id: "asc" } }),
     prisma.position_alias.findMany({ select: { alias_key: true, position: { select: { id: true, name: true } } } }),
     prisma.employment.findMany({
@@ -139,7 +148,9 @@ export async function loadSnapshot(companyId: number, read: ReadResult): Promise
   }
   return {
     company,
-    employeesByCedula: new Map(employees.map((e) => [e.national_id, { id: e.id, first_name: e.first_name, last_name: e.last_name }])),
+    employeesByCedula: new Map(
+      employees.map((e) => [e.national_id, { id: e.id, first_name: e.first_name, last_name: e.last_name, birth_date: dateToYmd(e.birth_date) }])
+    ),
     contractsByEmployee,
     positionsByKey,
     positionsById: new Map(positions.map((p) => [p.id, p.name])),
@@ -212,7 +223,13 @@ export function buildPlan(companyId: number, read: ReadResult, snap: Snapshot, o
       reject(r.row, "NOMBRES Y APELLIDOS", "Falta el nombre.");
       bad = true;
     }
-    if (bad || "error" in ced || "error" in start) continue;
+    const birth = isBlank(r.cells.birth_date) ? { value: null } : parseDate(r.cells.birth_date);
+    if ("error" in birth) {
+      reject(r.row, "FECHA DE NACIMIENTO", birth.error);
+      bad = true;
+    }
+    if (bad || "error" in ced || "error" in start || "error" in birth) continue;
+    const birthDate = birth.value;
     const cedula = ced.value;
     const dup = rowsByCedula.get(cedula)!;
     if (dup.length > 1) {
@@ -229,6 +246,8 @@ export function buildPlan(companyId: number, read: ReadResult, snap: Snapshot, o
       op = {
         row: r.row, cedula, employee: "existing", employeeId: emp.id, firstName: emp.first_name, lastName: emp.last_name,
         ...(differs ? { fileName: fullName } : {}),
+        birthDate,
+        personChanges: birthDate && birthDate !== emp.birth_date ? [{ field: "Fecha de nacimiento", from: emp.birth_date, to: birthDate }] : [],
         contract: "create", startDate: start.value, cargoKey, changes: [],
       };
     } else {
@@ -240,6 +259,7 @@ export function buildPlan(companyId: number, read: ReadResult, snap: Snapshot, o
       op = {
         row: r.row, cedula, employee: "create", firstName: split.firstName, lastName: split.lastName,
         split: { tokens: split.tokens, boundary: split.boundary, ambiguous: split.ambiguous && overrides.splits?.[cedula] === undefined },
+        birthDate, personChanges: [],
         contract: "create", startDate: start.value, cargoKey, changes: [],
       };
     }

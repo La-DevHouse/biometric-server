@@ -11,6 +11,7 @@ const TX_TIMEOUT_MS = 180_000;
 
 export interface ApplyResult {
   employeesCreated: number;
+  employeesUpdated: number;
   contractsCreated: number;
   contractsUpdated: number;
   positionsCreated: number;
@@ -92,13 +93,28 @@ export async function applyPlan(plan: CompanyImportPlan, actorId: number | null,
       const newPeople = plan.people.filter((p) => p.employee === "create");
       if (newPeople.length) {
         const created = await tx.employee.createManyAndReturn({
-          data: newPeople.map((p) => ({ national_id: p.cedula, tax_id: p.cedula, first_name: p.firstName, last_name: p.lastName })),
-          select: { id: true, national_id: true, first_name: true, last_name: true },
+          data: newPeople.map((p) => ({
+            national_id: p.cedula,
+            tax_id: p.cedula,
+            first_name: p.firstName,
+            last_name: p.lastName,
+            birth_date: p.birthDate ? ymdToDate(p.birthDate) : null,
+          })),
+          select: { id: true, national_id: true, first_name: true, last_name: true, birth_date: true },
         });
         for (const e of created) {
           employeeByCedula.set(e.national_id, e.id);
           log("import.employee.create", "employee", e.id, undefined, e);
         }
+      }
+      const updatedPeople = plan.people.filter((p) => p.personChanges.length > 0);
+      for (const p of updatedPeople) {
+        await tx.employee.update({ where: { id: p.employeeId! }, data: { birth_date: ymdToDate(p.birthDate!) } });
+        log(
+          "import.employee.update", "employee", p.employeeId!,
+          Object.fromEntries(p.personChanges.map((c) => [c.field, c.from])),
+          Object.fromEntries(p.personChanges.map((c) => [c.field, c.to]))
+        );
       }
 
       // --- Contratos ---
@@ -128,6 +144,7 @@ export async function applyPlan(plan: CompanyImportPlan, actorId: number | null,
       if (audit.length) await tx.audit_log.createMany({ data: audit });
       return {
         employeesCreated: newPeople.length,
+        employeesUpdated: updatedPeople.length,
         contractsCreated: newContracts.length,
         contractsUpdated: updates.length,
         positionsCreated: newNames.size,

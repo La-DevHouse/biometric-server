@@ -5,18 +5,20 @@
 // usan (N°) se ignoran.
 import ExcelJS from "exceljs";
 import { cellText, isBlank, normKey } from "./normalize";
+import { readGalepsoPdf } from "./readPdf";
 
 export const MAX_ROWS = 5000;
 /** Hasta qué fila se busca la de encabezados. */
 const HEADER_SEARCH_ROWS = 30;
 
-export type ColumnKey = "full_name" | "cedula" | "cargo" | "start_date";
+export type ColumnKey = "full_name" | "cedula" | "cargo" | "start_date" | "birth_date";
 
 export const COLUMNS: Array<{ key: ColumnKey; header: string; aliases: string[]; required: boolean }> = [
   { key: "full_name", header: "NOMBRES Y APELLIDOS", aliases: ["nombres y apellidos", "nombre y apellido", "apellidos y nombres", "trabajador"], required: true },
   { key: "cedula", header: "CEDULA", aliases: ["cedula", "ci", "c i", "cedula de identidad"], required: true },
   { key: "cargo", header: "CARGO", aliases: ["cargo"], required: false },
   { key: "start_date", header: "FECHA DE INGRESO", aliases: ["fecha de ingreso", "ingreso", "fecha ingreso"], required: true },
+  { key: "birth_date", header: "FECHA DE NACIMIENTO", aliases: ["fecha de nacimiento", "fecha nacimiento", "nacimiento"], required: false },
 ];
 
 export interface RawRow {
@@ -36,7 +38,13 @@ export interface ReadResult {
 
 const BY_ALIAS = new Map<string, ColumnKey>(COLUMNS.flatMap((c) => c.aliases.map((a) => [normKey(a), c.key] as [string, ColumnKey])));
 
+/** El Roster de Personal impreso a PDF, o una planilla .xlsx con encabezados. */
 export async function readGalepso(buf: Buffer | Uint8Array): Promise<ReadResult> {
+  if (Buffer.from(buf.subarray(0, 5)).toString("latin1") === "%PDF-") return readGalepsoPdf(buf);
+  return readGalepsoXlsx(buf);
+}
+
+async function readGalepsoXlsx(buf: Buffer | Uint8Array): Promise<ReadResult> {
   const out: ReadResult = { sheetName: null, headerRow: null, rows: [], errors: [], warnings: [] };
   const wb = new ExcelJS.Workbook();
   try {

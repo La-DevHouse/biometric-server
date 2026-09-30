@@ -6,7 +6,7 @@ import { requireUser } from "@/lib/auth";
 import { confirmCompanyImport, MAX_FILE_BYTES, previewCompanyImport, reopenCompanyImport, type PreviewView } from "@/lib/import/service";
 import type { Overrides } from "@/lib/import/plan";
 
-/** Paso 1 (docs/14): leer y validar el export de Galepso, sin tocar la base. */
+/** Paso 1 (docs/14): leer y validar el Roster de Personal de Galepso (PDF) o una planilla .xlsx, sin tocar la base. */
 export async function previewCompanyImportAction(
   companyId: number,
   fd: FormData
@@ -14,7 +14,9 @@ export async function previewCompanyImportAction(
   const user = await requireUser();
   const file = fd.get("file");
   if (!(file instanceof File) || file.size === 0) return { ok: false, error: "No se recibió ningún archivo." };
-  if (!/\.xlsx$/i.test(file.name)) return { ok: false, error: "El archivo tiene que ser un Excel .xlsx (si es .xls viejo, abrilo y guardalo como .xlsx)." };
+  if (!/\.(pdf|xlsx)$/i.test(file.name)) {
+    return { ok: false, error: "Subí el Roster de Personal de Galepso en PDF (o una planilla .xlsx). El .xls que exporta Galepso viene incompleto." };
+  }
   if (file.size > MAX_FILE_BYTES) return { ok: false, error: "El archivo supera los 5 MB. Dividilo en varios." };
   try {
     return { ok: true, view: await previewCompanyImport(companyId, Buffer.from(await file.arrayBuffer()), file.name, user.id) };

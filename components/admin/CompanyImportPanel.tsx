@@ -63,13 +63,13 @@ export function CompanyImportPanel({ companyId, resumeRunId }: { companyId: numb
         fd.set("file", file);
         const res = await previewCompanyImportAction(companyId, fd);
         if (!res.ok) {
-          setDrop({ status: "error", message: res.error, hint: "Solo .xlsx, máx 5 MB" });
+          setDrop({ status: "error", message: res.error, hint: "PDF o .xlsx, máx 5 MB" });
           return;
         }
         setDrop({ status: "loaded", name: file.name, meta: `${Math.ceil(file.size / 1024)} KB · leído` });
         load(res.view);
       } catch (err) {
-        setDrop({ status: "error", message: describeActionError(err), hint: "Solo .xlsx, máx 5 MB" });
+        setDrop({ status: "error", message: describeActionError(err), hint: "PDF o .xlsx, máx 5 MB" });
       }
     });
   }
@@ -125,14 +125,14 @@ export function CompanyImportPanel({ companyId, resumeRunId }: { companyId: numb
     });
   }
   const pendingReview = view ? view.people.filter((p) => p.split?.ambiguous && splits[p.cedula] === undefined).length : 0;
-  const nothingToDo = view ? view.counts.newContracts + view.counts.updatedContracts === 0 : true;
+  const nothingToDo = view ? view.counts.newContracts + view.counts.updatedContracts + view.counts.updatedPeople === 0 : true;
 
   return (
     <div className="flex flex-col gap-4">
       <FileDropzone
-        label="Listado de trabajadores activos (Galepso)"
-        accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        hint="El export de Galepso tal cual · .xlsx, máx 5 MB"
+        label="Roster de personal (Galepso)"
+        accept=".pdf,application/pdf,.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        hint="El Roster de Personal impreso a PDF · o .xlsx, máx 5 MB"
         state={drop}
         onFile={handleFile}
         onRemove={reset}
@@ -146,6 +146,7 @@ export function CompanyImportPanel({ companyId, resumeRunId }: { companyId: numb
           <div className="grid gap-3 sm:grid-cols-3">
             <Box title="Personas">
               {view.counts.newPeople} nueva(s) · {view.counts.existingPeople} ya en el sistema
+              {view.counts.updatedPeople > 0 && ` · ${view.counts.updatedPeople} con fecha de nacimiento nueva`}
             </Box>
             <Box title="Contratos en esta empresa">
               {[
@@ -172,7 +173,7 @@ export function CompanyImportPanel({ companyId, resumeRunId }: { companyId: numb
           {view.rejected.length > 0 && (
             <div className="flex flex-col gap-2">
               <p className="m-0 text-sm">
-                <b>{view.rejected.length} problema(s): no se va a aplicar nada</b> hasta que estén corregidos en el Excel. Corregilo y volvé a subirlo.
+                <b>{view.rejected.length} problema(s): no se va a aplicar nada</b> hasta que estén corregidos en el archivo. Corregilo y volvé a subirlo.
               </p>
               <Table>
                 <thead>
@@ -213,6 +214,7 @@ export function CompanyImportPanel({ companyId, resumeRunId }: { companyId: numb
                     <Th>Fila</Th>
                     <Th>Cédula</Th>
                     <Th>Nombres | Apellidos</Th>
+                    <Th>Nacimiento</Th>
                     <Th>Ingreso</Th>
                     <Th>Puesto</Th>
                     <Th>Contrato</Th>
@@ -308,6 +310,14 @@ function PersonRow({ p, boundary, onBoundary, cargo }: { p: PreviewPerson; bound
             {p.fileName && <span>en el archivo: “{p.fileName}” (se deja el nombre del sistema)</span>}
           </span>
         )}
+      </Td>
+      <Td className="whitespace-nowrap">
+        {p.birthDate ? fmtDate(p.birthDate) : "—"}
+        {p.personChanges.map((c) => (
+          <span key={c.field} className="mt-1 block text-xs text-neutral-700">
+            {c.from ? `antes ${fmtDate(c.from)}` : "no tenía"}
+          </span>
+        ))}
       </Td>
       <Td className="whitespace-nowrap">{fmtDate(p.startDate)}</Td>
       <Td>{cargo}</Td>
