@@ -10,10 +10,13 @@ export function DeleteButton({
   id,
   label,
   action,
+  doneMessage,
 }: {
   id: number;
   label: string; // ej. "turno"
   action: (id: number) => Promise<{ ok: boolean; error?: string }>;
+  /** Por defecto "<Label> eliminado." */
+  doneMessage?: string;
 }) {
   const [confirming, setConfirming] = useState(false);
   const [pending, start] = useTransition();
@@ -22,7 +25,7 @@ export function DeleteButton({
   function run() {
     start(async () => {
       const res = await action(id);
-      if (res.ok) push("ok", `${label[0].toUpperCase()}${label.slice(1)} eliminado.`);
+      if (res.ok) push("ok", doneMessage ?? `${label[0].toUpperCase()}${label.slice(1)} eliminado.`);
       else push("error", res.error ?? "No se pudo eliminar.");
       setConfirming(false);
     });

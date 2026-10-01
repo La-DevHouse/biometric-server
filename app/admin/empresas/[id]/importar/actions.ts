@@ -3,7 +3,7 @@
 import { userErrorMessage } from "@/lib/serverErrors";
 import { revalidatePath } from "next/cache";
 import { requireUser } from "@/lib/auth";
-import { confirmCompanyImport, MAX_FILE_BYTES, previewCompanyImport, reopenCompanyImport, type PreviewView } from "@/lib/import/service";
+import { confirmCompanyImport, deleteCompanyImport, MAX_FILE_BYTES, previewCompanyImport, reopenCompanyImport, type PreviewView } from "@/lib/import/service";
 import type { Overrides } from "@/lib/import/plan";
 
 /** Paso 1 (docs/14): leer y validar el Roster de Personal de Galepso (PDF) o una planilla .xlsx, sin tocar la base. */
@@ -30,6 +30,18 @@ export async function reopenCompanyImportAction(companyId: number, runId: number
   await requireUser();
   try {
     return { ok: true, view: await reopenCompanyImport(runId, companyId) };
+  } catch (e) {
+    return { ok: false, error: userErrorMessage(e) };
+  }
+}
+
+/** Borrar del historial una importación que no se aplicó. */
+export async function deleteCompanyImportAction(companyId: number, runId: number): Promise<{ ok: boolean; error?: string }> {
+  const user = await requireUser();
+  try {
+    await deleteCompanyImport(runId, companyId, user.id);
+    revalidatePath(`/admin/empresas/${companyId}/importar`);
+    return { ok: true };
   } catch (e) {
     return { ok: false, error: userErrorMessage(e) };
   }

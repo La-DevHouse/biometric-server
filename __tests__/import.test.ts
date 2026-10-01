@@ -317,6 +317,18 @@ test("importar - una importación sin confirmar se retoma desde el historial y s
   await assert.rejects(service.reopenCompanyImport(first.runId, id), /ya se aplicó/);
 });
 
+test("importar - borrar del historial: solo las que no se aplicaron", async () => {
+  const id = await company();
+  const pending = await service.previewCompanyImport(id, await galepso([[`ELSA ${TAG} NUEVE`, CED(), "", d(2024, 3, 1)]]), "t.xlsx", null);
+  await assert.rejects(service.deleteCompanyImport(pending.runId, id + 999999, null), /no existe en esta empresa/);
+  await service.deleteCompanyImport(pending.runId, id, null);
+  assert.equal(await prisma.import_run.findUnique({ where: { id: pending.runId } }), null);
+
+  const applied = await applyFile(id, await galepso([[`OSCAR ${TAG} DIEZ`, CED(), "", d(2024, 3, 1)]]));
+  await assert.rejects(service.deleteCompanyImport(applied.runId, id, null), /ya se aplicó/);
+  assert.equal((await prisma.import_run.findUnique({ where: { id: applied.runId } }))?.status, "applied");
+});
+
 test("importar - el archivo no es un listado de Galepso", async () => {
   const id = await company();
   const wb = new ExcelJS.Workbook();

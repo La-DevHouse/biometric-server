@@ -5,6 +5,7 @@
 // (corte de nombres, puesto de cada cargo).
 import { createHash } from "node:crypto";
 import { prisma } from "@/lib/db";
+import { writeAudit } from "@/lib/audit";
 import { devicesAffectedByCompany, triggerReconcile } from "@/lib/sync/reconcile";
 import { applyPlan, type ApplyResult } from "./apply";
 import { buildPlan, loadSnapshot, type CategoryOp, type CompanyImportPlan, type Overrides, type PersonOp, type Rejection } from "./plan";
@@ -211,6 +212,19 @@ export async function confirmCompanyImport(runId: number, actorId: number | null
     result.positionsMoved && `${result.positionsMoved} puesto(s) asignado(s) a su departamento`,
   ].filter(Boolean);
   return { status: "applied", result, message: `Importación aplicada: ${parts.join(" · ")}.${synced ? ` Sincronizando ${synced} equipo(s).` : ""}` };
+}
+
+/**
+ * Borrar del historial una importación que NO se aplicó (sin confirmar, vencida o
+ * fallida: ninguna tocó la base). La condición va en el mismo DELETE: si en ese
+ * momento alguien la confirma, ya está "applied" y no se borra.
+ */
+export async function deleteCompanyImport(runId: number, companyId: number, actorId: number | null): Promise<void> {
+  const run = await prisma.import_run.findUnique({ where: { id: runId }, select: { company_id: true, file_name: true, status: true, created_at: true } });
+  if (!run || run.company_id !== companyId) throw new Error("Esa importación no existe en esta empresa.");
+  const { count } = await prisma.import_run.deleteMany({ where: { id: runId, company_id: companyId, status: { not: "applied" } } });
+  if (count === 0) throw new Error("Esa importación ya se aplicó: no se puede borrar.");
+  await writeAudit({ actorId, action: "import_run.delete", entityType: "import_run", entityId: runId, before: run });
 }
 
 function summaryOf(view: PreviewView) {

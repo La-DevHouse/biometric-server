@@ -4,6 +4,8 @@ import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { CompanyTabs } from "@/components/admin/CompanyTabs";
 import { CompanyImportPanel } from "@/components/admin/CompanyImportPanel";
+import { DeleteButton } from "@/components/admin/DeleteButton";
+import { deleteCompanyImportAction } from "./actions";
 import { Table, Th, Td, Tr } from "@/components/ui/Table";
 import { Tag } from "@/components/ui/Tag";
 import { formatDateTime } from "@/lib/formatRelativeTime";
@@ -37,6 +39,7 @@ export default async function EmpresaImportarPage({
   if (!company) notFound();
   const runParam = Number((await searchParams).run);
   const resumeRunId = Number.isInteger(runParam) && runParam > 0 ? runParam : undefined;
+  const deleteRun = deleteCompanyImportAction.bind(null, company.id);
   const runs = await prisma.import_run.findMany({
     where: { company_id: id },
     orderBy: { created_at: "desc" },
@@ -78,7 +81,7 @@ export default async function EmpresaImportarPage({
                 const s = (r.summary ?? {}) as Summary;
                 const st = STATUS[r.status] ?? { label: r.status, variant: "neutral" as const };
                 const res = s.result
-                  ? `${s.result.employeesCreated} persona(s) nueva(s) · ${s.result.contractsCreated} contrato(s)${s.result.contractsUpdated ? ` · ${s.result.contractsUpdated} con puesto actualizado` : ""}`
+                  ? `${s.result.employeesCreated} persona(s) nueva(s) · ${s.result.contractsCreated} contrato(s)${s.result.contractsUpdated ? ` · ${s.result.contractsUpdated} actualizado(s)` : ""}`
                   : s.rejected
                     ? `${s.rejected} problema(s)`
                     : "—";
@@ -94,6 +97,9 @@ export default async function EmpresaImportarPage({
                           <Link href={`/admin/empresas/${company.id}/importar?run=${r.id}`} className="text-sm font-semibold text-accent-700 underline">
                             Continuar
                           </Link>
+                        )}
+                        {r.status !== "applied" && (
+                          <DeleteButton id={r.id} label="importación" doneMessage="Importación borrada." action={deleteRun} />
                         )}
                       </span>
                     </Td>
