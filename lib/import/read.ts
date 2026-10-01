@@ -11,7 +11,7 @@ export const MAX_ROWS = 5000;
 /** Hasta qué fila se busca la de encabezados. */
 const HEADER_SEARCH_ROWS = 30;
 
-export type ColumnKey = "full_name" | "cedula" | "cargo" | "start_date" | "birth_date";
+export type ColumnKey = "full_name" | "cedula" | "cargo" | "start_date" | "birth_date" | "department";
 
 export const COLUMNS: Array<{ key: ColumnKey; header: string; aliases: string[]; required: boolean }> = [
   { key: "full_name", header: "NOMBRES Y APELLIDOS", aliases: ["nombres y apellidos", "nombre y apellido", "apellidos y nombres", "trabajador"], required: true },
@@ -19,6 +19,7 @@ export const COLUMNS: Array<{ key: ColumnKey; header: string; aliases: string[];
   { key: "cargo", header: "CARGO", aliases: ["cargo"], required: false },
   { key: "start_date", header: "FECHA DE INGRESO", aliases: ["fecha de ingreso", "ingreso", "fecha ingreso"], required: true },
   { key: "birth_date", header: "FECHA DE NACIMIENTO", aliases: ["fecha de nacimiento", "fecha nacimiento", "nacimiento"], required: false },
+  { key: "department", header: "DEPARTAMENTO", aliases: ["departamento", "depto", "dpto"], required: false },
 ];
 
 export interface RawRow {

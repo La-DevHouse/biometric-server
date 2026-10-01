@@ -424,6 +424,7 @@ model department {
 
   positions   position[]
   employments employment[]
+  aliases     department_alias[]
 }
 
 model position {
@@ -760,4 +761,17 @@ model position_alias {
   created_at  DateTime @default(now()) @db.Timestamptz(6)
 
   @@index([position_id])
+}
+
+/// Departamento tal como viene en un archivo importado ("1 - OPERATIVO" → clave
+/// "operativo"), asignado a un departamento desde la vista previa (docs/14).
+model department_alias {
+  id            Int        @id @default(autoincrement())
+  alias_key     String     @unique
+  alias         String
+  department_id Int
+  department    department @relation(fields: [department_id], references: [id], onDelete: Cascade)
+  created_at    DateTime   @default(now()) @db.Timestamptz(6)
+
+  @@index([department_id])
 }

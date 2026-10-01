@@ -7,7 +7,7 @@ import { createHash } from "node:crypto";
 import { prisma } from "@/lib/db";
 import { devicesAffectedByCompany, triggerReconcile } from "@/lib/sync/reconcile";
 import { applyPlan, type ApplyResult } from "./apply";
-import { buildPlan, loadSnapshot, type CargoOp, type CompanyImportPlan, type Overrides, type PersonOp, type Rejection } from "./plan";
+import { buildPlan, loadSnapshot, type CategoryOp, type CompanyImportPlan, type Overrides, type PersonOp, type Rejection } from "./plan";
 import { readGalepso } from "./read";
 
 export const MAX_FILE_BYTES = 5 * 1024 * 1024;
@@ -17,7 +17,7 @@ const RETENTION_DAYS = 30;
 
 export type PreviewPerson = Pick<
   PersonOp,
-  "row" | "cedula" | "employee" | "firstName" | "lastName" | "split" | "fileName" | "birthDate" | "personChanges" | "contract" | "startDate" | "cargoKey" | "changes"
+  "row" | "cedula" | "employee" | "firstName" | "lastName" | "split" | "fileName" | "birthDate" | "personChanges" | "contract" | "startDate" | "cargoKey" | "deptKey" | "changes"
 >;
 
 export interface PreviewView {
@@ -40,9 +40,12 @@ export interface PreviewView {
   };
   people: PreviewPerson[];
   peopleTotal: number;
-  cargos: CargoOp[];
-  /** Puestos existentes, para asignar un cargo nuevo a uno de ellos. */
-  positions: Array<{ id: number; name: string }>;
+  cargos: CategoryOp[];
+  departments: CategoryOp[];
+  /** Puestos existentes (con su departamento de hoy), para asignar un cargo a uno de ellos. */
+  positions: Array<{ id: number; name: string; departmentId: number | null }>;
+  /** Departamentos existentes, para asignar uno del archivo. */
+  existingDepartments: Array<{ id: number; name: string }>;
   absent: Array<{ cedula: string; name: string }>;
   devices: { devices: number; peopleIn: number };
 }
@@ -56,14 +59,15 @@ async function computePlan(companyId: number, file: Buffer, overrides: Overrides
 /** Huella del plan SIN ajustes: si cambia entre la vista previa y confirmar, algo cambió en la base. */
 function planHash(plan: CompanyImportPlan): string {
   return createHash("sha256")
-    .update(JSON.stringify([plan.people.map((p) => ({ ...p, row: undefined })), plan.cargos, plan.rejected, plan.ok]))
+    .update(JSON.stringify([plan.people.map((p) => ({ ...p, row: undefined })), plan.cargos, plan.departments, plan.rejected, plan.ok]))
     .digest("hex");
 }
 
 async function buildView(runId: number, fileName: string, plan: CompanyImportPlan): Promise<PreviewView> {
-  const [company, positions] = await Promise.all([
+  const [company, positions, existingDepartments] = await Promise.all([
     prisma.client_company.findUnique({ where: { id: plan.companyId }, select: { name: true } }),
-    prisma.position.findMany({ where: { status: "active" }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
+    prisma.position.findMany({ where: { status: "active" }, select: { id: true, name: true, department_id: true }, orderBy: { name: "asc" } }),
+    prisma.department.findMany({ where: { status: "active" }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
   ]);
   const today = new Date().toISOString().slice(0, 10);
   const peopleIn = plan.people.filter((p) => p.contract === "create" && p.startDate <= today).length;
@@ -89,12 +93,14 @@ async function buildView(runId: number, fileName: string, plan: CompanyImportPla
     },
     people: sorted
       .slice(0, VIEW_LIMIT)
-      .map(({ row, cedula, employee, firstName, lastName, split, fileName: fn, birthDate, personChanges, contract, startDate, cargoKey, changes }) => ({
-        row, cedula, employee, firstName, lastName, split, fileName: fn, birthDate, personChanges, contract, startDate, cargoKey, changes,
+      .map(({ row, cedula, employee, firstName, lastName, split, fileName: fn, birthDate, personChanges, contract, startDate, cargoKey, deptKey, changes }) => ({
+        row, cedula, employee, firstName, lastName, split, fileName: fn, birthDate, personChanges, contract, startDate, cargoKey, deptKey, changes,
       })),
     peopleTotal: plan.people.length,
     cargos: plan.cargos,
-    positions,
+    departments: plan.departments,
+    positions: positions.map((p) => ({ id: p.id, name: p.name, departmentId: p.department_id })),
+    existingDepartments,
     absent: plan.absent,
     devices: { devices, peopleIn },
   };
@@ -199,12 +205,22 @@ export async function confirmCompanyImport(runId: number, actorId: number | null
     `${result.employeesCreated} persona(s) nueva(s)`,
     `${result.contractsCreated} contrato(s) nuevo(s)`,
     result.employeesUpdated && `${result.employeesUpdated} fecha(s) de nacimiento actualizada(s)`,
-    result.contractsUpdated && `${result.contractsUpdated} contrato(s) con puesto actualizado`,
+    result.contractsUpdated && `${result.contractsUpdated} contrato(s) actualizado(s)`,
     result.positionsCreated && `${result.positionsCreated} puesto(s) creado(s)`,
+    result.departmentsCreated && `${result.departmentsCreated} departamento(s) creado(s)`,
+    result.positionsMoved && `${result.positionsMoved} puesto(s) asignado(s) a su departamento`,
   ].filter(Boolean);
   return { status: "applied", result, message: `Importación aplicada: ${parts.join(" · ")}.${synced ? ` Sincronizando ${synced} equipo(s).` : ""}` };
 }
 
 function summaryOf(view: PreviewView) {
-  return { ok: view.ok, rejected: view.rejected.length, counts: view.counts, cargos: view.cargos.length, absent: view.absent.length, devices: view.devices };
+  return {
+    ok: view.ok,
+    rejected: view.rejected.length,
+    counts: view.counts,
+    cargos: view.cargos.length,
+    departments: view.departments.length,
+    absent: view.absent.length,
+    devices: view.devices,
+  };
 }

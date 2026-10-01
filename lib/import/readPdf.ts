@@ -21,6 +21,8 @@ const DATE = /^\d{2}\/\d{2}\/\d{4}$/;
 /** Sin letra también: el PDF a veces pierde la "V" ("-18871497"). */
 const CEDULA = /^[VE]?\s*-?\s*\d[\d.]{5,11}$/i;
 const NUMBER = /^[\d.,]+$/;
+/** Título de grupo "DEPARTAMENTO : 1 - OPERATIVO" (no los filtros "DEPARTAMENTO INICIAL : 1"). */
+const DEPARTMENT = /^DEPARTAMENTO\s*:\s*(.+)$/i;
 
 type TextColumn = "full_name" | "cargo" | "status" | "tipo";
 type DateColumn = "birth_date" | "start_date" | "egreso";
@@ -45,6 +47,8 @@ export async function readGalepsoPdf(buf: Buffer | Uint8Array): Promise<ReadResu
   let reportTotal: number | null = null;
   let headersFound = false;
   let skipped = 0;
+  // Un departamento puede seguir en la página siguiente.
+  let department: string | null = null;
   for (const items of pages) {
     const rows = groupRows(items);
     const anchors = findAnchors(items);
@@ -55,9 +59,15 @@ export async function readGalepsoPdf(buf: Buffer | Uint8Array): Promise<ReadResu
     if (!anchors) continue;
     headersFound = true;
     for (const row of rows) {
+      const dept = row.map((it) => it.text).join(" ").match(DEPARTMENT);
+      if (dept) {
+        department = dept[1].trim();
+        continue;
+      }
       const ced = row.find((i) => CEDULA.test(i.text));
       if (!ced) continue;
       const cells = rowCells(row, ced, anchors);
+      cells.cells.department = department;
       if (cells.status && normKey(cells.status) !== "activo") {
         skipped++;
         continue;
@@ -162,6 +172,7 @@ function rowCells(row: Item[], ced: Item, anchors: Anchors): { cells: Record<Col
       cargo: join("cargo"),
       start_date: dates.start_date ?? null,
       birth_date: dates.birth_date ?? null,
+      department: null,
     },
     status: join("status"),
   };

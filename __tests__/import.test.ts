@@ -188,11 +188,11 @@ test("importar - listado de una empresa: personas, contratos con fecha de ingres
   assert.equal(view.counts.newContracts, 3);
   assert.equal(view.counts.ambiguous, 1, `"MARIA X GOMEZ" queda para revisar`);
   const kinds = Object.fromEntries(view.cargos.map((c) => [c.text.split(" ")[0], c.resolution.kind]));
-  assert.deepEqual(kinds, { Hornero: "position", Hormero: "new", Despachadora: "new" });
+  assert.deepEqual(kinds, { Hornero: "existing", Hormero: "new", Despachadora: "new" });
 
   // Ajustes de la vista previa: MARIA X | GOMEZ (2 nombres), HORMERO → Hornero.
   const hormeroKey = view.cargos.find((c) => c.text.startsWith("Hormero"))!.key;
-  const res = await service.confirmCompanyImport(view.runId, null, { splits: { [c3]: 2 }, cargos: { [hormeroKey]: { kind: "position", id: hornero.id } } });
+  const res = await service.confirmCompanyImport(view.runId, null, { splits: { [c3]: 2 }, cargos: { [hormeroKey]: { kind: "existing", id: hornero.id } } });
   assert.equal(res.status, "applied");
 
   const maria = await prisma.employee.findUnique({ where: { national_id: c3 } });
@@ -411,6 +411,75 @@ test("importar - fecha de nacimiento de alguien que ya existe: se completa o se 
   const again = await service.previewCompanyImport(id, pdf, "t.pdf", null);
   assert.equal(again.counts.newContracts + again.counts.updatedContracts, 0);
   assert.equal(again.counts.updatedPeople, 1);
+});
+
+test("importar PDF - departamentos: se crean o se enlazan, van al contrato y el puesto queda en su departamento", async () => {
+  const id = await company();
+  const existente = await prisma.department.create({ data: { name: `Supervisión ${TAG}` } });
+  const otroDepto = await prisma.department.create({ data: { name: `Producción ${TAG}` } });
+  const hornero = await prisma.position.create({ data: { name: `Hornero ${TAG}D`, department_id: otroDepto.id } });
+  const [a, b, c, e, f] = [CED(), CED(), CED(), CED(), CED()];
+  const pdf = rosterPdf([
+    {
+      name: `1 - OPERATIVO ${UP}`,
+      rows: [
+        { ced: a, name: `ANA MARIA ${UP} UNO`, cargo: `HORNERO ${UP}D`, ingreso: "01/02/2024" },
+        { ced: b, name: `LUIS JOSE ${UP} DOS`, cargo: `CAJERO ${UP}D`, ingreso: "01/02/2024" },
+      ],
+    },
+    { name: `2 - SUPERVISION ${UP}`, rows: [{ ced: c, name: `ROSA MARIA ${UP} TRES`, cargo: `SUPERVISOR ${UP}D`, ingreso: "01/02/2024" }] },
+    {
+      name: `3 - ATENCION AL PUBLICO ${UP}`,
+      rows: [
+        { ced: e, name: `PEDRO JOSE ${UP} CUATRO`, cargo: `CAJERO ${UP}D`, ingreso: "01/02/2024" },
+        { ced: f, name: `IRIS MARIA ${UP} CINCO`, cargo: `DESPACHADOR ${UP}D`, ingreso: "01/02/2024" },
+      ],
+    },
+  ]);
+  const view = await service.previewCompanyImport(id, pdf, "t.pdf", null);
+  assert.equal(view.ok, true, JSON.stringify(view.rejected));
+  const depts = Object.fromEntries(view.departments.map((d) => [d.text, d.resolution.kind]));
+  assert.deepEqual(depts, { [`Operativo ${TAG.toLowerCase()}`]: "new", [`Supervision ${TAG.toLowerCase()}`]: "existing", [`Atencion al publico ${TAG.toLowerCase()}`]: "new" }, "sin el número de Galepso; SUPERVISION = Supervisión");
+  assert.deepEqual(view.cargos.find((x) => x.text.startsWith("Cajero"))!.departments!.length, 2, "CAJERO en dos departamentos");
+  const deptKey = (prefix: string) => view.departments.find((d) => d.text.startsWith(prefix))!.key;
+
+  // "ATENCION AL PUBLICO" → al que ya existe "Producción"; "OPERATIVO" se crea con otro nombre.
+  const res = await service.confirmCompanyImport(view.runId, null, {
+    departments: { [deptKey("Atencion")]: { kind: "existing", id: otroDepto.id }, [deptKey("Operativo")]: { kind: "new", name: `Operaciones ${TAG}` } },
+  });
+  assert.equal(res.status, "applied", JSON.stringify(res));
+  if (res.status === "applied") assert.equal(res.result.departmentsCreated, 1);
+
+  const contractOf = async (ced: string) =>
+    (await prisma.employee.findUnique({ where: { national_id: ced }, include: { employments: { include: { department: true, position: true } } } }))!.employments[0];
+  assert.equal((await contractOf(a)).department?.name, `Operaciones ${TAG}`, "nombre corregido");
+  assert.equal((await contractOf(c)).department_id, existente.id, "enlazado por nombre");
+  assert.equal((await contractOf(f)).department_id, otroDepto.id, "enlazado a mano");
+  assert.equal((await prisma.department_alias.findUnique({ where: { alias_key: deptKey("Atencion") } }))?.department_id, otroDepto.id, "se recuerda");
+
+  const operaciones = (await contractOf(a)).department_id;
+  assert.equal((await prisma.position.findUnique({ where: { id: hornero.id } }))?.department_id, operaciones, "Hornero se mueve a su departamento aunque tuviera otro");
+  assert.equal((await contractOf(c)).position?.department_id, existente.id, "puesto nuevo en su departamento");
+  assert.equal((await contractOf(b)).position?.department_id, null, "Cajero está en dos departamentos: no se toca");
+
+  // Otro archivo: el contrato que ya existe cambia de departamento; el alias ya resuelve "ATENCION AL PUBLICO".
+  const v2 = await service.previewCompanyImport(
+    id,
+    rosterPdf([{ name: `3 - ATENCION AL PUBLICO ${UP}`, rows: [{ ced: c, name: `ROSA MARIA ${UP} TRES`, cargo: `SUPERVISOR ${UP}D`, ingreso: "01/02/2024" }] }]),
+    "t.pdf",
+    null
+  );
+  assert.equal(v2.departments[0].resolution.kind, "alias");
+  const rosa = v2.people[0];
+  assert.equal(rosa.contract, "update");
+  assert.deepEqual(rosa.changes, [{ field: "Departamento", from: `Supervisión ${TAG}`, to: `Producción ${TAG}` }]);
+  await service.confirmCompanyImport(v2.runId, null);
+  assert.equal((await contractOf(c)).department_id, otroDepto.id);
+
+  await prisma.department_alias.deleteMany({ where: { department_id: { in: [existente.id, otroDepto.id, operaciones!] } } });
+  await prisma.employment.deleteMany({ where: { company_id: id } });
+  await prisma.position.deleteMany({ where: { name: { contains: `${TAG}D`, mode: "insensitive" } } });
+  await prisma.department.deleteMany({ where: { id: { in: [existente.id, otroDepto.id, operaciones!] } } });
 });
 
 test("importar PDF - total del reporte que no cuadra, PDF sin texto, archivo roto", async () => {

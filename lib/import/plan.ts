@@ -11,8 +11,9 @@
 //        se corrige (el roster de Galepso a veces no la trae: eso no borra nada).
 //   D3 — no se da de baja a nadie: los que tienen contrato vigente y no están en
 //        el archivo solo se listan.
-//   Cargo → puesto: el que ya existe con ese nombre, o el asignado antes (alias),
-//        o el que se elija en la vista previa, o uno nuevo.
+//   Cargo → puesto y departamento → departamento (categorías): el que ya existe
+//        con ese nombre, o el asignado antes (alias), o el que se elija en la vista
+//        previa, o uno nuevo.
 import { prisma } from "@/lib/db";
 import { activeEmploymentWhere } from "@/lib/scope";
 import { splitFullName } from "./names";
@@ -36,16 +37,38 @@ export interface Overrides {
   /** cédula → cuántas palabras son nombres. */
   splits?: Record<string, number>;
   /** clave del cargo → qué hacer con él. */
-  cargos?: Record<string, CargoChoice>;
+  cargos?: Record<string, CategoryChoice>;
+  /** clave del departamento del archivo → qué hacer con él. */
+  departments?: Record<string, CategoryChoice>;
 }
 
 /**
- * Qué hacer con un cargo del archivo (vista previa):
- *  - new: crear un puesto, con el nombre dado (por defecto el del archivo);
- *  - position: usar un puesto que ya existe;
- *  - same: lo mismo que otro cargo de este archivo (unificar "HORMERO" con "HORNERO").
+ * Qué hacer con un cargo o un departamento del archivo (vista previa):
+ *  - new: crearlo, con el nombre dado (por defecto el del archivo);
+ *  - existing: usar uno que ya existe;
+ *  - same: lo mismo que otro de este archivo (unificar "HORMERO" con "HORNERO").
  */
-export type CargoChoice = { kind: "new"; name?: string } | { kind: "position"; id: number } | { kind: "same"; key: string };
+export type CategoryChoice = { kind: "new"; name?: string } | { kind: "existing"; id: number } | { kind: "same"; key: string };
+
+export type CategoryResolution =
+  /** Ya existe uno con ese nombre. */
+  | { kind: "existing"; id: number; name: string }
+  /** Asignado en una importación anterior. */
+  | { kind: "alias"; id: number; name: string }
+  /** Elegido en esta vista previa. */
+  | { kind: "mapped"; id: number; name: string }
+  | { kind: "new"; name: string }
+  /** Unificado con otro del archivo: termina en el mismo que ese. */
+  | { kind: "same"; into: string; name: string };
+
+export interface CategoryOp {
+  key: string;
+  text: string;
+  count: number;
+  resolution: CategoryResolution;
+  /** Solo cargos: claves de los departamentos del archivo en los que aparece. */
+  departments?: string[];
+}
 
 export interface PersonOp {
   row: number;
@@ -66,28 +89,16 @@ export interface PersonOp {
   contractId?: number;
   startDate: string;
   cargoKey: string | null;
+  deptKey: string | null;
+  /** Contrato existente: qué cambia (Puesto, Departamento). */
   changes: Change[];
-}
-
-export type CargoResolution =
-  | { kind: "position"; positionId: number; name: string }
-  | { kind: "alias"; positionId: number; name: string }
-  | { kind: "mapped"; positionId: number; name: string }
-  | { kind: "new"; name: string }
-  /** Unificado con otro cargo del archivo: termina en el mismo puesto que ese. */
-  | { kind: "same"; into: string; name: string };
-
-export interface CargoOp {
-  key: string;
-  text: string;
-  count: number;
-  resolution: CargoResolution;
 }
 
 export interface CompanyImportPlan {
   companyId: number;
   people: PersonOp[];
-  cargos: CargoOp[];
+  cargos: CategoryOp[];
+  departments: CategoryOp[];
   absent: Array<{ cedula: string; name: string }>;
   rejected: Rejection[];
   warnings: string[];
@@ -99,14 +110,23 @@ interface Named {
   name: string;
 }
 
+/** Puestos o departamentos que ya hay en la base. */
+export interface Catalog {
+  byKey: Map<string, Named>;
+  byId: Map<number, string>;
+  aliases: Map<string, Named>;
+}
+
 export interface Snapshot {
   company: { id: number; name: string; status: string; business_model_id: number | null } | null;
   employeesByCedula: Map<string, { id: number; first_name: string; last_name: string; birth_date: string | null }>;
   /** Contratos de esas personas EN ESTA EMPRESA. */
-  contractsByEmployee: Map<number, Array<{ id: number; start_date: string; end_date: string | null; status: string; position_id: number | null }>>;
-  positionsByKey: Map<string, Named>;
-  positionsById: Map<number, string>;
-  aliases: Map<string, Named>;
+  contractsByEmployee: Map<
+    number,
+    Array<{ id: number; start_date: string; end_date: string | null; status: string; position_id: number | null; department_id: number | null }>
+  >;
+  positions: Catalog;
+  departments: Catalog;
   activeInCompany: Array<{ cedula: string; name: string }>;
 }
 
@@ -114,13 +134,23 @@ export interface Snapshot {
 // Snapshot (lectura en lote)
 // ---------------------------------------------------------------------------
 
+function catalog(items: Named[], aliases: Array<{ alias_key: string; target: Named }>): Catalog {
+  const byKey = new Map<string, Named>();
+  for (const i of items) if (!byKey.has(normKey(i.name))) byKey.set(normKey(i.name), i);
+  return {
+    byKey,
+    byId: new Map(items.map((i) => [i.id, i.name])),
+    aliases: new Map(aliases.map((a) => [a.alias_key, a.target])),
+  };
+}
+
 export async function loadSnapshot(companyId: number, read: ReadResult): Promise<Snapshot> {
   const cedulas = new Set<string>();
   for (const r of read.rows) {
     const c = parseCedula(r.cells.cedula);
     if ("value" in c) cedulas.add(c.value);
   }
-  const [company, employees, positions, aliases, active] = await Promise.all([
+  const [company, employees, positions, positionAliases, departments, departmentAliases, active] = await Promise.all([
     prisma.client_company.findUnique({ where: { id: companyId }, select: { id: true, name: true, status: true, business_model_id: true } }),
     prisma.employee.findMany({
       where: { national_id: { in: [...cedulas] } },
@@ -128,6 +158,8 @@ export async function loadSnapshot(companyId: number, read: ReadResult): Promise
     }),
     prisma.position.findMany({ select: { id: true, name: true }, orderBy: { id: "asc" } }),
     prisma.position_alias.findMany({ select: { alias_key: true, position: { select: { id: true, name: true } } } }),
+    prisma.department.findMany({ select: { id: true, name: true }, orderBy: { id: "asc" } }),
+    prisma.department_alias.findMany({ select: { alias_key: true, department: { select: { id: true, name: true } } } }),
     prisma.employment.findMany({
       where: { company_id: companyId, ...activeEmploymentWhere() },
       select: { employee: { select: { national_id: true, first_name: true, last_name: true } } },
@@ -135,15 +167,20 @@ export async function loadSnapshot(companyId: number, read: ReadResult): Promise
   ]);
   const contracts = await prisma.employment.findMany({
     where: { company_id: companyId, employee_id: { in: employees.map((e) => e.id) } },
-    select: { id: true, employee_id: true, start_date: true, end_date: true, status: true, position_id: true },
+    select: { id: true, employee_id: true, start_date: true, end_date: true, status: true, position_id: true, department_id: true },
   });
 
-  const positionsByKey = new Map<string, Named>();
-  for (const p of positions) if (!positionsByKey.has(normKey(p.name))) positionsByKey.set(normKey(p.name), p);
-  const contractsByEmployee = new Map<number, Snapshot["contractsByEmployee"] extends Map<number, infer V> ? V : never>();
+  const contractsByEmployee: Snapshot["contractsByEmployee"] = new Map();
   for (const c of contracts) {
     const list = contractsByEmployee.get(c.employee_id) ?? [];
-    list.push({ id: c.id, start_date: dateToYmd(c.start_date)!, end_date: dateToYmd(c.end_date), status: c.status, position_id: c.position_id });
+    list.push({
+      id: c.id,
+      start_date: dateToYmd(c.start_date)!,
+      end_date: dateToYmd(c.end_date),
+      status: c.status,
+      position_id: c.position_id,
+      department_id: c.department_id,
+    });
     contractsByEmployee.set(c.employee_id, list);
   }
   return {
@@ -152,9 +189,8 @@ export async function loadSnapshot(companyId: number, read: ReadResult): Promise
       employees.map((e) => [e.national_id, { id: e.id, first_name: e.first_name, last_name: e.last_name, birth_date: dateToYmd(e.birth_date) }])
     ),
     contractsByEmployee,
-    positionsByKey,
-    positionsById: new Map(positions.map((p) => [p.id, p.name])),
-    aliases: new Map(aliases.map((a) => [a.alias_key, a.position])),
+    positions: catalog(positions, positionAliases.map((a) => ({ alias_key: a.alias_key, target: a.position }))),
+    departments: catalog(departments, departmentAliases.map((a) => ({ alias_key: a.alias_key, target: a.department }))),
     activeInCompany: active.map((a) => ({ cedula: a.employee.national_id, name: `${a.employee.first_name} ${a.employee.last_name}` })),
   };
 }
@@ -164,9 +200,60 @@ export async function loadSnapshot(companyId: number, read: ReadResult): Promise
 // ---------------------------------------------------------------------------
 
 /** "DESPACHADORA" → "Despachadora"; si ya viene con mayúsculas y minúsculas, se respeta. */
-export function cleanCargo(raw: unknown): string {
+export function cleanLabel(raw: unknown): string {
   const t = cleanText(raw);
   return t === t.toUpperCase() ? t.charAt(0) + t.slice(1).toLowerCase() : t;
+}
+
+/** Galepso numera los departamentos por empresa ("1 - OPERATIVO"): el número no identifica nada acá. */
+function departmentText(raw: unknown): string {
+  return cellText(raw).replace(/^\s*\d+\s*-\s*/, "");
+}
+
+/**
+ * Cómo se resuelve cada cargo (o departamento) distinto del archivo. Primero se
+ * juntan todos, porque "igual que otro" necesita conocerlos a todos.
+ */
+function resolveCategories(texts: string[], cat: Catalog, choices: Record<string, CategoryChoice> | undefined, label: string): Map<string, CategoryOp> {
+  const ops = new Map<string, CategoryOp>();
+  for (const t of texts) {
+    if (isBlank(t)) continue;
+    const k = normKey(t);
+    const c = ops.get(k);
+    if (c) c.count++;
+    else ops.set(k, { key: k, text: cleanLabel(t), count: 1, resolution: { kind: "new", name: "" } });
+  }
+  for (const c of ops.values()) c.resolution = resolveOne(c, cat, choices?.[c.key], label);
+  for (const c of ops.values()) {
+    const choice = choices?.[c.key];
+    if (choice?.kind !== "same") continue;
+    const target = ops.get(choice.key);
+    if (!target || target.key === c.key || choices?.[target.key]?.kind === "same") {
+      throw new Error(`No se pudo unificar ${label} "${c.text}": el elegido no está en el archivo o también está unificado con otro. Recargá la vista previa.`);
+    }
+    c.resolution = { kind: "same", into: target.key, name: target.resolution.name };
+  }
+  return ops;
+}
+
+/** Sin contar "igual que otro" (eso va aparte). */
+function resolveOne(c: CategoryOp, cat: Catalog, choice: CategoryChoice | undefined, label: string): CategoryResolution {
+  if (choice?.kind === "existing") {
+    const name = cat.byId.get(choice.id);
+    if (!name) throw new Error(`Lo elegido para ${label} "${c.text}" ya no existe. Recargá la vista previa.`);
+    return { kind: "mapped", id: choice.id, name };
+  }
+  if (choice?.kind === "new") {
+    const name = cleanText(choice.name ?? "") || c.text;
+    // Si el nombre corregido ya existe, es ese (no se duplica).
+    const existing = cat.byKey.get(normKey(name));
+    return existing ? { kind: "mapped", id: existing.id, name: existing.name } : { kind: "new", name };
+  }
+  const byName = cat.byKey.get(c.key);
+  if (byName) return { kind: "existing", id: byName.id, name: byName.name };
+  const byAlias = cat.aliases.get(c.key);
+  if (byAlias) return { kind: "alias", id: byAlias.id, name: byAlias.name };
+  return { kind: "new", name: c.text };
 }
 
 export function buildPlan(companyId: number, read: ReadResult, snap: Snapshot, overrides: Overrides = {}): CompanyImportPlan {
@@ -183,27 +270,17 @@ export function buildPlan(companyId: number, read: ReadResult, snap: Snapshot, o
     if ("value" in c) rowsByCedula.set(c.value, [...(rowsByCedula.get(c.value) ?? []), r.row]);
   }
 
-  // Cargos: cómo se resuelve cada uno (una vez por cargo distinto). Primero se
-  // juntan todos, porque "igual que otro cargo" necesita conocerlos a todos.
-  const cargos = new Map<string, CargoOp>();
+  const cargos = resolveCategories(read.rows.map((r) => cellText(r.cells.cargo)), snap.positions, overrides.cargos, "el cargo");
+  const departments = resolveCategories(read.rows.map((r) => departmentText(r.cells.department)), snap.departments, overrides.departments, "el departamento");
+  const keyOf = (raw: string) => (isBlank(raw) ? null : normKey(raw));
   for (const r of read.rows) {
-    if (isBlank(r.cells.cargo)) continue;
-    const k = normKey(r.cells.cargo);
-    const c = cargos.get(k);
-    if (c) c.count++;
-    else cargos.set(k, { key: k, text: cleanCargo(r.cells.cargo), count: 1, resolution: { kind: "new", name: "" } });
+    const ck = keyOf(cellText(r.cells.cargo));
+    const dk = keyOf(departmentText(r.cells.department));
+    if (!ck || !dk) continue;
+    const c = cargos.get(ck)!;
+    if (!c.departments?.includes(dk)) c.departments = [...(c.departments ?? []), dk];
   }
-  for (const c of cargos.values()) c.resolution = resolveCargo(c, snap, overrides.cargos?.[c.key]);
-  for (const c of cargos.values()) {
-    const choice = overrides.cargos?.[c.key];
-    if (choice?.kind !== "same") continue;
-    const target = cargos.get(choice.key);
-    if (!target || target.key === c.key || overrides.cargos?.[target.key]?.kind === "same") {
-      throw new Error(`No se pudo unificar el cargo "${c.text}": el cargo elegido no está en el archivo o también está unificado con otro. Recargá la vista previa.`);
-    }
-    c.resolution = { kind: "same", into: target.key, name: target.resolution.name };
-  }
-  const cargoPositionName = (k: string | null) => (k ? cargos.get(k)!.resolution.name : null);
+  const nameOf = (ops: Map<string, CategoryOp>, k: string | null) => (k ? ops.get(k)!.resolution.name : null);
 
   const people: PersonOp[] = [];
   for (const r of read.rows) {
@@ -236,7 +313,8 @@ export function buildPlan(companyId: number, read: ReadResult, snap: Snapshot, o
       reject(r.row, "CEDULA", `La cédula ${cedula} está repetida en las filas ${dup.join(", ")}.`);
       continue;
     }
-    const cargoKey = isBlank(r.cells.cargo) ? null : normKey(r.cells.cargo);
+    const cargoKey = keyOf(cellText(r.cells.cargo));
+    const deptKey = keyOf(departmentText(r.cells.department));
 
     // Persona.
     const emp = snap.employeesByCedula.get(cedula);
@@ -248,7 +326,7 @@ export function buildPlan(companyId: number, read: ReadResult, snap: Snapshot, o
         ...(differs ? { fileName: fullName } : {}),
         birthDate,
         personChanges: birthDate && birthDate !== emp.birth_date ? [{ field: "Fecha de nacimiento", from: emp.birth_date, to: birthDate }] : [],
-        contract: "create", startDate: start.value, cargoKey, changes: [],
+        contract: "create", startDate: start.value, cargoKey, deptKey, changes: [],
       };
     } else {
       const split = splitFullName(fullName, overrides.splits?.[cedula]);
@@ -260,7 +338,7 @@ export function buildPlan(companyId: number, read: ReadResult, snap: Snapshot, o
         row: r.row, cedula, employee: "create", firstName: split.firstName, lastName: split.lastName,
         split: { tokens: split.tokens, boundary: split.boundary, ambiguous: split.ambiguous && overrides.splits?.[cedula] === undefined },
         birthDate, personChanges: [],
-        contract: "create", startDate: start.value, cargoKey, changes: [],
+        contract: "create", startDate: start.value, cargoKey, deptKey, changes: [],
       };
     }
 
@@ -268,9 +346,12 @@ export function buildPlan(companyId: number, read: ReadResult, snap: Snapshot, o
     const contracts = emp ? (snap.contractsByEmployee.get(emp.id) ?? []) : [];
     const same = contracts.find((c) => c.start_date === start.value);
     if (same) {
-      const from = same.position_id != null ? (snap.positionsById.get(same.position_id) ?? null) : null;
-      const to = cargoPositionName(cargoKey);
-      const changes = to !== null && normKey(from ?? "") !== normKey(to) ? [{ field: "Puesto", from, to }] : [];
+      const changes: Change[] = [];
+      const diff = (field: string, from: string | null, to: string | null) => {
+        if (to !== null && normKey(from ?? "") !== normKey(to)) changes.push({ field, from, to });
+      };
+      diff("Puesto", same.position_id != null ? (snap.positions.byId.get(same.position_id) ?? null) : null, nameOf(cargos, cargoKey));
+      diff("Departamento", same.department_id != null ? (snap.departments.byId.get(same.department_id) ?? null) : null, nameOf(departments, deptKey));
       if (same.status !== "active" && changes.length) {
         reject(r.row, null, `Su contrato desde ${fmt(same.start_date)} está cerrado (baja ${fmt(same.end_date)}): no se modifica.`);
         continue;
@@ -281,7 +362,7 @@ export function buildPlan(companyId: number, read: ReadResult, snap: Snapshot, o
     } else {
       const active = contracts.find((c) => c.status === "active");
       if (active) {
-        reject(r.row, "FECHA DE INGRESO", `Ya tiene un contrato vigente en esta empresa desde ${fmt(active.start_date)}. Si es la misma relación laboral, corregí la fecha en el Excel; si es un reingreso, primero dale de baja al contrato anterior en el panel.`);
+        reject(r.row, "FECHA DE INGRESO", `Ya tiene un contrato vigente en esta empresa desde ${fmt(active.start_date)}. Si es la misma relación laboral, corregí la fecha en el archivo; si es un reingreso, primero dale de baja al contrato anterior en el panel.`);
         continue;
       }
     }
@@ -293,31 +374,12 @@ export function buildPlan(companyId: number, read: ReadResult, snap: Snapshot, o
     companyId,
     people,
     cargos: [...cargos.values()],
+    departments: [...departments.values()],
     absent: snap.activeInCompany.filter((a) => !inFile.has(a.cedula)),
     rejected,
     warnings: read.warnings,
     ok: rejected.length === 0,
   };
-}
-
-/** Cómo se resuelve un cargo sin contar "igual que otro cargo" (eso va aparte). */
-function resolveCargo(c: CargoOp, snap: Snapshot, choice: CargoChoice | undefined): CargoResolution {
-  if (choice?.kind === "position") {
-    const name = snap.positionsById.get(choice.id);
-    if (!name) throw new Error(`El puesto elegido para "${c.text}" ya no existe. Recargá la vista previa.`);
-    return { kind: "mapped", positionId: choice.id, name };
-  }
-  if (choice?.kind === "new") {
-    const name = cleanText(choice.name ?? "") || c.text;
-    // Si el nombre corregido ya existe como puesto, es ese (no se duplica).
-    const existing = snap.positionsByKey.get(normKey(name));
-    return existing ? { kind: "mapped", positionId: existing.id, name: existing.name } : { kind: "new", name };
-  }
-  const byName = snap.positionsByKey.get(c.key);
-  if (byName) return { kind: "position", positionId: byName.id, name: byName.name };
-  const byAlias = snap.aliases.get(c.key);
-  if (byAlias) return { kind: "alias", positionId: byAlias.id, name: byAlias.name };
-  return { kind: "new", name: c.text };
 }
 
 function fmt(ymd: string | null): string {

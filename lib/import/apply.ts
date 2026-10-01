@@ -1,10 +1,11 @@
 // Aplicar un plan de importación a una empresa (docs/14): una sola transacción.
-// Puestos nuevos y alias → personas nuevas → contratos. Las altas masivas van con
-// createManyAndReturn; cada alta o cambio deja su fila en audit_log.
+// Puestos y departamentos nuevos y sus alias → personas nuevas → contratos →
+// departamento de cada puesto. Las altas masivas van con createManyAndReturn;
+// cada alta o cambio deja su fila en audit_log.
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { normKey, ymdToDate } from "./normalize";
-import type { CompanyImportPlan } from "./plan";
+import type { CategoryOp, CompanyImportPlan } from "./plan";
 
 /** El timeout por defecto de Prisma (5 s) no alcanza para miles de filas. */
 const TX_TIMEOUT_MS = 180_000;
@@ -15,13 +16,60 @@ export interface ApplyResult {
   contractsCreated: number;
   contractsUpdated: number;
   positionsCreated: number;
+  departmentsCreated: number;
+  /** Puestos que quedaron en otro departamento. */
+  positionsMoved: number;
   aliasesSaved: number;
+}
+
+type Log = (action: string, entityType: string, entityId: number, before: unknown, after: unknown) => void;
+
+/**
+ * Crea los nuevos (uno por nombre: dos renombrados igual son uno solo), recuerda
+ * como alias cada texto del archivo que terminó en otro nombre ("HORMERO" →
+ * Hornero) y devuelve clave del archivo → id.
+ */
+async function resolveIds(
+  ops: CategoryOp[],
+  entity: "position" | "department",
+  create: (names: string[]) => Promise<Array<{ id: number; name: string }>>,
+  saveAlias: (key: string, text: string, id: number) => Promise<unknown>,
+  log: Log
+): Promise<{ ids: Map<string, number>; created: number; aliases: number }> {
+  const newNames = new Map<string, string>();
+  for (const c of ops) if (c.resolution.kind === "new") newNames.set(normKey(c.resolution.name), c.resolution.name);
+  const createdByKey = new Map<string, number>();
+  if (newNames.size) {
+    for (const row of await create([...newNames.values()])) {
+      createdByKey.set(normKey(row.name), row.id);
+      log(`import.${entity}.create`, entity, row.id, undefined, row);
+    }
+  }
+  const byKey = new Map(ops.map((c) => [c.key, c]));
+  const idOf = (key: string): number => {
+    const r = byKey.get(key)!.resolution;
+    if (r.kind === "new") return createdByKey.get(normKey(r.name))!;
+    if (r.kind === "same") return idOf(r.into);
+    return r.id;
+  };
+  const ids = new Map(ops.map((c) => [c.key, idOf(c.key)]));
+
+  let aliases = 0;
+  for (const c of ops) {
+    if (c.resolution.kind === "existing" || c.resolution.kind === "alias") continue;
+    const finalName = c.resolution.kind === "same" ? byKey.get(c.resolution.into)!.resolution.name : c.resolution.name;
+    if (normKey(finalName) === c.key) continue;
+    await saveAlias(c.key, c.text, ids.get(c.key)!);
+    aliases++;
+    log(`import.${entity}_alias.save`, entity, ids.get(c.key)!, undefined, { alias: c.text });
+  }
+  return { ids, created: newNames.size, aliases };
 }
 
 export async function applyPlan(plan: CompanyImportPlan, actorId: number | null, runId: number): Promise<ApplyResult> {
   if (!plan.ok) throw new Error("El archivo tiene filas rechazadas: no se aplica nada.");
   const audit: Prisma.audit_logCreateManyInput[] = [];
-  const log = (action: string, entityType: string, entityId: number, before: unknown, after: unknown) =>
+  const log: Log = (action, entityType, entityId, before, after) =>
     audit.push({
       actor_app_user_id: actorId,
       action,
@@ -35,55 +83,59 @@ export async function applyPlan(plan: CompanyImportPlan, actorId: number | null,
     async (tx) => {
       const company = await tx.client_company.findUniqueOrThrow({ where: { id: plan.companyId }, select: { id: true, business_model_id: true } });
 
-      // --- Cargos → puestos ---
-      // Puestos nuevos: uno por nombre (dos cargos renombrados igual son uno solo).
-      const newNames = new Map<string, string>();
-      for (const c of plan.cargos) if (c.resolution.kind === "new") newNames.set(normKey(c.resolution.name), c.resolution.name);
-      const createdByKey = new Map<string, number>();
-      if (newNames.size) {
-        const created = await tx.position.createManyAndReturn({
-          data: [...newNames.values()].map((name) => ({ name })),
-          select: { id: true, name: true },
-        });
-        for (const p of created) {
-          createdByKey.set(normKey(p.name), p.id);
-          log("import.position.create", "position", p.id, undefined, p);
-        }
-      }
-      const byKey = new Map(plan.cargos.map((c) => [c.key, c]));
-      const positionOf = (key: string): number => {
-        const r = byKey.get(key)!.resolution;
-        if (r.kind === "new") return createdByKey.get(normKey(r.name))!;
-        if (r.kind === "same") return positionOf(r.into);
-        return r.positionId;
-      };
-      const positionByCargo = new Map(plan.cargos.map((c) => [c.key, positionOf(c.key)]));
+      // --- Cargos → puestos, departamentos ---
+      const positions = await resolveIds(
+        plan.cargos,
+        "position",
+        (names) => tx.position.createManyAndReturn({ data: names.map((name) => ({ name })), select: { id: true, name: true } }),
+        (alias_key, alias, position_id) =>
+          tx.position_alias.upsert({ where: { alias_key }, create: { alias_key, alias, position_id }, update: { alias, position_id } }),
+        log
+      );
+      const departments = await resolveIds(
+        plan.departments,
+        "department",
+        (names) => tx.department.createManyAndReturn({ data: names.map((name) => ({ name })), select: { id: true, name: true } }),
+        (alias_key, alias, department_id) =>
+          tx.department_alias.upsert({ where: { alias_key }, create: { alias_key, alias, department_id }, update: { alias, department_id } }),
+        log
+      );
+      const positionOf = (p: { cargoKey: string | null }) => (p.cargoKey ? (positions.ids.get(p.cargoKey) ?? null) : null);
+      const departmentOf = (p: { deptKey: string | null }) => (p.deptKey ? (departments.ids.get(p.deptKey) ?? null) : null);
 
-      // Se recuerda cómo se resolvió cada cargo cuyo texto no es el nombre del puesto
-      // ("HORMERO" → Hornero, "DESPACHADORA" → Despachador), para los próximos archivos.
-      let aliasesSaved = 0;
-      for (const c of plan.cargos) {
-        if (c.resolution.kind === "position" || c.resolution.kind === "alias") continue;
-        const positionId = positionByCargo.get(c.key)!;
-        const finalName = c.resolution.kind === "same" ? byKey.get(c.resolution.into)!.resolution.name : c.resolution.name;
-        if (normKey(finalName) === c.key) continue;
-        await tx.position_alias.upsert({
-          where: { alias_key: c.key },
-          create: { alias_key: c.key, alias: c.text, position_id: positionId },
-          update: { alias: c.text, position_id: positionId },
-        });
-        aliasesSaved++;
-        log("import.position_alias.save", "position", positionId, undefined, { alias: c.text });
-      }
       // Puestos usados en una empresa con modelo de negocio: asociados a ese modelo,
       // igual que "crear puesto nuevo" del formulario de contrato.
       if (company.business_model_id) {
-        const used = [...new Set(plan.people.map((p) => (p.cargoKey ? positionByCargo.get(p.cargoKey) : undefined)).filter((x): x is number => x !== undefined))];
+        const used = [...new Set(plan.people.map(positionOf).filter((x): x is number => x !== null))];
         if (used.length) {
           await tx.position_business_model.createMany({
             data: used.map((position_id) => ({ position_id, business_model_id: company.business_model_id! })),
             skipDuplicates: true,
           });
+        }
+      }
+
+      // Cada puesto queda en el departamento en el que está en el archivo (aunque
+      // tuviera otro: decisión de ALCO, docs/14). Si el archivo lo pone en más de
+      // uno, no hay cuál elegir: no se toca.
+      const deptsByPosition = new Map<number, Set<number>>();
+      for (const p of plan.people) {
+        const pos = positionOf(p);
+        const dep = departmentOf(p);
+        if (pos === null || dep === null) continue;
+        deptsByPosition.set(pos, (deptsByPosition.get(pos) ?? new Set()).add(dep));
+      }
+      let positionsMoved = 0;
+      if (deptsByPosition.size) {
+        const current = await tx.position.findMany({ where: { id: { in: [...deptsByPosition.keys()] } }, select: { id: true, department_id: true } });
+        for (const pos of current) {
+          const deps = deptsByPosition.get(pos.id)!;
+          if (deps.size !== 1) continue;
+          const [dep] = deps;
+          if (pos.department_id === dep) continue;
+          await tx.position.update({ where: { id: pos.id }, data: { department_id: dep } });
+          log("import.position.update", "position", pos.id, { department_id: pos.department_id }, { department_id: dep });
+          positionsMoved++;
         }
       }
 
@@ -125,15 +177,23 @@ export async function applyPlan(plan: CompanyImportPlan, actorId: number | null,
             employee_id: employeeByCedula.get(p.cedula)!,
             company_id: company.id,
             start_date: ymdToDate(p.startDate),
-            position_id: p.cargoKey ? (positionByCargo.get(p.cargoKey) ?? null) : null,
+            position_id: positionOf(p),
+            department_id: departmentOf(p),
           })),
-          select: { id: true, employee_id: true, company_id: true, start_date: true, position_id: true },
+          select: { id: true, employee_id: true, company_id: true, start_date: true, position_id: true, department_id: true },
         });
         for (const c of created) log("import.employment.create", "employment", c.id, undefined, c);
       }
       const updates = plan.people.filter((p) => p.contract === "update");
       for (const p of updates) {
-        await tx.employment.update({ where: { id: p.contractId! }, data: { position_id: positionByCargo.get(p.cargoKey!)! } });
+        const fields = new Set(p.changes.map((c) => c.field));
+        await tx.employment.update({
+          where: { id: p.contractId! },
+          data: {
+            ...(fields.has("Puesto") ? { position_id: positionOf(p) } : {}),
+            ...(fields.has("Departamento") ? { department_id: departmentOf(p) } : {}),
+          },
+        });
         log(
           "import.employment.update", "employment", p.contractId!,
           Object.fromEntries(p.changes.map((c) => [c.field, c.from])),
@@ -147,8 +207,10 @@ export async function applyPlan(plan: CompanyImportPlan, actorId: number | null,
         employeesUpdated: updatedPeople.length,
         contractsCreated: newContracts.length,
         contractsUpdated: updates.length,
-        positionsCreated: newNames.size,
-        aliasesSaved,
+        positionsCreated: positions.created,
+        departmentsCreated: departments.created,
+        positionsMoved,
+        aliasesSaved: positions.aliases + departments.aliases,
       };
     },
     { timeout: TX_TIMEOUT_MS, maxWait: 10_000 }

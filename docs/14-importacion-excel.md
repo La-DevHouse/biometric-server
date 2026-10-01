@@ -142,12 +142,31 @@ sola vez. Dos cargos renombrados igual crean un solo puesto, y un nombre corregi
 que ya existe usa ese puesto. Si la empresa tiene modelo de negocio, el puesto se
 asocia a él.
 
+### Departamento (2026-09-30)
+En el PDF no es una columna: es el título de cada grupo (`DEPARTAMENTO : 1 -
+OPERATIVO`) y cada trabajador toma el del grupo en el que está; en el `.xlsx`, una
+columna opcional `DEPARTAMENTO`. El número de Galepso se descarta ("1 - OPERATIVO"
+→ "Operativo"): Galepso numera por empresa y acá los departamentos son de todas.
+
+Se resuelve **igual que los cargos** (mismo código, `resolveCategories` en
+`plan.ts`): uno con ese nombre, un alias guardado (`department_alias`), o lo que se
+elija en la vista previa: crear (nombre editable), igual que otro del archivo, o
+uno que ya existe. Lo elegido se recuerda.
+
+- Va al **contrato** (`employment.department_id`): en los nuevos, y en uno que ya
+  existe con la misma fecha se muestra y aplica como cambio "Departamento", igual
+  que el puesto. Sin departamento en el archivo no se borra el que tenga.
+- **El puesto queda en ese departamento** (`position.department_id`), aunque ya
+  tuviera otro (decidido con ALCO). Como los puestos son de todas las empresas,
+  esto también lo cambia para las demás. Si el archivo pone el mismo puesto en más
+  de un departamento, el puesto no se toca y la vista previa lo avisa.
+
 ### Contrato (en esta empresa)
 
 | Situación | Resultado |
 | --- | --- |
 | No tiene contrato en esta empresa | Contrato nuevo |
-| Tiene uno con la **misma fecha de inicio** | Es el mismo: si el cargo cambió, se actualiza el puesto; si no, sin cambios |
+| Tiene uno con la **misma fecha de inicio** | Es el mismo: si el cargo o el departamento cambiaron, se actualizan; si no, sin cambios |
 | Tiene uno **vigente** con otra fecha | **Rechazada**: corregir la fecha en el Excel si es la misma relación laboral, o dar de baja el anterior en el panel si es un reingreso |
 | Tiene uno **cerrado** con otra fecha | Contrato nuevo (reingreso; el historial queda) |
 
@@ -161,7 +180,8 @@ Contratos en **otras** empresas no se tocan.
   sin cambios; cuántas personas llegan a cuántos equipos.
 - **Problemas** (fila, columna, motivo). Con uno solo, **no se aplica nada** (D1):
   se corrige el Excel y se vuelve a subir.
-- **Cargos → Puestos**, con el selector crear / usar uno existente.
+- **Departamentos** y **Cargos → Puestos**, con el selector crear / igual que otro /
+  usar uno existente; bajo cada cargo, a qué departamento va su puesto (y el de hoy).
 - **Personas**, las dudosas primero y resaltadas, con el selector del corte
   `Nombres | Apellidos` para las nuevas de 3 o más palabras.
 - **Ausentes:** quienes tienen contrato vigente en la empresa y no están en el
@@ -184,6 +204,7 @@ de forma atómica).
 | --- | --- | --- |
 | D1 | Filas con error | Todo o nada |
 | D2 | Datos que ya existen | No se borra nada; a una persona existente no se le cambia el nombre (la fecha de nacimiento sí se completa o corrige, §3) |
+| D8 | Departamentos (2026-09-30) | Se crean o enlazan como los cargos; van al contrato y el puesto pasa a ese departamento aunque tuviera otro |
 | D7 | Formato (2026-09-30) | El Roster de Personal impreso a PDF. El `.xls` de Galepso está corrupto y no se acepta |
 | D3 | Bajas | Nunca desde la importación; los ausentes solo se listan |
 | D4 | Cargos que no existen | Se crean, o se asignan a un puesto existente (y se recuerda) |
@@ -204,7 +225,7 @@ de forma atómica).
 | Aplicar en una transacción (timeout 180 s, `createManyAndReturn`, auditoría `import.*`) | `lib/import/apply.ts` |
 | Vista previa / confirmar, huella del plan, equipos, limpieza a 30 días | `lib/import/service.ts` |
 | Página, acciones y panel | `app/admin/empresas/[id]/importar/`, `components/admin/CompanyImportPanel.tsx`, `ImportEmployeesButton.tsx` |
-| Tablas | `import_run` (+ `company_id`), `position_alias` — migraciones `20260928140000_import_run`, `20260929100000_company_import` |
+| Tablas | `import_run` (+ `company_id`), `position_alias`, `department_alias` — migraciones `20260928140000_import_run`, `20260929100000_company_import`, `20260930120000_department_alias` |
 | Tests | `__tests__/import.test.ts` (archivos con la forma del export real, generados en el test; el PDF del Roster se dibuja con las mismas posiciones que el real) |
 
 **Medido (test, base local):** 5 000 trabajadores → vista previa ≈0,2 s, aplicar
