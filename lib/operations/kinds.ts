@@ -6,7 +6,7 @@
 
 export type OperationKind =
   | "SYNC_CLOCK"
-  | "RENAME_DEVICE"
+  | "RENAME_DEVICE" // histórico: el fk_name ya no se cambia desde el panel (lib/deviceIdentity)
   | "SYNC_USERS"
   | "RENAME_USER"
   | "CHANGE_PRIVILEGE"

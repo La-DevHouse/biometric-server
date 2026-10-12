@@ -92,9 +92,11 @@ Parameters: {"fk_name":"Oficina Piso 3"}
 ```
 
 **Notas:**
-- Puramente informativo
-- Se usa para identificar dispositivos en reportes
-- No afecta funcionalidad
+- **No se usa desde el panel** (ni en Diagnóstico): el `fk_name` es solo
+  lectura. En equipos normales el servidor lo encola solo para mantener
+  `fk_name` = serial; en los faciales con `dev_id` placeholder el `fk_name` ES
+  la identidad y nunca se reescribe. Ver `04-device-protocol-real.md` →
+  "dev_id placeholder". El nombre legible es `devices.name`.
 
 **No existe GET_FK_NAME — no hace falta pedirlo:**
 El dispositivo manda su `fk_name` por su cuenta en cada `receive_cmd` (su poll,

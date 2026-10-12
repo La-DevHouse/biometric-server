@@ -11,7 +11,8 @@ export const COMMAND_TEMPLATES: Record<
 > = {
   GET_DEVICE_STATUS: { label: "Consultar estado del equipo" },
   SET_TIME: { label: "Sincronizar hora (con la del servidor)" },
-  SET_FK_NAME: { label: "Cambiar nombre del equipo", params: { fk_name: "nombre_del_equipo" } },
+  // SET_FK_NAME no está a propósito: el fk_name es la identidad/serial del
+  // equipo y no se cambia desde el panel (lib/deviceIdentity).
 
   GET_USER_ID_LIST: { label: "Listar usuarios" },
   GET_USER_INFO: { label: "Consultar usuario", params: { user_id: "id_usuario" } },

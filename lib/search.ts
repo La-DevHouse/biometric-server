@@ -75,13 +75,13 @@ export async function globalSearch(raw: string): Promise<SearchHit[]> {
         ORDER BY e.last_name, e.first_name LIMIT ${PER_KIND}`,
       [like, like, like, digitsLike, digitsLike]
     ),
-    allAsync<{ dev_id: string; fk_name: string | null; company_name: string | null; site_name: string | null }>(
-      `SELECT d.dev_id, d.fk_name, c.name AS company_name, s.name AS site_name
+    allAsync<{ dev_id: string; name: string | null; company_name: string | null; site_name: string | null }>(
+      `SELECT d.dev_id, d.name, c.name AS company_name, s.name AS site_name
          FROM devices d
          LEFT JOIN site s ON s.id = d.site_id
          LEFT JOIN client_company c ON c.id = s.company_id
-        WHERE ${n("d.fk_name")} LIKE ? OR ${n("d.dev_id")} LIKE ?
-        ORDER BY d.fk_name NULLS LAST, d.dev_id LIMIT ${PER_KIND}`,
+        WHERE ${n("d.name")} LIKE ? OR ${n("d.dev_id")} LIKE ?
+        ORDER BY d.name NULLS LAST, d.dev_id LIMIT ${PER_KIND}`,
       [like, like]
     ),
     allAsync<{ id: number; name: string; company_name: string }>(
@@ -119,7 +119,7 @@ export async function globalSearch(raw: string): Promise<SearchHit[]> {
     ...devices.map((d) => ({
       kind: "equipo" as const,
       id: d.dev_id,
-      title: d.fk_name || d.dev_id,
+      title: d.name || d.dev_id,
       subtitle: ctx(d.dev_id, d.company_name ? `${d.company_name} · ${d.site_name}` : "pendiente de asignar"),
       href: `/admin/dispositivos/${encodeURIComponent(d.dev_id)}`,
     })),

@@ -136,20 +136,6 @@ export async function startSyncClock(devId: string): Promise<StartResult> {
   return { id, warning: offlineWarning(dev) };
 }
 
-export async function startRenameDevice(devId: string, fkName: string): Promise<StartResult> {
-  const dev = await ensureDevice(devId);
-  const name = fkName.trim();
-  if (!name) throw new Error("El nombre no puede estar vacío.");
-
-  const existing = await findActiveOperation("RENAME_DEVICE", devId);
-  if (existing) return { id: existing };
-
-  const label = `${OPERATION_LABELS.RENAME_DEVICE}: "${name}"`;
-  const id = await createOperation({ kind: "RENAME_DEVICE", label, devId, params: { fk_name: name } });
-  await queueCommandForOperation(id, devId, "SET_FK_NAME", { fk_name: name });
-  return { id, warning: offlineWarning(dev) };
-}
-
 export async function startSyncUsers(devId: string): Promise<StartResult> {
   const dev = await ensureDevice(devId);
   const existing = await findActiveOperation("SYNC_USERS", devId);

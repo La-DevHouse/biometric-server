@@ -19,17 +19,66 @@ import { upsertUserFromInfo, upsertDeviceStatus } from "@/lib/operations/persist
 import { advanceOperationForCommand, sweepStaleOperations } from "@/lib/operations/advance";
 import { finishOperation, getOperationRow } from "@/lib/operations/queue";
 import { maybeAutoSyncClock } from "@/lib/deviceClock";
+import { resolveDeviceIdentity, isPlaceholderDevId } from "@/lib/deviceIdentity";
 
 const NO_CMD_STRATEGY = process.env.NO_CMD_STRATEGY || "ok_empty";
 /** Hueco entre consultas que cuenta como "estuvo fuera" (= DEVICE_GONE_MS de lib/sync/reconcile). */
 const RECONNECT_GAP_MS = 5 * 60 * 1000;
+/**
+ * Comandos que el servidor encola solo (reescribir fk_name). Detrás de todo lo
+ * del panel (100) y del reconciliador (200).
+ */
+const AUTO_PRIORITY = 300;
+/** Si el equipo no aplica el SET_FK_NAME, no se insiste en cada consulta. */
+const FK_NAME_HEAL_COOLDOWN_MS = 60 * 60 * 1000;
+/**
+ * Cada cuánto se le pide GET_LOG_DATA a un equipo con dev_id placeholder: sus
+ * realtime_glog no se pueden atribuir (lib/deviceIdentity), así que las
+ * marcaciones entran por acá.
+ */
+const PLACEHOLDER_LOG_PULL_MS = Number(process.env.PLACEHOLDER_LOG_PULL_MS) || 15 * 60 * 1000;
+const lastPlaceholderPull = new Map<string, number>();
+const lastQuarantineWarn = new Map<string, number>();
+
+/**
+ * Equipos normales: su fk_name debe ser su serial (dev_id). Se verifica en
+ * cada consulta y, si alguien lo cambió desde el teclado, se reescribe. El
+ * nombre visible vive en devices.name, nunca en el equipo.
+ */
+async function maybeHealFkName(devId: string): Promise<void> {
+  const recent = await getAsync<{ x: number }>(
+    `SELECT 1 AS x FROM commands
+      WHERE dev_id = ? AND cmd_code = 'SET_FK_NAME'
+        AND (status IN ('WAIT','RUN') OR created_at > ${NOW_MS} - ?)
+      LIMIT 1`,
+    [devId, FK_NAME_HEAL_COOLDOWN_MS]
+  );
+  if (recent) return;
+  await runAsync(
+    `INSERT INTO commands (dev_id, cmd_code, cmd_param, status, priority) VALUES (?, 'SET_FK_NAME', ?, 'WAIT', ?)`,
+    [devId, JSON.stringify({ fk_name: devId }), AUTO_PRIORITY]
+  );
+  console.log(`[identity] ${devId}: fk_name distinto del serial — se encola SET_FK_NAME`);
+}
+
+/** Pull periódico de marcaciones de un equipo con dev_id placeholder. No bloquea. */
+function maybePullPlaceholderLogs(devId: string, lastSyncAt: number | null): void {
+  const now = Date.now();
+  if (lastSyncAt != null && now - lastSyncAt < PLACEHOLDER_LOG_PULL_MS) return;
+  if (now - (lastPlaceholderPull.get(devId) ?? 0) < PLACEHOLDER_LOG_PULL_MS) return;
+  lastPlaceholderPull.set(devId, now);
+  // Import dinámico: lib/sync importa lib/operations, que importa este archivo.
+  void import("@/lib/sync/attendance")
+    .then(({ attendancePullDevices }) => attendancePullDevices([devId], "event", { background: true }))
+    .catch((err) => console.error("[identity] no se pudo encolar el pull de marcaciones de", devId, err));
+}
 
 export async function handleReceiveCmd(
   request: NextRequest,
   requestBody: Buffer,
-  devId: string | null
+  reportedDevId: string | null
 ) {
-  if (!devId) {
+  if (!reportedDevId) {
     const resp = buildResponse({ responseCode: "ERROR" });
     await logRawTraffic("out", null, "receive_cmd", resp.headers, resp.body);
     return new NextResponse(resp.body, { status: 400, headers: resp.headers });
@@ -44,6 +93,25 @@ export async function handleReceiveCmd(
   }
 
   const { json } = parseBody(requestBody);
+
+  // Identidad: el header dev_id, o el fk_name si el dev_id es un placeholder
+  // de firmware (lib/deviceIdentity). Sin identidad → cuarentena: ni se
+  // registra ni recibe comandos, para no mezclarlo con otro equipo.
+  const identity = resolveDeviceIdentity(reportedDevId, json?.fk_name);
+  if (identity.kind === "quarantine") {
+    const now = Date.now();
+    if (now - (lastQuarantineWarn.get(reportedDevId) ?? 0) > 10 * 60 * 1000) {
+      lastQuarantineWarn.set(reportedDevId, now);
+      console.warn(
+        `[identity] equipo con dev_id placeholder ${reportedDevId} y fk_name vacío: en cuarentena. ` +
+          `Escribir el serial de la caja en el nombre del equipo.`
+      );
+    }
+    const resp = buildResponse({ responseCode: "OK" });
+    await logRawTraffic("out", reportedDevId, "receive_cmd", resp.headers, resp.body);
+    return new NextResponse(resp.body, { status: 200, headers: resp.headers });
+  }
+  const devId = identity.devId;
 
   // Upsert device. Real firmware nests the capability fields under `fk_info`:
   //   {"fk_name":"","fk_time":"...","fk_info":{"firmware":"WS535BW1_BSCS_v1.5.31",
@@ -60,20 +128,37 @@ export async function handleReceiveCmd(
 
   // Cuándo consultó por última vez ANTES de esta: si hace más de 5 min (o nunca),
   // estuvo fuera y el cron no le lanzó nada (D4) — se le lanza al volver.
-  const prev = await getAsync<{ last_seen_at: number | null }>(`SELECT last_seen_at FROM devices WHERE dev_id = ?`, [devId]);
+  const prev = await getAsync<{ last_seen_at: number | null; last_sync_at: number | null }>(
+    `SELECT last_seen_at, last_sync_at FROM devices WHERE dev_id = ?`,
+    [devId]
+  );
   const reconnected = !prev?.last_seen_at || Date.now() - prev.last_seen_at > RECONNECT_GAP_MS;
 
   await runAsync(
-    `INSERT INTO devices (dev_id, fk_name, firmware, fk_bin_data_lib, supported_enroll_data, last_seen_at)
-     VALUES (?, ?, ?, ?, ?, ${NOW_MS})
+    `INSERT INTO devices (dev_id, fk_name, reported_dev_id, firmware, fk_bin_data_lib, supported_enroll_data, last_seen_at)
+     VALUES (?, ?, ?, ?, ?, ?, ${NOW_MS})
      ON CONFLICT(dev_id) DO UPDATE SET
        fk_name = excluded.fk_name,
+       reported_dev_id = excluded.reported_dev_id,
        firmware = excluded.firmware,
        fk_bin_data_lib = excluded.fk_bin_data_lib,
        supported_enroll_data = excluded.supported_enroll_data,
        last_seen_at = ${NOW_MS}`,
-    [devId, fkName, firmware, fkBinDataLib, supportedEnrollData]
+    [devId, fkName, identity.reported, firmware, fkBinDataLib, supportedEnrollData]
   );
+
+  // Solo con un cuerpo real (el simulador y los tests a veces mandan vacío):
+  // ahí sí sabemos qué fk_name tiene el equipo.
+  if (identity.kind === "serial" && json && (fkName ?? "") !== devId) {
+    try {
+      await maybeHealFkName(devId);
+    } catch (err) {
+      console.error("[identity] no se pudo encolar SET_FK_NAME para", devId, err);
+    }
+  }
+  if (identity.kind === "fk_name") {
+    maybePullPlaceholderLogs(devId, prev?.last_sync_at != null ? Number(prev.last_sync_at) : null);
+  }
 
   if (reconnected) {
     // No espera: la respuesta al equipo no se demora por esto. Import dinámico:
@@ -189,9 +274,9 @@ export async function handleReceiveCmd(
 export async function handleSendCmdResult(
   request: NextRequest,
   requestBody: Buffer,
-  devId: string | null
+  reportedDevId: string | null
 ) {
-  if (!devId) {
+  if (!reportedDevId) {
     const resp = buildResponse({ responseCode: "ERROR" });
     await logRawTraffic("out", null, "send_cmd_result", resp.headers, resp.body);
     return new NextResponse(resp.body, { status: 400, headers: resp.headers });
@@ -203,23 +288,24 @@ export async function handleSendCmdResult(
 
   if (!transId) {
     const resp = buildResponse({ responseCode: "ERROR" });
-    await logRawTraffic("out", devId, "send_cmd_result", resp.headers, resp.body);
+    await logRawTraffic("out", reportedDevId, "send_cmd_result", resp.headers, resp.body);
     return new NextResponse(resp.body, { status: 400, headers: resp.headers });
   }
 
   const blkNoNum = blkNo ? parseInt(blkNo, 10) : undefined;
 
-  // If blk_no is present and not 0, this is a fragment
+  // If blk_no is present and not 0, this is a fragment. Buffered under the
+  // dev_id from the wire: trans_id alone already identifies the command.
   if (blkNoNum !== undefined && blkNoNum !== 0) {
     // Store in block_buffer
     await runAsync(
       `INSERT INTO block_buffer (dev_id, trans_id, blk_no, data)
        VALUES (?, ?, ?, ?)`,
-      [devId, transId, blkNoNum, requestBody]
+      [reportedDevId, transId, blkNoNum, requestBody]
     );
 
     const resp = buildResponse({ responseCode: "OK", transId });
-    await logRawTraffic("out", devId, "send_cmd_result", resp.headers, resp.body);
+    await logRawTraffic("out", reportedDevId, "send_cmd_result", resp.headers, resp.body);
     return new NextResponse(resp.body, {
       status: 200,
       headers: resp.headers,
@@ -235,7 +321,7 @@ export async function handleSendCmdResult(
       `SELECT blk_no, data FROM block_buffer
        WHERE dev_id = ? AND trans_id = ?
        ORDER BY blk_no ASC`,
-      [devId, transId]
+      [reportedDevId, transId]
     );
 
     const buffers = blocks.map(b => b.data);
@@ -245,7 +331,7 @@ export async function handleSendCmdResult(
     // Clean up block buffer
     await runAsync(
       `DELETE FROM block_buffer WHERE dev_id = ? AND trans_id = ?`,
-      [devId, transId]
+      [reportedDevId, transId]
     );
   }
 
@@ -253,10 +339,13 @@ export async function handleSendCmdResult(
   const { json: resultJson, binaries } = parseBody(finalData);
   const resultBinary = binaries.length > 0 ? binaries[0] : null;
 
-  const command = await getAsync<{ cmd_code: string; op_id: number | null }>(
-    `SELECT cmd_code, op_id FROM commands WHERE trans_id = ?`,
+  const command = await getAsync<{ cmd_code: string; op_id: number | null; dev_id: string }>(
+    `SELECT cmd_code, op_id, dev_id FROM commands WHERE trans_id = ?`,
     [transId]
   );
+  // El resultado es del equipo al que se le mandó el comando: con un dev_id
+  // placeholder el header no dice cuál es (lib/deviceIdentity).
+  const devId = isPlaceholderDevId(reportedDevId) && command ? command.dev_id : reportedDevId;
 
   // Results reference attached binaries as opaque "BIN_1"/"BIN_2" placeholders
   // the admin panel can't show usefully as-is. Annotate every one with its
@@ -392,6 +481,14 @@ export async function handleRealtimeGlog(
     return new NextResponse(resp.body, { status: 400, headers: resp.headers });
   }
 
+  // Placeholder: no se sabe de qué equipo es. OK y se descarta; la marcación
+  // sigue en la memoria del equipo y entra por el pull de GET_LOG_DATA.
+  if (isPlaceholderDevId(devId)) {
+    const resp = buildResponse({ responseCode: "OK" });
+    await logRawTraffic("out", devId, "realtime_glog", resp.headers, resp.body);
+    return new NextResponse(resp.body, { status: 200, headers: resp.headers });
+  }
+
   const { json, binaries } = parseBody(requestBody);
 
   if (!json) {
@@ -432,6 +529,13 @@ export async function handleRealtimeEnrollData(
   if (!devId) {
     const resp = buildResponse({ responseCode: "ERROR" });
     return new NextResponse(resp.body, { status: 400, headers: resp.headers });
+  }
+
+  // Placeholder: no se puede atribuir. El reconciliador descubre al usuario en
+  // su corrida normal del equipo.
+  if (isPlaceholderDevId(devId)) {
+    const resp = buildResponse({ responseCode: "OK" });
+    return new NextResponse(resp.body, { status: 200, headers: resp.headers });
   }
 
   const { json } = parseBody(requestBody);

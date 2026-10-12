@@ -134,10 +134,10 @@ export async function previewImpact(change: ScopeChange): Promise<ImpactResult> 
       where: { status: "active" },
       select: { employee_id: true, dev_id: true, device_user_id: true },
     }),
-    prisma.devices.findMany({ select: { dev_id: true, fk_name: true } }),
+    prisma.devices.findMany({ select: { dev_id: true, name: true } }),
     prisma.users.findMany({ select: { dev_id: true, user_id: true, user_privilege: true } }),
   ]);
-  const devName = new Map(deviceNames.map((d) => [d.dev_id, d.fk_name || d.dev_id]));
+  const devName = new Map(deviceNames.map((d) => [d.dev_id, d.name || d.dev_id]));
   const privilege = new Map(cached.map((u) => [`${u.dev_id}|${u.user_id}`, u.user_privilege]));
 
   // Un equipo congelado después del cambio no pierde a nadie (el reconciliador no lo toca).

@@ -30,8 +30,13 @@ datasource db {
 /// Identidad y heartbeat de cada equipo biométrico. `stat_*` los llena
 /// GET_DEVICE_STATUS (lib/operations/persist.ts).
 model devices {
+  // Identidad del equipo (lib/deviceIdentity.ts): el header dev_id, salvo que
+  // sea un placeholder de firmware (000000000001, equipos faciales) — ahí es el
+  // fk_name, que guarda el serial real. fk_name es SOLO LECTURA desde el panel.
   dev_id                String  @id
   fk_name               String?
+  name                  String? // nombre visible en el panel; nunca se manda al equipo
+  reported_dev_id       String? // dev_id tal como lo mandó el equipo (≠ dev_id si es placeholder)
   firmware              String?
   fk_bin_data_lib       String?
   supported_enroll_data String?

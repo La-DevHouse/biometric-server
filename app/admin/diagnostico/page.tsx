@@ -44,8 +44,8 @@ interface TrafficRow {
 async function getData(devId: string | undefined) {
   await initDb();
 
-  const devices = await allAsync<{ dev_id: string; fk_name: string | null }>(
-    `SELECT dev_id, fk_name FROM devices ORDER BY dev_id`
+  const devices = await allAsync<{ dev_id: string; name: string | null }>(
+    `SELECT dev_id, name FROM devices ORDER BY dev_id`
   );
 
   const commandParams: unknown[] = [];
@@ -94,7 +94,7 @@ export default async function DiagnosticoPage({
   await requireUser();
   const { dev } = await searchParams;
   const { devices, commands, traffic } = await getData(dev);
-  const deviceOptions = devices.map((d) => ({ dev_id: d.dev_id, label: d.fk_name || d.dev_id }));
+  const deviceOptions = devices.map((d) => ({ dev_id: d.dev_id, label: d.name || d.dev_id }));
 
   return (
     <div className="flex flex-col gap-6 max-w-[1200px]">

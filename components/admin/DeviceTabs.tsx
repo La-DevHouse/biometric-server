@@ -24,7 +24,8 @@ export async function DeviceTabs({ devId, active }: { devId: string; active: Dev
     where: { dev_id: devId },
     select: {
       dev_id: true,
-      fk_name: true,
+      name: true,
+      reported_dev_id: true,
       last_seen_at: true,
       site_id: true,
       device_admin_note: true,
@@ -56,7 +57,7 @@ export async function DeviceTabs({ devId, active }: { devId: string; active: Dev
       <DetailHeader
         backHref="/admin/dispositivos"
         backLabel="Equipos"
-        title={device.fk_name || device.dev_id}
+        title={device.name || device.dev_id}
         badges={
           <>
             <Tag variant={online ? "accent" : "neutral"}>{online ? "En línea" : "Desconectado"}</Tag>
@@ -66,11 +67,18 @@ export async function DeviceTabs({ devId, active }: { devId: string; active: Dev
         subtitle={
           <>
             <span className="font-mono">{device.dev_id}</span> · {formatRelativeTime(lastSeen)}
+            {device.reported_dev_id && device.reported_dev_id !== device.dev_id && (
+              // Facial con dev_id placeholder: se identifica por su fk_name (lib/deviceIdentity).
+              <span title="El equipo reporta un id genérico; se identifica por el serial guardado en su nombre interno.">
+                {" "}
+                · reporta <span className="font-mono">{device.reported_dev_id}</span>
+              </span>
+            )}
           </>
         }
         actions={
           <>
-            <RenameDeviceDialog devId={device.dev_id} currentName={device.fk_name || device.dev_id} />
+            <RenameDeviceDialog devId={device.dev_id} currentName={device.name} />
             <OpButton
               action={syncClockAction}
               hidden={{ dev_id: device.dev_id }}

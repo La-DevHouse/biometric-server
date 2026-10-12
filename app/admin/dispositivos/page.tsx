@@ -17,7 +17,7 @@ export const dynamic = "force-dynamic";
 
 interface DeviceRow {
   dev_id: string;
-  fk_name: string | null;
+  name: string | null;
   last_seen_at: number | null;
   pending: number;
   company_id: number | null;
@@ -35,7 +35,7 @@ async function getData() {
   // La empresa sale de la sede (docs/10 R3); sede o empresa inactiva = congelado,
   // pero igual se muestra a cuál pertenece.
   return allAsync<DeviceRow>(
-    `SELECT d.dev_id, d.fk_name, d.last_seen_at,
+    `SELECT d.dev_id, d.name, d.last_seen_at,
             COUNT(c.trans_id) FILTER (WHERE c.status = 'WAIT') AS pending,
             s.company_id, co.name AS company_name, s.name AS site_name
        FROM devices d
@@ -43,7 +43,7 @@ async function getData() {
        LEFT JOIN site s ON s.id = d.site_id
        LEFT JOIN client_company co ON co.id = s.company_id
       GROUP BY d.dev_id, s.company_id, co.name, s.name
-      ORDER BY co.name NULLS FIRST, s.name, d.fk_name, d.dev_id`
+      ORDER BY co.name NULLS FIRST, s.name, d.name, d.dev_id`
   );
 }
 
@@ -74,7 +74,7 @@ export default async function DispositivosPage({ searchParams }: { searchParams:
   const q = norm((sp.q ?? "").trim());
   const empresaId = sp.empresa ? Number(sp.empresa) : null;
   const devices = all.filter((d) => {
-    if (q && !norm([d.fk_name, d.dev_id, d.company_name, d.site_name].filter(Boolean).join(" ")).includes(q))
+    if (q && !norm([d.name, d.dev_id, d.company_name, d.site_name].filter(Boolean).join(" ")).includes(q))
       return false;
     if (empresaId && d.company_id !== empresaId) return false;
     const online = isDeviceOnline(d.last_seen_at);
@@ -125,7 +125,7 @@ export default async function DispositivosPage({ searchParams }: { searchParams:
                     <Td>{status(d)}</Td>
                     <Td>
                       <RowLink href={`/admin/dispositivos/${d.dev_id}`}>
-                        {d.fk_name || <span className="text-text/70">Sin nombre</span>}
+                        {d.name || <span className="text-text/70">Sin nombre</span>}
                       </RowLink>
                     </Td>
                     <Td>{d.company_name ?? pendingAssign}</Td>
@@ -143,7 +143,7 @@ export default async function DispositivosPage({ searchParams }: { searchParams:
               <MobileRow
                 key={d.dev_id}
                 href={`/admin/dispositivos/${d.dev_id}`}
-                title={d.fk_name || "Sin nombre"}
+                title={d.name || "Sin nombre"}
                 tags={status(d)}
                 fields={[
                   { label: "Empresa", value: d.company_name ?? "pendiente de asignar" },

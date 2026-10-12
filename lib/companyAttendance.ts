@@ -81,7 +81,7 @@ export async function companyAttendance(companyId: number, f: CompanyAttendanceF
        SELECT al.id, al.io_time, al.user_id,
               COALESCE(al.employee_id, e.id) AS employee_id,
               s.id AS site_id, s.name AS site_name,
-              COALESCE(d.fk_name, d.dev_id) AS device_name
+              COALESCE(NULLIF(d.name, ''), d.dev_id) AS device_name
          FROM attendance_logs al
          JOIN devices d ON d.dev_id = al.dev_id
          JOIN site s ON s.id = d.site_id

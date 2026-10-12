@@ -94,15 +94,42 @@ Parameters: {
 
 Formato: `YYYYMMDDhhmmss`
 
-### 4. Configurar nombre del dispositivo (opcional)
+### 4. Nombre del dispositivo — NO se configura
 
-```
-Device: <dev_id>
-Command: SET_FK_NAME
-Parameters: {
-  "fk_name": "Puerta Entrada - Piso 1"
-}
-```
+El nombre interno del equipo (`fk_name`) es **solo lectura** para el panel. En
+los equipos normales el servidor lo mantiene igual al serial (si alguien lo
+cambia desde el teclado, en la siguiente consulta se encola un `SET_FK_NAME`
+con el serial, prioridad 300, como mucho uno por hora). El nombre legible vive
+en `devices.name` y se edita en el panel (Equipos → Renombrar); nunca se manda
+al equipo.
+
+### dev_id placeholder (faciales)
+
+Verificado 2026-10-12 contra un `WS545CW_FP3FC5_BSCS_V2.0.33` (serie
+`2401058627`): el header `dev_id` llega **siempre** como `000000000001` — todos
+los faciales de ese modelo se verían como el mismo equipo — mientras que el
+`receive_cmd` trae el serial en `fk_name` (de fábrica). Cambiar "ID del equipo"
+no lo afecta. Regla (`lib/deviceIdentity.ts`):
+
+- Identidad = header `dev_id`, **salvo** que esté en la lista de placeholders
+  (`PLACEHOLDER_DEV_IDS`, default `000000000001`): ahí identidad = `fk_name`.
+  `devices.reported_dev_id` guarda lo que mandó el cable.
+- Placeholder con `fk_name` vacío → **cuarentena**: se contesta OK sin
+  comandos y no se registra. Arreglo manual: escribir el serial de la caja en
+  el nombre del equipo. Si alguien le cambia el nombre, aparece como equipo nuevo.
+- Solo `receive_cmd` trae `fk_name`. `send_cmd_result` se atribuye por
+  `trans_id` (el `commands.dev_id` al que se le mandó).
+- `realtime_glog` / `realtime_enroll_data` de un placeholder **no se pueden
+  atribuir**: se contesta OK y se descartan. Las marcaciones siguen en la
+  memoria del equipo (verificado: un `GET_LOG_DATA` devuelve también las que ya
+  se habían empujado en tiempo real, mismo formato de 12 bytes, verify_mode 52
+  = rostro) y entran por un pull `SYNC_LOGS` cada `PLACEHOLDER_LOG_PULL_MS`
+  (default 15 min) desde la última sync exitosa − 1 día; la clave natural
+  `(dev_id,user_id,io_time)` descarta repetidos. Las fotos de marcación
+  (`log_image`, solo vienen en realtime) no se guardan para estos equipos.
+- Migración `20261012120000_device_identity_name`: lo que estaba bajo
+  `000000000001` pasó al `fk_name` que tenía ese registro (puede mezclar datos
+  de varios faciales físicos de antes del arreglo).
 
 ---
 

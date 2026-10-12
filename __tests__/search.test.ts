@@ -42,7 +42,7 @@ test("globalSearch: acentos, cédula por dígitos, contexto y tipos", async () =
     data: { employee_id: e.id, company_id: c.id, start_date: new Date("2026-01-01T00:00:00Z") },
   });
   const dev = `DEV${TOKEN}`;
-  await prisma.devices.create({ data: { dev_id: dev, fk_name: `Caja ${TOKEN}`, site_id: c.sites[0].id } });
+  await prisma.devices.create({ data: { dev_id: dev, name: `Caja ${TOKEN}`, site_id: c.sites[0].id } });
   created.devices.push(dev);
 
   // Sin acentos encuentra con acentos (y al revés), en empresa, sede y empleado.

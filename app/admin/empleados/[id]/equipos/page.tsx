@@ -37,7 +37,7 @@ export default async function EmpleadoEquiposPage({ params }: { params: Promise<
           where: { status: "active" },
           orderBy: [{ captured_at: "asc" }, { id: "asc" }],
           include: {
-            source_device: { select: { dev_id: true, fk_name: true } },
+            source_device: { select: { dev_id: true, name: true } },
             _count: { select: { slots: true } },
           },
         },
@@ -55,7 +55,7 @@ export default async function EmpleadoEquiposPage({ params }: { params: Promise<
   const [deviceRows, mySlots] = await Promise.all([
     prisma.devices.findMany({
       where: { dev_id: { in: deviceIds } },
-      select: { dev_id: true, fk_name: true, site: { select: { name: true, company: { select: { name: true } } } } },
+      select: { dev_id: true, name: true, site: { select: { name: true, company: { select: { name: true } } } } },
       orderBy: { dev_id: "asc" },
     }),
     prisma.device_fingerprint_slot.findMany({
@@ -76,7 +76,7 @@ export default async function EmpleadoEquiposPage({ params }: { params: Promise<
           : { label: "Al día", variant: "accent" as const };
     return {
       devId: d.dev_id,
-      name: d.fk_name || d.dev_id,
+      name: d.name || d.dev_id,
       place: d.site ? `${d.site.company.name} · ${d.site.name}` : "sin sede",
       linked,
       synced,
@@ -184,7 +184,7 @@ export default async function EmpleadoEquiposPage({ params }: { params: Promise<
                   <Td>
                     {fp.source_device ? (
                       <Link href={`/admin/dispositivos/${fp.source_device.dev_id}`} className="text-accent no-underline hover:underline">
-                        {fp.source_device.fk_name || fp.source_device.dev_id}
+                        {fp.source_device.name || fp.source_device.dev_id}
                       </Link>
                     ) : (
                       fp.source_dev_id || "—"

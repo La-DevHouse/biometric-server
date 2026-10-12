@@ -80,3 +80,36 @@ export async function assignDeviceAction(
     message: site_id == null ? "Equipo sin sede: queda pendiente de asignar." : "Equipo asignado.",
   };
 }
+
+/**
+ * Nombre visible del equipo en el panel (devices.name). Nunca se manda al
+ * equipo: su fk_name es solo lectura — en los normales el servidor lo mantiene
+ * igual al serial y en los faciales ES su identidad (lib/deviceIdentity).
+ * Vacío = sin nombre (el panel muestra el serial).
+ */
+export async function renameDeviceAction(
+  _prev: AdminActionState,
+  fd: FormData
+): Promise<AdminActionState> {
+  const user = await requireUser();
+  const dev_id = str(fd, "dev_id");
+  if (!dev_id) return { status: "error", error: "Equipo inválido." };
+  const name = str(fd, "name") || null;
+  if (name && name.length > 120) return { status: "error", error: "El nombre es demasiado largo." };
+
+  const device = await prisma.devices.findUnique({ where: { dev_id }, select: { name: true } });
+  if (!device) return { status: "error", error: "El equipo no existe." };
+
+  await prisma.devices.update({ where: { dev_id }, data: { name } });
+  await writeAudit({
+    actorId: user.id,
+    action: "device.rename",
+    entityType: "devices",
+    entityId: dev_id,
+    before: { name: device.name },
+    after: { name },
+  });
+  revalidatePath(`/admin/dispositivos/${dev_id}`);
+  revalidatePath("/admin/dispositivos");
+  return { status: "ok", message: name ? "Nombre guardado." : "Nombre borrado." };
+}

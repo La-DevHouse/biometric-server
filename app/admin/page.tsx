@@ -17,7 +17,7 @@ export const dynamic = "force-dynamic";
 
 interface DeviceRow {
   dev_id: string;
-  fk_name: string | null;
+  name: string | null;
   last_seen_at: number | null;
 }
 
@@ -45,7 +45,7 @@ async function getData() {
   await initDb();
 
   const devices = await allAsync<DeviceRow>(
-    `SELECT dev_id, fk_name, last_seen_at FROM devices ORDER BY dev_id`
+    `SELECT dev_id, name, last_seen_at FROM devices ORDER BY dev_id`
   );
 
   const totalToday = await getAsync<{ n: number }>(
@@ -60,7 +60,7 @@ async function getData() {
   const recentLogs = await allAsync<RecentLog>(
     `SELECT al.io_time, al.user_id, al.verify_mode,
             COALESCE(u.user_name, al.user_id) AS display_name,
-            COALESCE(d.fk_name, d.dev_id) AS device_name
+            COALESCE(NULLIF(d.name, ''), d.dev_id) AS device_name
        FROM attendance_logs al
        LEFT JOIN devices d ON d.dev_id = al.dev_id
        LEFT JOIN users u ON u.dev_id = al.dev_id AND u.user_id = al.user_id
@@ -118,7 +118,7 @@ export default async function InicioPage() {
         <Card>
           <div className="flex items-center gap-3 max-sm:flex-col max-sm:items-start">
             <CardMeta>
-              Sin conexión: {offlineDevices.map((d) => d.fk_name || d.dev_id).join(", ")}
+              Sin conexión: {offlineDevices.map((d) => d.name || d.dev_id).join(", ")}
             </CardMeta>
             <LinkBtn href="/admin/dispositivos" variant="primary" className="ml-auto max-sm:w-full">
               Ver equipos →

@@ -44,6 +44,15 @@ identifica cada equipo por su **número de serie** (`dev_id` del protocolo, ver
 `04-device-protocol-real.md`), que ya es único de fábrica — no depende de que
 alguien haya configurado bien este campo.
 
+> **Faciales (verificado 2026-10-12):** el `WS545CW_FP3FC5_BSCS_V2.0.33` manda
+> siempre `dev_id` `000000000001` aunque su "Info del sistema" muestre el serial
+> real, y cambiar este campo (se probó con `60`) **no** cambia ese `dev_id`. En
+> esos equipos el sistema se identifica por el **nombre del equipo** (`fk_name`),
+> que de fábrica trae el serial. **No cambiar el nombre de un facial desde su
+> teclado**: el servidor lo vería como un equipo nuevo. Si llega con el nombre
+> vacío o cambiado, escribir ahí el serial de la caja (o de "Info del sistema").
+> Ver `04-device-protocol-real.md` → "dev_id placeholder".
+
 Aun así, para que sea legible a simple vista en el menú del equipo (Ezequiel lo
 usa al configurar en sede), el estándar es:
 

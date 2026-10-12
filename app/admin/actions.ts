@@ -6,7 +6,6 @@ import { initDb, runAsync, prisma } from "@/lib/db";
 import { COMMAND_TEMPLATES } from "@/lib/commandTemplates";
 import {
   startSyncClock,
-  startRenameDevice,
   startSyncUsers,
   startRenameUser,
   startChangePrivilege,
@@ -105,22 +104,6 @@ export async function refreshStatusAction(
   const devId = String(formData.get("dev_id") || "");
   try {
     const { id, warning } = await startRefreshStatus(devId);
-    await afterStart();
-    return { status: "ok", id, warning };
-  } catch (err) {
-    return opError(err);
-  }
-}
-
-export async function renameDeviceAction(
-  _prev: OpActionState,
-  formData: FormData
-): Promise<OpActionState> {
-  await requireUser();
-  const devId = String(formData.get("dev_id") || "");
-  const fkName = String(formData.get("fk_name") || "");
-  try {
-    const { id, warning } = await startRenameDevice(devId, fkName);
     await afterStart();
     return { status: "ok", id, warning };
   } catch (err) {
