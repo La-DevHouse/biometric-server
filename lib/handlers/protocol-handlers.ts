@@ -32,12 +32,16 @@ const AUTO_PRIORITY = 300;
 /** Si el equipo no aplica el SET_FK_NAME, no se insiste en cada consulta. */
 const FK_NAME_HEAL_COOLDOWN_MS = 60 * 60 * 1000;
 /**
- * Cada cuánto se le pide GET_LOG_DATA a un equipo con dev_id placeholder: sus
- * realtime_glog no se pueden atribuir (lib/deviceIdentity), así que las
- * marcaciones entran por acá.
+ * Cada cuánto se revisa si un equipo con dev_id placeholder tiene marcaciones
+ * nuevas: sus realtime_glog no se pueden atribuir (lib/deviceIdentity), así
+ * que entran por GET_LOG_DATA. Se pregunta primero GET_DEVICE_STATUS porque,
+ * verificado 2026-10-12 en dos WS545CW_FP3FC5_BSCS_V2.0.33:
+ *  - con 0 marcaciones el equipo NO responde GET_LOG_DATA (la operación
+ *    quedaría colgada 3 min con el candado del equipo tomado);
+ *  - ignora begin_time/end_time y siempre devuelve la memoria completa.
+ * Así el pull solo sale cuando hay algo que traer.
  */
-const PLACEHOLDER_LOG_PULL_MS = Number(process.env.PLACEHOLDER_LOG_PULL_MS) || 15 * 60 * 1000;
-const lastPlaceholderPull = new Map<string, number>();
+const PLACEHOLDER_LOG_CHECK_MS = Number(process.env.PLACEHOLDER_LOG_CHECK_MS) || 15 * 60 * 1000;
 const lastQuarantineWarn = new Map<string, number>();
 
 /**
@@ -61,16 +65,38 @@ async function maybeHealFkName(devId: string): Promise<void> {
   console.log(`[identity] ${devId}: fk_name distinto del serial — se encola SET_FK_NAME`);
 }
 
-/** Pull periódico de marcaciones de un equipo con dev_id placeholder. No bloquea. */
-function maybePullPlaceholderLogs(devId: string, lastSyncAt: number | null): void {
-  const now = Date.now();
-  if (lastSyncAt != null && now - lastSyncAt < PLACEHOLDER_LOG_PULL_MS) return;
-  if (now - (lastPlaceholderPull.get(devId) ?? 0) < PLACEHOLDER_LOG_PULL_MS) return;
-  lastPlaceholderPull.set(devId, now);
-  // Import dinámico: lib/sync importa lib/operations, que importa este archivo.
-  void import("@/lib/sync/attendance")
-    .then(({ attendancePullDevices }) => attendancePullDevices([devId], "event", { background: true }))
-    .catch((err) => console.error("[identity] no se pudo encolar el pull de marcaciones de", devId, err));
+/** Revisión periódica de un equipo con dev_id placeholder: encola un GET_DEVICE_STATUS suelto. */
+async function maybeCheckPlaceholderLogs(devId: string): Promise<void> {
+  // En la base, no en memoria: en dev Next reevalúa el módulo y un Map se pierde.
+  const recent = await getAsync<{ x: number }>(
+    `SELECT 1 AS x FROM commands
+      WHERE dev_id = ? AND cmd_code = 'GET_DEVICE_STATUS'
+        AND (status IN ('WAIT','RUN') OR created_at > ${NOW_MS} - ?)
+      LIMIT 1`,
+    [devId, PLACEHOLDER_LOG_CHECK_MS]
+  );
+  if (recent) return;
+  await runAsync(
+    `INSERT INTO commands (dev_id, cmd_code, cmd_param, status, priority) VALUES (?, 'GET_DEVICE_STATUS', '{}', 'WAIT', ?)`,
+    [devId, AUTO_PRIORITY]
+  );
+}
+
+/**
+ * Con el conteo que acaba de reportar el equipo: ¿hace falta traer sus
+ * marcaciones? Sí si tiene alguna y (nunca se trajeron, cambió el conteo, o el
+ * último pull no terminó bien después de la revisión anterior).
+ */
+export function shouldPullPlaceholderLogs(s: {
+  newCount: number | null;
+  prevCount: number | null;
+  prevStatAt: number | null;
+  lastSyncAt: number | null;
+}): boolean {
+  if (!s.newCount || s.newCount <= 0) return false;
+  if (s.lastSyncAt == null) return true;
+  if (s.newCount !== s.prevCount) return true;
+  return s.prevStatAt != null && s.lastSyncAt < s.prevStatAt;
 }
 
 export async function handleReceiveCmd(
@@ -128,10 +154,7 @@ export async function handleReceiveCmd(
 
   // Cuándo consultó por última vez ANTES de esta: si hace más de 5 min (o nunca),
   // estuvo fuera y el cron no le lanzó nada (D4) — se le lanza al volver.
-  const prev = await getAsync<{ last_seen_at: number | null; last_sync_at: number | null }>(
-    `SELECT last_seen_at, last_sync_at FROM devices WHERE dev_id = ?`,
-    [devId]
-  );
+  const prev = await getAsync<{ last_seen_at: number | null }>(`SELECT last_seen_at FROM devices WHERE dev_id = ?`, [devId]);
   const reconnected = !prev?.last_seen_at || Date.now() - prev.last_seen_at > RECONNECT_GAP_MS;
 
   await runAsync(
@@ -157,7 +180,11 @@ export async function handleReceiveCmd(
     }
   }
   if (identity.kind === "fk_name") {
-    maybePullPlaceholderLogs(devId, prev?.last_sync_at != null ? Number(prev.last_sync_at) : null);
+    try {
+      await maybeCheckPlaceholderLogs(devId);
+    } catch (err) {
+      console.error("[identity] no se pudo encolar la revisión de marcaciones de", devId, err);
+    }
   }
 
   if (reconnected) {
@@ -386,7 +413,33 @@ export async function handleSendCmdResult(
   // Special handling for certain commands (runs for ad-hoc commands too, not
   // just ones that belong to an operation)
   if (cmdReturnCode === "OK" && resultJson && command) {
+    // Placeholder: el conteo de marcaciones decide si toca traerlas (ver
+    // PLACEHOLDER_LOG_CHECK_MS). Se lee el estado anterior antes de pisarlo.
+    const placeholderStatus = command.cmd_code === "GET_DEVICE_STATUS" && isPlaceholderDevId(reportedDevId);
+    const before = placeholderStatus
+      ? await getAsync<{ stat_log_count: number | null; stat_updated_at: number | null; last_sync_at: number | null }>(
+          `SELECT stat_log_count, stat_updated_at, last_sync_at FROM devices WHERE dev_id = ?`,
+          [devId]
+        )
+      : null;
+
     await handleCommandResult(devId, command.cmd_code, resultJson, binaries);
+
+    if (placeholderStatus) {
+      const num = (v: unknown) => (v == null || v === "" || Number.isNaN(Number(v)) ? null : Number(v));
+      const pull = shouldPullPlaceholderLogs({
+        newCount: num(resultJson.total_log_count),
+        prevCount: num(before?.stat_log_count),
+        prevStatAt: num(before?.stat_updated_at),
+        lastSyncAt: num(before?.last_sync_at),
+      });
+      if (pull) {
+        // Import dinámico: lib/sync importa lib/operations, que importa este archivo.
+        void import("@/lib/sync/attendance")
+          .then(({ attendancePullDevices }) => attendancePullDevices([devId], "event", { background: true }))
+          .catch((err) => console.error("[identity] no se pudo encolar el pull de marcaciones de", devId, err));
+      }
+    }
   }
 
   // Advance the parent operation, if this command belongs to one. Isolated

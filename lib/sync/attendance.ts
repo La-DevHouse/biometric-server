@@ -8,6 +8,7 @@
 //       queda como punto de enganche.
 import { prisma } from "@/lib/db";
 import { startSyncLogs } from "@/lib/operations";
+import { isPlaceholderDevId } from "@/lib/deviceIdentity";
 import type { SyncTrigger } from "./reconcile";
 
 const DAY_MS = 24 * 3600 * 1000;
@@ -25,7 +26,7 @@ export async function attendancePullDevices(
       ...(devIds ? { dev_id: { in: devIds } } : {}),
       site: { status: "active", company: { status: "active" } },
     },
-    select: { dev_id: true, last_sync_at: true, last_seen_at: true },
+    select: { dev_id: true, last_sync_at: true, last_seen_at: true, reported_dev_id: true, stat_log_count: true },
   });
   const ids: number[] = [];
   for (const d of devices) {
@@ -33,6 +34,11 @@ export async function attendancePullDevices(
     // noche del 2026-09-27, 6 h). Se salta: al volver, onDeviceReconnect lo pide.
     const gone = d.last_seen_at == null || Date.now() - Number(d.last_seen_at) > DEVICE_GONE_MS;
     if (trigger === "cron" && gone) continue;
+    // Facial con dev_id placeholder (lib/deviceIdentity): con 0 marcaciones NO
+    // responde GET_LOG_DATA y la operación quedaría colgada con el candado del
+    // equipo. Solo se le pide cuando su último GET_DEVICE_STATUS reportó alguna
+    // (protocol-handlers lo revisa cada PLACEHOLDER_LOG_CHECK_MS).
+    if (isPlaceholderDevId(d.reported_dev_id) && !(d.stat_log_count && d.stat_log_count > 0)) continue;
     try {
       const last = d.last_sync_at != null ? Number(d.last_sync_at) : null;
       const since = new Date((last ?? Date.now() - 7 * DAY_MS) - DAY_MS);

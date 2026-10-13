@@ -123,10 +123,19 @@ no lo afecta. Regla (`lib/deviceIdentity.ts`):
   atribuir**: se contesta OK y se descartan. Las marcaciones siguen en la
   memoria del equipo (verificado: un `GET_LOG_DATA` devuelve también las que ya
   se habían empujado en tiempo real, mismo formato de 12 bytes, verify_mode 52
-  = rostro) y entran por un pull `SYNC_LOGS` cada `PLACEHOLDER_LOG_PULL_MS`
-  (default 15 min) desde la última sync exitosa − 1 día; la clave natural
+  = rostro) y entran por un pull `SYNC_LOGS`; la clave natural
   `(dev_id,user_id,io_time)` descarta repetidos. Las fotos de marcación
   (`log_image`, solo vienen en realtime) no se guardan para estos equipos.
+- Dos rarezas del facial con `GET_LOG_DATA` (verificadas 2026-10-12 en dos
+  equipos): **con 0 marcaciones no responde** (la operación quedaba colgada
+  3 min con el candado del equipo tomado) e **ignora `begin_time`/`end_time`**
+  (siempre devuelve la memoria completa). Por eso cada
+  `PLACEHOLDER_LOG_CHECK_MS` (default 15 min) se le encola un
+  `GET_DEVICE_STATUS` suelto (prioridad 300, sin candado), y el pull solo sale
+  si `total_log_count` > 0 y cambió, o si el pull anterior no terminó. El pull
+  diario del worker y el de reconexión también saltan a un placeholder sin
+  marcaciones conocidas (`lib/sync/attendance.ts`). Un "Sincronizar historial"
+  manual sobre un facial vacío sigue venciendo a los 3 min con "no respondió".
 - Migración `20261012120000_device_identity_name`: lo que estaba bajo
   `000000000001` pasó al `fk_name` que tenía ese registro (puede mezclar datos
   de varios faciales físicos de antes del arreglo).

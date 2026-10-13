@@ -150,3 +150,28 @@ test("equipo normal con fk_name cambiado: se reescribe con su serial, una sola v
   const again = await db.allAsync(`SELECT 1 FROM commands WHERE dev_id = ?`, [NORMAL]);
   assert.equal(again.length, 0);
 });
+
+test("shouldPullPlaceholderLogs: solo con marcaciones y algo nuevo (o pull pendiente)", () => {
+  const f = handlers.shouldPullPlaceholderLogs;
+  // 0 marcaciones: el facial no respondería GET_LOG_DATA.
+  assert.equal(f({ newCount: 0, prevCount: null, prevStatAt: null, lastSyncAt: null }), false);
+  assert.equal(f({ newCount: null, prevCount: 5, prevStatAt: 1, lastSyncAt: null }), false);
+  // Nunca se trajeron.
+  assert.equal(f({ newCount: 3, prevCount: 3, prevStatAt: 100, lastSyncAt: null }), true);
+  // Cambió el conteo.
+  assert.equal(f({ newCount: 4, prevCount: 3, prevStatAt: 100, lastSyncAt: 200 }), true);
+  // Igual y ya traídas después de la revisión anterior.
+  assert.equal(f({ newCount: 3, prevCount: 3, prevStatAt: 100, lastSyncAt: 200 }), false);
+  // Igual, pero el pull que disparó la revisión anterior no terminó: reintenta.
+  assert.equal(f({ newCount: 3, prevCount: 3, prevStatAt: 300, lastSyncAt: 200 }), true);
+});
+
+test("placeholder: la revisión periódica es un GET_DEVICE_STATUS suelto, no un GET_LOG_DATA", async () => {
+  await poll(PLACEHOLDER, FACE_A);
+  const cmds = await db.allAsync<{ cmd_code: string }>(
+    `SELECT cmd_code FROM commands WHERE dev_id = ? AND cmd_code IN ('GET_DEVICE_STATUS','GET_LOG_DATA')`,
+    [FACE_A]
+  );
+  assert.ok(cmds.some((c) => c.cmd_code === "GET_DEVICE_STATUS"));
+  assert.ok(!cmds.some((c) => c.cmd_code === "GET_LOG_DATA"));
+});
