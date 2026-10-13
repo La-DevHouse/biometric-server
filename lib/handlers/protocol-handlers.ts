@@ -65,6 +65,51 @@ async function maybeHealFkName(devId: string): Promise<void> {
   console.log(`[identity] ${devId}: fk_name distinto del serial — se encola SET_FK_NAME`);
 }
 
+/**
+ * Comandos que los faciales WS545CW_FP3FC5_BSCS_V2.0.33 rechazan al azar con
+ * cmd_return_code "Error" (verificado 2026-10-12: la misma lectura de un usuario
+ * existente sale bien entre 1 de cada 8 y 1 de cada 3 veces, Error y OK tardan lo
+ * mismo (~300 ms); SET_ENROLL_DATA salió al 5.º intento y
+ * los 4 rechazados no escribieron nada — el conteo de huellas no se movió).
+ * Se reencolan hasta FACIAL_ERROR_RETRIES veces. SET_USER_INFO queda afuera a
+ * propósito: no está verificado que un "Error" no haya escrito, y repetirlo
+ * sobre un usuario ya creado dispara el reindexado destructivo (docs/05).
+ * Solo el literal "Error": los equipos de huella responden otros códigos
+ * (ERROR_NO_USER…) o se callan, y eso sí significa algo.
+ */
+const RETRY_ON_ERROR: ReadonlySet<string> = new Set(["GET_USER_INFO", "SET_ENROLL_DATA"]);
+const FACIAL_ERROR_RETRIES = Number(process.env.FACIAL_ERROR_RETRIES ?? 10);
+
+export function shouldRetryCommand(cmdCode: string, returnCode: string, attempt: number): boolean {
+  return returnCode === "Error" && RETRY_ON_ERROR.has(cmdCode) && attempt < FACIAL_ERROR_RETRIES;
+}
+
+/**
+ * Cierra el intento con su error y encola uno nuevo idéntico (trans_id nuevo:
+ * no se sabe si el firmware ignora un trans_id repetido). Si es de una
+ * operación, el paso actual pasa al nuevo comando y se le renueva el reloj de
+ * vencimiento — para la operación es el mismo paso que sigue en curso.
+ */
+async function requeueCommand(transId: number, opId: number | null, returnCode: string): Promise<void> {
+  await runAsync(
+    `UPDATE commands SET status = 'ERROR', cmd_return_code = ?, updated_at = ${NOW_MS} WHERE trans_id = ?`,
+    [returnCode, transId]
+  );
+  const { lastID } = await runAsync(
+    `INSERT INTO commands (dev_id, cmd_code, cmd_param, cmd_binary, status, op_id, priority, attempt)
+     SELECT dev_id, cmd_code, cmd_param, cmd_binary, 'WAIT', op_id, priority, attempt + 1
+       FROM commands WHERE trans_id = ?
+     RETURNING trans_id`,
+    [transId]
+  );
+  if (opId) {
+    await runAsync(
+      `UPDATE operations SET current_trans_id = ?, updated_at = ${NOW_MS} WHERE id = ? AND current_trans_id = ?`,
+      [lastID, opId, transId]
+    );
+  }
+}
+
 /** Revisión periódica de un equipo con dev_id placeholder: encola un GET_DEVICE_STATUS suelto. */
 async function maybeCheckPlaceholderLogs(devId: string): Promise<void> {
   // En la base, no en memoria: en dev Next reevalúa el módulo y un Map se pierde.
@@ -366,13 +411,21 @@ export async function handleSendCmdResult(
   const { json: resultJson, binaries } = parseBody(finalData);
   const resultBinary = binaries.length > 0 ? binaries[0] : null;
 
-  const command = await getAsync<{ cmd_code: string; op_id: number | null; dev_id: string }>(
-    `SELECT cmd_code, op_id, dev_id FROM commands WHERE trans_id = ?`,
+  const command = await getAsync<{ cmd_code: string; op_id: number | null; dev_id: string; attempt: number }>(
+    `SELECT cmd_code, op_id, dev_id, attempt FROM commands WHERE trans_id = ?`,
     [transId]
   );
   // El resultado es del equipo al que se le mandó el comando: con un dev_id
   // placeholder el header no dice cuál es (lib/deviceIdentity).
   const devId = isPlaceholderDevId(reportedDevId) && command ? command.dev_id : reportedDevId;
+
+  // Faciales: "Error" al azar → se reintenta antes de que la operación lo vea.
+  if (command && shouldRetryCommand(command.cmd_code, cmdReturnCode, command.attempt)) {
+    await requeueCommand(Number(transId), command.op_id, cmdReturnCode);
+    const resp = buildResponse({ responseCode: "OK", transId });
+    await logRawTraffic("out", devId, "send_cmd_result", resp.headers, resp.body);
+    return new NextResponse(resp.body, { status: 200, headers: resp.headers });
+  }
 
   // Results reference attached binaries as opaque "BIN_1"/"BIN_2" placeholders
   // the admin panel can't show usefully as-is. Annotate every one with its

@@ -86,6 +86,9 @@ model commands {
   /// Menor sale primero (docs/10 §3.1): el panel usa 100, el reconciliador 200.
   /// El dequeue de receive_cmd ordena por (priority, created_at).
   priority        Int     @default(100)
+  /// Reintento n.º (0 = primer envío). Los faciales devuelven "Error" al azar a
+  /// GET_USER_INFO / SET_ENROLL_DATA: se reencolan como comando nuevo (protocol-handlers).
+  attempt         Int     @default(0)
 
   @@index([dev_id, status])
   @@index([dev_id, status, priority, created_at])

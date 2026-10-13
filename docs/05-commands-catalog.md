@@ -711,6 +711,36 @@ Parameters: {
 
 ---
 
+## Faciales: "Error" intermitente y `Content-Length: -1` (2026-10-12)
+
+Verificado contra dos `WS545CW_FP3FC5_BSCS_V2.0.33` (`2401058627`, `2401058636`):
+
+- **Formato del error.** Cuando un comando falla, el facial contesta
+  `send_cmd_result` con `cmd_return_code:Error`, **`Content-Length: -1`**,
+  `blk_len: -1` y sin cuerpo. El parser HTTP de Node lo rechaza antes de llegar a
+  la app ("Invalid character in Content-Length"), así que esos errores se perdían
+  y la operación quedaba "sin respuesta" hasta vencer. `lib/deviceHttp.ts` los
+  rescata en `clientError` (corrige a 0 y los reenvía por loopback); el tráfico
+  normal no pasa por ahí.
+- **`GET_USER_INFO` falla al azar.** La misma lectura de un usuario existente
+  sale bien entre 1 de cada 8 y 1 de cada 3 veces; el resto, `Error`. Error y OK
+  tardan lo mismo (~300 ms), no depende del espaciado entre intentos ni del
+  servidor (se comparó con el `server.ts` original). Cuando sale, trae la forma
+  limpia de 612 B por huella (como los de huella), el rostro en
+  `backup_number` 12 (5704 B) y `user_photo`.
+- **`SET_ENROLL_DATA` igual**: salió al 5.º intento; los 4 `Error` previos no
+  escribieron nada (`fp_count` de `GET_DEVICE_STATUS` no se movió) y el bueno
+  sumó 1. Por eso la sincronización nunca llegaba a pasar la huella a otro facial:
+  escribía una sola vez.
+- **Arreglo:** `protocol-handlers` reencola `GET_USER_INFO` y `SET_ENROLL_DATA`
+  que vuelvan con `Error` literal, como comando nuevo, hasta `FACIAL_ERROR_RETRIES`
+  (default 10) antes de que la operación vea el fallo (`commands.attempt`).
+  `SET_USER_INFO` **no** se reintenta: no está verificado que un `Error` no haya
+  escrito, y repetirlo sobre un usuario ya creado reindexa (destructivo).
+- `GET_USER_ID_LIST` y `GET_DEVICE_STATUS` responden siempre.
+
+---
+
 ## Migración de huellas entre dispositivos — RESUELTO (2026-09-07)
 
 **Verificado contra dos equipos reales** (`2023081133` "Entrada Lateral" y

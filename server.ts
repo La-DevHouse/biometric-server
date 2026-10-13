@@ -14,9 +14,13 @@
 //
 // Collapsing the slashes here is equivalent to following the redirect Next
 // would have sent, except the method, headers and body survive.
+//
+// lib/deviceHttp rescues what Node's HTTP parser rejects before any of this
+// runs: the facial terminals report command errors with `Content-Length: -1`.
 
 import { createServer } from "http";
 import next from "next";
+import { rescueNegativeContentLength } from "./lib/deviceHttp";
 
 const port = parseInt(process.env.PORT || "3000", 10);
 // `--prod` keeps `npm start` shell-agnostic — no cross-env dependency needed to
@@ -38,7 +42,7 @@ function normalizeUrl(url: string): string {
 }
 
 app.prepare().then(() => {
-  createServer((req, res) => {
+  const server = createServer((req, res) => {
     if (req.url) {
       const normalized = normalizeUrl(req.url);
       if (normalized !== req.url) {
@@ -47,7 +51,9 @@ app.prepare().then(() => {
       }
     }
     handle(req, res);
-  }).listen(port, () => {
+  });
+  rescueNegativeContentLength(server, port);
+  server.listen(port, () => {
     console.log(
       `> Biometric server listening on http://0.0.0.0:${port} (${dev ? "development" : "production"})`,
     );
