@@ -67,6 +67,7 @@ Adempiere (`PANADERIA EL CASTILLO  Relación de Asistencia 2023054246
 | R6 | **Nombre del archivo**: `<EMPRESA> Relación de Asistencia <RIF> <YYYYMMDD>_<HHMMSS>.xlsx` (Adempiere ponía el número de serie del equipo; nosotros exportamos por empresa). |
 | R7 | Cada export se registra en **`export_run`** (quién, cuándo, empresa, rango, filas) — ya existe en el schema. Sin export por grupo, O10 (`export_run.scope_group_id`) deja de ser necesario. |
 | R8 | El botón de exportar vive en **Empresa → Asistencia** (ícono con tooltip), y exporta exactamente lo filtrado en pantalla (C4). |
+| R9 | **Repetidas (2026-10-14):** una marcación de la misma persona a menos de 3 min de su marcación anterior, en **cualquier** equipo de su alcance, no se muestra ni se exporta (se queda la primera de cada ráfaga encadenada). Cubre la persona que marca dos veces, la que marca en dos equipos de la sede y la misma marcación guardada bajo dos equipos (faciales, docs/04 → "dev_id placeholder"). Es **solo al leer**: `attendance_logs` guarda todo. Ventana en `ATTENDANCE_DEDUP_SECONDS` (default 180; 0 la apaga). La pantalla dice cuántas ocultó. `lib/companyAttendance.ts`. |
 
 ### Buscador global
 
@@ -133,7 +134,7 @@ Relevado del `.xlsx` de ejemplo (2026-09-27):
 | Hoja | una sola |
 | `A1:C4` (combinadas) | una celda de texto multilínea: `Relación de Asistencia` / `<EMPRESA>` / `Rango de Fecha: M/D/YYYY ~ M/D/YYYY` / `Fecha: M/D/YYYY HH:MM:SS` — Arial 12 negrita, ajuste de texto |
 | Fila 5 | títulos `Cédula` · `Nombre` · `Hora de Asistencia` — Arial negrita |
-| Desde fila 6 | una fila por **marcación cruda** (sin emparejar entrada/salida), orden cronológico. **Todas las celdas son texto**, incluidas la cédula y la hora. Hora: `M/D/YYYY h:mm AM/PM` (formato EE. UU., sin segundos). Fuente por defecto Arial 10 |
+| Desde fila 6 | una fila por **marcación** (sin emparejar entrada/salida, sin las repetidas de R9), orden cronológico. **Todas las celdas son texto**, incluidas la cédula y la hora. Hora: `M/D/YYYY h:mm AM/PM` (formato EE. UU., sin segundos). Fuente por defecto Arial 10 |
 | Última fila (combinada `A:C`) | `Impulsado por erpya.com / grupoalcoac (M/D/YYYY HH:MM:SS)` — Arial 8 cursiva. Se reemplaza la marca por la del sistema nuevo (a confirmar el texto; el contenido del pie no afecta el cruce en Galepso) |
 
 **Observación:** el `.xlsx` de ejemplo tiene rastros de haber sido regenerado por Google

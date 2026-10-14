@@ -2,7 +2,13 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { notFound } from "next/navigation";
 import { initDb, prisma } from "@/lib/db";
-import { companyAttendance, companyAttendanceSites, type CompanyAttendanceRow } from "@/lib/companyAttendance";
+import {
+  companyAttendance,
+  companyAttendanceHiddenCount,
+  companyAttendanceSites,
+  attendanceDedupSeconds,
+  type CompanyAttendanceRow,
+} from "@/lib/companyAttendance";
 import { requireUser } from "@/lib/auth";
 import { Table, Th, Td, Tr } from "@/components/ui/Table";
 import { MobileList, MobileRow } from "@/components/ui/MobileRow";
@@ -26,7 +32,8 @@ const RESULT_LIMIT = 300;
  * marcaciones de las personas con contrato en esta empresa, en cualquier equipo
  * de su alcance, dentro del período de su contrato (lib/companyAttendance).
  * Lo marcado en un equipo sin importar de quién es (IDs sin empleado incluidos)
- * está en Equipo → Marcaciones.
+ * está en Equipo → Marcaciones. Las repetidas a menos de la ventana de la
+ * anterior de la misma persona no se muestran ni se exportan (attendanceDedupSeconds).
  */
 export default async function EmpresaAsistenciaPage({
   params,
@@ -48,15 +55,13 @@ export default async function EmpresaAsistenciaPage({
   if (!company) notFound();
 
   const siteId = f.sede && Number.isFinite(Number(f.sede)) ? Number(f.sede) : null;
-  const [rows, sites] = await Promise.all([
-    companyAttendance(id, {
-      from: f.from,
-      to: f.to,
-      siteId,
-      limit: RESULT_LIMIT + 1,
-    }),
+  const filters = { from: f.from, to: f.to, siteId };
+  const [rows, sites, hidden] = await Promise.all([
+    companyAttendance(id, { ...filters, limit: RESULT_LIMIT + 1 }),
     companyAttendanceSites(id),
+    companyAttendanceHiddenCount(id, filters),
   ]);
+  const dedupMin = Math.round(attendanceDedupSeconds() / 60);
   const truncated = rows.length > RESULT_LIMIT;
   const logs = rows.slice(0, RESULT_LIMIT);
   const foreign = (companyId: number, companyName: string) => (companyId === id ? "" : ` (${companyName})`);
@@ -118,6 +123,11 @@ export default async function EmpresaAsistenciaPage({
             f.from,
             f.to,
             siteId != null ? `Sede ${sites.find((s) => s.id === siteId)?.name ?? ""}` : null
+          )}
+          {hidden > 0 && (
+            <span title="Marcaciones de la misma persona a menos de esa ventana de la anterior, en cualquier equipo. Siguen guardadas; no se muestran ni se exportan.">
+              {" "}· {hidden} repetida{hidden === 1 ? "" : "s"} (menos de {dedupMin} min) sin mostrar
+            </span>
           )}
         </p>
         <Suspense fallback={<div className="h-(--control-h) w-(--control-h)" />}>

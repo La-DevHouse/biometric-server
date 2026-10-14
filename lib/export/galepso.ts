@@ -6,7 +6,7 @@ import { cedulaDigits } from "@/lib/fingerprints";
  * Export de asistencia para Galepso (docs/11 R1–R8, formato en §3): réplica del
  * `.xlsx` "Relación de Asistencia" que hoy baja Adempiere y ALCO carga en
  * Galepso. Una hoja; A1:C4 combinadas con el encabezado multilínea; títulos en
- * la fila 5; una fila por marcación cruda desde la 6, TODO como texto; pie
+ * la fila 5; una fila por marcación desde la 6 (sin las repetidas, docs/11 R9), TODO como texto; pie
  * combinado A:C en cursiva. Las filas las da `companyAttendance` (por contrato),
  * la misma consulta que se ve en Empresa → Asistencia.
  */

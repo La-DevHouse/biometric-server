@@ -51,9 +51,30 @@ export async function companyAttendanceSites(companyId: number) {
   });
 }
 
-export async function companyAttendance(companyId: number, f: CompanyAttendanceFilters = {}) {
+/**
+ * Ventana de repetidas (segundos): una marcación de la misma persona a menos de
+ * esto de su marcación anterior — en CUALQUIER equipo de su alcance — no se
+ * muestra ni se exporta. Cubre: la persona que marca dos veces para asegurarse,
+ * la que marca en dos equipos de la misma sede, y la misma marcación guardada
+ * bajo dos equipos (faciales con dev_id placeholder antes de la migración
+ * 20261012120000, docs/04). Lo guardado en attendance_logs NO se toca: es solo
+ * al leer, así que la regla se puede ajustar sin perder nada.
+ * Una ráfaga encadenada (cada una a < ventana de la anterior) queda en su primera.
+ * ATTENDANCE_DEDUP_SECONDS=0 la apaga.
+ */
+export function attendanceDedupSeconds(): number {
+  const n = Number(process.env.ATTENDANCE_DEDUP_SECONDS ?? 180);
+  return Number.isFinite(n) && n >= 0 ? n : 180;
+}
+
+/** io_time → timestamp, solo si tiene la forma YYYYMMDDhhmmss (uno raro no rompe la consulta). */
+const IO_TS = (col: string) =>
+  `CASE WHEN ${col} ~ '^[0-9]{14}$' THEN to_timestamp(${col}, 'YYYYMMDDHH24MISS') END`;
+
+/** La consulta completa, con `kept` (false = repetida dentro de la ventana). */
+async function attendanceQuery(companyId: number, f: CompanyAttendanceFilters) {
   const companyIds = await scopeCompanyIds(companyId);
-  if (companyIds.length === 0) return [];
+  if (companyIds.length === 0) return null;
 
   const conditions: string[] = [`s.company_id IN (${companyIds.map(() => "?").join(", ")})`];
   const args: unknown[] = [...companyIds];
@@ -69,15 +90,13 @@ export async function companyAttendance(companyId: number, f: CompanyAttendanceF
     conditions.push("al.io_time <= ?");
     args.push(toDayBound(f.to, "end"));
   }
-  args.push(companyId);
-
-  const order = f.order === "asc" ? "ASC" : "DESC";
-  const limit = f.limit != null ? `LIMIT ${Math.max(0, Math.floor(f.limit))}` : "";
+  args.push(companyId, attendanceDedupSeconds());
 
   // Persona: por el employee_id ya resuelto, o por cédula = user_id (docs/10 §4.6).
   // El contrato se mira con fechas, no con status: una baja siempre deja end_date.
-  return allAsync<CompanyAttendanceRow>(
-    `WITH marks AS (
+  // DISTINCT ON (m.id): el cruce por dígitos de cédula puede dar dos personas
+  // (V-123 y E-123); una marcación sale una sola vez.
+  const sql = `WITH marks AS (
        SELECT al.id, al.io_time, al.user_id,
               COALESCE(al.employee_id, e.id) AS employee_id,
               s.id AS site_id, s.name AS site_name,
@@ -88,21 +107,53 @@ export async function companyAttendance(companyId: number, f: CompanyAttendanceF
          LEFT JOIN employee e
            ON al.employee_id IS NULL AND regexp_replace(e.national_id, '\\D', '', 'g') = al.user_id
         WHERE al.io_time IS NOT NULL AND ${conditions.join(" AND ")}
-     )
-     SELECT m.id, m.io_time, m.user_id, m.employee_id,
-            p.first_name, p.last_name, p.national_id,
-            m.site_id, m.site_name, m.device_name
-       FROM marks m
-       JOIN employee p ON p.id = m.employee_id
-      WHERE EXISTS (
-              SELECT 1 FROM employment em
-               WHERE em.employee_id = m.employee_id
-                 AND em.company_id = ?
-                 AND to_date(substr(m.io_time, 1, 8), 'YYYYMMDD') >= em.start_date
-                 AND (em.end_date IS NULL OR to_date(substr(m.io_time, 1, 8), 'YYYYMMDD') <= em.end_date)
-            )
-      ORDER BY m.io_time ${order}, m.id ${order}
+     ), scoped AS (
+       SELECT DISTINCT ON (m.id)
+              m.id, m.io_time, m.user_id, m.employee_id,
+              p.first_name, p.last_name, p.national_id,
+              m.site_id, m.site_name, m.device_name
+         FROM marks m
+         JOIN employee p ON p.id = m.employee_id
+        WHERE EXISTS (
+                SELECT 1 FROM employment em
+                 WHERE em.employee_id = m.employee_id
+                   AND em.company_id = ?
+                   AND to_date(substr(m.io_time, 1, 8), 'YYYYMMDD') >= em.start_date
+                   AND (em.end_date IS NULL OR to_date(substr(m.io_time, 1, 8), 'YYYYMMDD') <= em.end_date)
+              )
+        ORDER BY m.id, m.employee_id
+     ), judged AS (
+       SELECT sc.*,
+              ${IO_TS("sc.io_time")} - lag(${IO_TS("sc.io_time")})
+                OVER (PARTITION BY sc.employee_id ORDER BY sc.io_time, sc.id) AS since_prev
+         FROM scoped sc
+     ), flagged AS (
+       SELECT j.*, (j.since_prev IS NULL OR j.since_prev >= make_interval(secs => ?)) AS kept
+         FROM judged j
+     )`;
+  return { sql, args };
+}
+
+export async function companyAttendance(companyId: number, f: CompanyAttendanceFilters = {}) {
+  const q = await attendanceQuery(companyId, f);
+  if (!q) return [];
+  const order = f.order === "asc" ? "ASC" : "DESC";
+  const limit = f.limit != null ? `LIMIT ${Math.max(0, Math.floor(f.limit))}` : "";
+  return allAsync<CompanyAttendanceRow>(
+    `${q.sql}
+     SELECT id, io_time, user_id, employee_id, first_name, last_name, national_id, site_id, site_name, device_name
+       FROM flagged
+      WHERE kept
+      ORDER BY io_time ${order}, id ${order}
       ${limit}`,
-    args
+    q.args
   );
+}
+
+/** Cuántas marcaciones oculta la ventana de repetidas con estos filtros (para avisarlo en pantalla). */
+export async function companyAttendanceHiddenCount(companyId: number, f: CompanyAttendanceFilters = {}): Promise<number> {
+  const q = await attendanceQuery(companyId, f);
+  if (!q) return 0;
+  const row = await allAsync<{ n: number }>(`${q.sql} SELECT COUNT(*)::int AS n FROM flagged WHERE NOT kept`, q.args);
+  return Number(row[0]?.n ?? 0);
 }

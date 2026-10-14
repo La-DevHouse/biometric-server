@@ -137,3 +137,55 @@ test("companyAttendance: si el grupo no comparte empleados, solo cuentan los equ
   assert.deepEqual(rows.map((r) => r.io_time), ["20260910080000"]);
   assert.deepEqual((await ca.companyAttendanceSites(A.id)).map((s) => s.id), [A.siteId]);
 });
+
+test("companyAttendance: repetidas a menos de 3 min de la anterior (cualquier equipo) no se muestran ni exportan", async () => {
+  const A = await company("DD");
+  const dev1 = await device("dd1", A.siteId);
+  const dev2 = await device("dd2", A.siteId);
+  const eva = ced(5);
+  const eId = await employee(eva);
+  await contract(eId, A.id, "2026-09-01");
+
+  await mark(dev1, eva, "20260910080000"); // entrada
+  await mark(dev1, eva, "20260910080130"); // la repite 1:30 después → fuera
+  await mark(dev2, eva, "20260910080130"); // misma hora en el otro equipo de la sede → fuera
+  await mark(dev1, eva, "20260910080400"); // 2:30 después de la anterior: ráfaga encadenada → fuera
+  await mark(dev2, eva, "20260910170000"); // salida → dentro
+  await mark(dev2, eva, "20260910170300"); // justo 3:00 después → dentro (la ventana es "menos de")
+
+  const rows = await ca.companyAttendance(A.id, { order: "asc" });
+  assert.deepEqual(
+    rows.map((r) => r.io_time),
+    ["20260910080000", "20260910170000", "20260910170300"]
+  );
+  assert.equal(await ca.companyAttendanceHiddenCount(A.id), 3);
+
+  // Con el límite de la vista (más reciente primero) la ventana se aplica antes de cortar.
+  const top = await ca.companyAttendance(A.id, { limit: 2 });
+  assert.deepEqual(top.map((r) => r.io_time), ["20260910170300", "20260910170000"]);
+
+  // ATTENDANCE_DEDUP_SECONDS=0 la apaga.
+  const prev = process.env.ATTENDANCE_DEDUP_SECONDS;
+  process.env.ATTENDANCE_DEDUP_SECONDS = "0";
+  try {
+    assert.equal((await ca.companyAttendance(A.id)).length, 6);
+  } finally {
+    if (prev === undefined) delete process.env.ATTENDANCE_DEDUP_SECONDS;
+    else process.env.ATTENDANCE_DEDUP_SECONDS = prev;
+  }
+});
+
+test("companyAttendance: dos personas con los mismos dígitos de cédula no duplican la marcación", async () => {
+  const A = await company("CC");
+  const dev = await device("cc1", A.siteId);
+  const digits = ced(6);
+  const v = await employee(digits); // V-<digits>
+  const e = await prisma.employee.create({ data: { national_id: `E-${digits}`, first_name: "Otra", last_name: P } });
+  created.employees.push(e.id);
+  await contract(v, A.id, "2026-09-01");
+  await contract(e.id, A.id, "2026-09-01");
+  await mark(dev, digits, "20260910080000");
+
+  const rows = await ca.companyAttendance(A.id);
+  assert.equal(rows.length, 1);
+});
