@@ -39,6 +39,17 @@ export interface CompanyAttendanceFilters {
   /** Sin límite si se omite (el export necesita todo). */
   limit?: number;
   order?: "asc" | "desc";
+  /**
+   * Solo para un export (docs/11 R10): marcaciones de IDs de equipo sin empleado
+   * que, en esta consulta, cuentan como de esa persona. No se guarda nada.
+   */
+  assign?: DeviceUserAssignment[];
+}
+
+export interface DeviceUserAssignment {
+  dev_id: string;
+  user_id: string;
+  employee_id: number;
 }
 
 /** Sedes donde pueden marcar los empleados de esta empresa (para el filtro). */
@@ -71,11 +82,8 @@ export function attendanceDedupSeconds(): number {
 const IO_TS = (col: string) =>
   `CASE WHEN ${col} ~ '^[0-9]{14}$' THEN to_timestamp(${col}, 'YYYYMMDDHH24MISS') END`;
 
-/** La consulta completa, con `kept` (false = repetida dentro de la ventana). */
-async function attendanceQuery(companyId: number, f: CompanyAttendanceFilters) {
-  const companyIds = await scopeCompanyIds(companyId);
-  if (companyIds.length === 0) return null;
-
+/** Filtros comunes (alcance, sede, rango) sobre `al` (attendance_logs) y `s` (site). */
+function scopeConditions(companyIds: number[], f: CompanyAttendanceFilters) {
   const conditions: string[] = [`s.company_id IN (${companyIds.map(() => "?").join(", ")})`];
   const args: unknown[] = [...companyIds];
   if (f.siteId != null) {
@@ -90,22 +98,47 @@ async function attendanceQuery(companyId: number, f: CompanyAttendanceFilters) {
     conditions.push("al.io_time <= ?");
     args.push(toDayBound(f.to, "end"));
   }
-  args.push(companyId, attendanceDedupSeconds());
+  return { conditions, args };
+}
 
-  // Persona: por el employee_id ya resuelto, o por cédula = user_id (docs/10 §4.6).
+/** La consulta completa, con `kept` (false = repetida dentro de la ventana). */
+async function attendanceQuery(companyId: number, f: CompanyAttendanceFilters) {
+  const companyIds = await scopeCompanyIds(companyId);
+  if (companyIds.length === 0) return null;
+  const scope = scopeConditions(companyIds, f);
+  const conditions = scope.conditions;
+  const assign = f.assign ?? [];
+  // Los parámetros van en el orden en que aparecen: primero la asignación (CTE asg).
+  const args: unknown[] = [
+    assign.map((a) => a.dev_id),
+    assign.map((a) => a.user_id),
+    assign.map((a) => a.employee_id),
+    ...scope.args,
+    companyId,
+    attendanceDedupSeconds(),
+  ];
+
+  // Persona: por el employee_id ya resuelto, por la asignación de este export
+  // (asg: ID viejo del equipo → persona, docs/11 R10) o por cédula = user_id
+  // (docs/10 §4.6).
   // El contrato se mira con fechas, no con status: una baja siempre deja end_date.
   // DISTINCT ON (m.id): el cruce por dígitos de cédula puede dar dos personas
   // (V-123 y E-123); una marcación sale una sola vez.
-  const sql = `WITH marks AS (
+  const sql = `WITH asg AS (
+       SELECT DISTINCT ON (t.dev_id, t.user_id) t.dev_id, t.user_id, t.employee_id
+         FROM unnest(?::text[], ?::text[], ?::int[]) AS t(dev_id, user_id, employee_id)
+     ), marks AS (
        SELECT al.id, al.io_time, al.user_id,
-              COALESCE(al.employee_id, e.id) AS employee_id,
+              COALESCE(al.employee_id, a.employee_id, e.id) AS employee_id,
               s.id AS site_id, s.name AS site_name,
               COALESCE(NULLIF(d.name, ''), d.dev_id) AS device_name
          FROM attendance_logs al
          JOIN devices d ON d.dev_id = al.dev_id
          JOIN site s ON s.id = d.site_id
+         LEFT JOIN asg a
+           ON al.employee_id IS NULL AND a.dev_id = al.dev_id AND a.user_id = al.user_id
          LEFT JOIN employee e
-           ON al.employee_id IS NULL AND regexp_replace(e.national_id, '\\D', '', 'g') = al.user_id
+           ON al.employee_id IS NULL AND a.employee_id IS NULL AND regexp_replace(e.national_id, '\\D', '', 'g') = al.user_id
         WHERE al.io_time IS NOT NULL AND ${conditions.join(" AND ")}
      ), scoped AS (
        SELECT DISTINCT ON (m.id)
@@ -156,4 +189,46 @@ export async function companyAttendanceHiddenCount(companyId: number, f: Company
   if (!q) return 0;
   const row = await allAsync<{ n: number }>(`${q.sql} SELECT COUNT(*)::int AS n FROM flagged WHERE NOT kept`, q.args);
   return Number(row[0]?.n ?? 0);
+}
+
+export interface UnmatchedDeviceUser {
+  dev_id: string;
+  device_name: string;
+  site_name: string;
+  user_id: string;
+  /** Nombre que tiene en el equipo (caché `users`), si se leyó alguna vez. */
+  user_name: string | null;
+  marks: number;
+  first_io_time: string;
+  last_io_time: string;
+}
+
+/**
+ * IDs de equipos del alcance con marcaciones en el rango que no son de ningún
+ * empleado: ni resueltas ni con la cédula de alguien. Esas marcaciones no salen
+ * en la asistencia ni en el export; el export avisa y deja asignarlas a una
+ * persona solo para ese archivo (docs/11 R10).
+ */
+export async function companyUnmatchedDeviceUsers(
+  companyId: number,
+  f: CompanyAttendanceFilters = {}
+): Promise<UnmatchedDeviceUser[]> {
+  const companyIds = await scopeCompanyIds(companyId);
+  if (companyIds.length === 0) return [];
+  const { conditions, args } = scopeConditions(companyIds, f);
+  const rows = await allAsync<UnmatchedDeviceUser>(
+    `SELECT al.dev_id, COALESCE(NULLIF(d.name, ''), d.dev_id) AS device_name, s.name AS site_name,
+            al.user_id, MAX(u.user_name) AS user_name, COUNT(*)::int AS marks,
+            MIN(al.io_time) AS first_io_time, MAX(al.io_time) AS last_io_time
+       FROM attendance_logs al
+       JOIN devices d ON d.dev_id = al.dev_id
+       JOIN site s ON s.id = d.site_id
+       LEFT JOIN users u ON u.dev_id = al.dev_id AND u.user_id = al.user_id
+      WHERE al.io_time IS NOT NULL AND al.employee_id IS NULL AND ${conditions.join(" AND ")}
+        AND NOT EXISTS (SELECT 1 FROM employee e WHERE regexp_replace(e.national_id, '\\D', '', 'g') = al.user_id)
+      GROUP BY al.dev_id, d.name, d.dev_id, s.name, al.user_id
+      ORDER BY COUNT(*) DESC, al.user_id`,
+    args
+  );
+  return rows.map((r) => ({ ...r, marks: Number(r.marks) }));
 }

@@ -12,7 +12,8 @@ import {
 import { requireUser } from "@/lib/auth";
 import { Table, Th, Td, Tr } from "@/components/ui/Table";
 import { MobileList, MobileRow } from "@/components/ui/MobileRow";
-import { DownloadBtn, DisabledBtn } from "@/components/ui/Btn";
+import { DisabledBtn } from "@/components/ui/Btn";
+import { AttendanceExportButton } from "@/components/admin/AttendanceExportButton";
 import { Tip } from "@/components/ui/IconBtn";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { CompanyTabs } from "@/components/admin/CompanyTabs";
@@ -66,7 +67,8 @@ export default async function EmpresaAsistenciaPage({
   const logs = rows.slice(0, RESULT_LIMIT);
   const foreign = (companyId: number, companyName: string) => (companyId === id ? "" : ` (${companyName})`);
 
-  // Export (docs/11 R8): exactamente lo filtrado en pantalla; exige rango.
+  // Export (docs/11 R8): exactamente lo filtrado en pantalla; exige rango. Antes de
+  // descargar avisa de marcaciones de IDs sin empleado (R10).
   const exportParams = new URLSearchParams();
   if (f.from) exportParams.set("from", f.from);
   if (f.to) exportParams.set("to", f.to);
@@ -75,13 +77,13 @@ export default async function EmpresaAsistenciaPage({
   const exportAction = (
     <span className="group/tip relative inline-flex">
       {canExport ? (
-        <DownloadBtn
-          variant="icon"
+        <AttendanceExportButton
+          companyId={company.id}
           href={`/admin/empresas/${company.id}/asistencia/export?${exportParams.toString()}`}
-          aria-label="Exportar a Excel (Galepso)"
-        >
-          {Icon.export}
-        </DownloadBtn>
+          from={f.from!}
+          to={f.to!}
+          sede={siteId}
+        />
       ) : (
         <DisabledBtn variant="icon">{Icon.export}</DisabledBtn>
       )}

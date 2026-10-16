@@ -189,3 +189,38 @@ test("companyAttendance: dos personas con los mismos dígitos de cédula no dupl
   const rows = await ca.companyAttendance(A.id);
   assert.equal(rows.length, 1);
 });
+
+test("IDs de equipo sin empleado: se detectan y, asignados solo para esa consulta, salen como de esa persona", async () => {
+  const A = await company("AL");
+  const dev = await device("al1", A.siteId);
+  const fer = ced(7);
+  const ferId = await employee(fer);
+  await contract(ferId, A.id, "2026-09-01");
+
+  await mark(dev, fer, "20260910080000"); // con cédula → normal
+  await mark(dev, "4471", "20260910080100"); // ID viejo, no es cédula de nadie
+  await mark(dev, "4471", "20260910170000");
+  await mark(dev, "4471", "20260801080000"); // fuera del rango pedido
+
+  const range = { from: "2026-09-01", to: "2026-09-30" };
+  const unmatched = await ca.companyUnmatchedDeviceUsers(A.id, range);
+  assert.deepEqual(
+    unmatched.map((u) => ({ dev: u.dev_id, id: u.user_id, n: u.marks, first: u.first_io_time, last: u.last_io_time })),
+    [{ dev, id: "4471", n: 2, first: "20260910080100", last: "20260910170000" }]
+  );
+  assert.deepEqual((await ca.companyAttendance(A.id, { ...range, order: "asc" })).map((r) => r.user_id), [fer]);
+
+  // Asignado a Fer en esta consulta: sus marcaciones salen como de Fer (la de 1 min
+  // después de la suya propia cuenta para la ventana de repetidas).
+  const assign = [{ dev_id: dev, user_id: "4471", employee_id: ferId }];
+  const rows = await ca.companyAttendance(A.id, { ...range, order: "asc", assign });
+  assert.deepEqual(
+    rows.map((r) => `${r.employee_id}@${r.io_time}`),
+    [`${ferId}@20260910080000`, `${ferId}@20260910170000`]
+  );
+  assert.equal(await ca.companyAttendanceHiddenCount(A.id, { ...range, assign }), 1);
+
+  // No se guarda nada: sin la asignación, todo vuelve a como estaba.
+  assert.deepEqual((await ca.companyAttendance(A.id, { ...range, order: "asc" })).map((r) => r.user_id), [fer]);
+  assert.equal((await ca.companyUnmatchedDeviceUsers(A.id, range)).length, 1);
+});
