@@ -44,6 +44,23 @@ export interface CompanyAttendanceFilters {
    * que, en esta consulta, cuentan como de esa persona. No se guarda nada.
    */
   assign?: DeviceUserAssignment[];
+  /**
+   * Solo la vista Empresa → Asistencia: incluye también las marcaciones de IDs de
+   * equipo que no son de ningún empleado (docs/11 R11). El export nunca las trae
+   * salvo que se asignen (`assign`).
+   */
+  withUnmatched?: boolean;
+}
+
+/** Fila de la vista: de un empleado, o de un ID de equipo sin empleado (employee_id null). */
+export interface AttendanceViewRow extends Omit<CompanyAttendanceRow, "employee_id" | "first_name" | "last_name" | "national_id"> {
+  employee_id: number | null;
+  first_name: string | null;
+  last_name: string | null;
+  national_id: string | null;
+  dev_id: string;
+  /** Nombre en el equipo (caché `users`), para las filas sin empleado. */
+  device_user_name: string | null;
 }
 
 export interface DeviceUserAssignment {
@@ -128,7 +145,7 @@ async function attendanceQuery(companyId: number, f: CompanyAttendanceFilters) {
        SELECT DISTINCT ON (t.dev_id, t.user_id) t.dev_id, t.user_id, t.employee_id
          FROM unnest(?::text[], ?::text[], ?::int[]) AS t(dev_id, user_id, employee_id)
      ), marks AS (
-       SELECT al.id, al.io_time, al.user_id,
+       SELECT al.id, al.io_time, al.user_id, al.dev_id,
               COALESCE(al.employee_id, a.employee_id, e.id) AS employee_id,
               s.id AS site_id, s.name AS site_name,
               COALESCE(NULLIF(d.name, ''), d.dev_id) AS device_name
@@ -141,10 +158,10 @@ async function attendanceQuery(companyId: number, f: CompanyAttendanceFilters) {
            ON al.employee_id IS NULL AND a.employee_id IS NULL AND regexp_replace(e.national_id, '\\D', '', 'g') = al.user_id
         WHERE al.io_time IS NOT NULL AND ${conditions.join(" AND ")}
      ), scoped AS (
-       SELECT DISTINCT ON (m.id)
+      (SELECT DISTINCT ON (m.id)
               m.id, m.io_time, m.user_id, m.employee_id,
               p.first_name, p.last_name, p.national_id,
-              m.site_id, m.site_name, m.device_name
+              m.site_id, m.site_name, m.device_name, m.dev_id, NULL::text AS device_user_name
          FROM marks m
          JOIN employee p ON p.id = m.employee_id
         WHERE EXISTS (
@@ -154,11 +171,23 @@ async function attendanceQuery(companyId: number, f: CompanyAttendanceFilters) {
                    AND to_date(substr(m.io_time, 1, 8), 'YYYYMMDD') >= em.start_date
                    AND (em.end_date IS NULL OR to_date(substr(m.io_time, 1, 8), 'YYYYMMDD') <= em.end_date)
               )
-        ORDER BY m.id, m.employee_id
+        ORDER BY m.id, m.employee_id)
+       ${
+         f.withUnmatched
+           ? `UNION ALL
+      (SELECT m.id, m.io_time, m.user_id, NULL::int, NULL::text, NULL::text, NULL::text,
+              m.site_id, m.site_name, m.device_name, m.dev_id, u.user_name
+         FROM marks m
+         LEFT JOIN users u ON u.dev_id = m.dev_id AND u.user_id = m.user_id
+        WHERE m.employee_id IS NULL)`
+           : ""
+       }
      ), judged AS (
+       -- Repetidas por persona; un ID sin empleado cuenta como su propia "persona" (equipo + ID).
        SELECT sc.*,
               ${IO_TS("sc.io_time")} - lag(${IO_TS("sc.io_time")})
-                OVER (PARTITION BY sc.employee_id ORDER BY sc.io_time, sc.id) AS since_prev
+                OVER (PARTITION BY COALESCE(sc.employee_id::text, 'u:' || sc.dev_id || ':' || sc.user_id)
+                      ORDER BY sc.io_time, sc.id) AS since_prev
          FROM scoped sc
      ), flagged AS (
        SELECT j.*, (j.since_prev IS NULL OR j.since_prev >= make_interval(secs => ?)) AS kept
@@ -167,20 +196,31 @@ async function attendanceQuery(companyId: number, f: CompanyAttendanceFilters) {
   return { sql, args };
 }
 
-export async function companyAttendance(companyId: number, f: CompanyAttendanceFilters = {}) {
+async function attendanceRows<T>(companyId: number, f: CompanyAttendanceFilters): Promise<T[]> {
   const q = await attendanceQuery(companyId, f);
   if (!q) return [];
   const order = f.order === "asc" ? "ASC" : "DESC";
   const limit = f.limit != null ? `LIMIT ${Math.max(0, Math.floor(f.limit))}` : "";
-  return allAsync<CompanyAttendanceRow>(
+  return allAsync<T>(
     `${q.sql}
-     SELECT id, io_time, user_id, employee_id, first_name, last_name, national_id, site_id, site_name, device_name
+     SELECT id, io_time, user_id, employee_id, first_name, last_name, national_id, site_id, site_name, device_name,
+            dev_id, device_user_name
        FROM flagged
       WHERE kept
       ORDER BY io_time ${order}, id ${order}
       ${limit}`,
     q.args
   );
+}
+
+/** Lo que se exporta: solo marcaciones de empleados (más las asignadas en `assign`). */
+export async function companyAttendance(companyId: number, f: CompanyAttendanceFilters = {}) {
+  return attendanceRows<CompanyAttendanceRow>(companyId, { ...f, withUnmatched: false });
+}
+
+/** Lo que se ve en Empresa → Asistencia: lo exportable + las marcaciones de IDs sin empleado. */
+export async function companyAttendanceView(companyId: number, f: CompanyAttendanceFilters = {}) {
+  return attendanceRows<AttendanceViewRow>(companyId, { ...f, withUnmatched: true });
 }
 
 /** Cuántas marcaciones oculta la ventana de repetidas con estos filtros (para avisarlo en pantalla). */

@@ -3,12 +3,13 @@ import { Suspense } from "react";
 import { notFound } from "next/navigation";
 import { initDb, prisma } from "@/lib/db";
 import {
-  companyAttendance,
+  companyAttendanceView,
   companyAttendanceHiddenCount,
   companyAttendanceSites,
   attendanceDedupSeconds,
-  type CompanyAttendanceRow,
+  type AttendanceViewRow,
 } from "@/lib/companyAttendance";
+import { Tag } from "@/components/ui/Tag";
 import { requireUser } from "@/lib/auth";
 import { Table, Th, Td, Tr } from "@/components/ui/Table";
 import { MobileList, MobileRow } from "@/components/ui/MobileRow";
@@ -57,15 +58,16 @@ export default async function EmpresaAsistenciaPage({
   if (!company) notFound();
 
   const siteId = f.sede && Number.isFinite(Number(f.sede)) ? Number(f.sede) : null;
-  const filters = { from: f.from, to: f.to, siteId };
+  const filters = { from: f.from, to: f.to, siteId, withUnmatched: true };
   const [rows, sites, hidden] = await Promise.all([
-    companyAttendance(id, { ...filters, limit: RESULT_LIMIT + 1 }),
+    companyAttendanceView(id, { ...filters, limit: RESULT_LIMIT + 1 }),
     companyAttendanceSites(id),
     companyAttendanceHiddenCount(id, filters),
   ]);
   const dedupMin = Math.round(attendanceDedupSeconds() / 60);
   const truncated = rows.length > RESULT_LIMIT;
   const logs = rows.slice(0, RESULT_LIMIT);
+  const unmatchedShown = logs.filter((r) => r.employee_id == null).length;
   const foreign = (companyId: number, companyName: string) => (companyId === id ? "" : ` (${companyName})`);
 
   // Export (docs/11 R8): exactamente lo filtrado en pantalla; exige rango. Antes de
@@ -94,11 +96,21 @@ export default async function EmpresaAsistenciaPage({
 
   // Al abrir a una persona, "volver" regresa acá con los mismos filtros.
   const backHere = `/admin/empresas/${company.id}/asistencia${exportParams.size > 0 ? `?${exportParams.toString()}` : ""}`;
-  const person = (r: CompanyAttendanceRow) => (
-    <Link href={withReturn(`/admin/empleados/${r.employee_id}`, backHere)} className="text-accent no-underline hover:underline">
-      {r.last_name}, {r.first_name}
-    </Link>
-  );
+  // Sin empleado (docs/11 R11): el ID del equipo bien visible — si es una cédula
+  // real, alcanza para saber quién falta registrar.
+  const person = (r: AttendanceViewRow) =>
+    r.employee_id == null ? (
+      <span className="inline-flex flex-wrap items-center gap-2">
+        <span>{r.device_user_name || <span className="text-text/60">Sin nombre en el equipo</span>}</span>
+        <Tag variant="neutral">Sin empleado</Tag>
+      </span>
+    ) : (
+      <Link href={withReturn(`/admin/empleados/${r.employee_id}`, backHere)} className="text-accent no-underline hover:underline">
+        {r.last_name}, {r.first_name}
+      </Link>
+    );
+  const idCell = (r: AttendanceViewRow) =>
+    r.employee_id == null ? <span title="ID en el equipo (no es la cédula de ningún empleado registrado)">ID {r.user_id}</span> : r.national_id;
 
   return (
     <div className="flex max-w-5xl flex-col gap-4">
@@ -158,7 +170,7 @@ export default async function EmpresaAsistenciaPage({
       {logs.length === 0 ? (
         <EmptyState
           title="Sin marcaciones para estos filtros"
-          description="Probá con otro rango de fechas o sede. Solo aparecen marcaciones de personas con contrato en esta empresa, hechas dentro del período de su contrato."
+          description="Probá con otro rango de fechas o sede. Aparecen las marcaciones de personas con contrato en esta empresa (dentro del período del contrato) y las de IDs de sus equipos que no son de ningún empleado."
         />
       ) : (
         <>
@@ -168,7 +180,7 @@ export default async function EmpresaAsistenciaPage({
                 <tr>
                   <Th>Fecha y hora</Th>
                   <Th>Persona</Th>
-                  <Th>Cédula</Th>
+                  <Th>Cédula / ID</Th>
                   <Th>Sede</Th>
                   <Th>Equipo</Th>
                 </tr>
@@ -178,7 +190,7 @@ export default async function EmpresaAsistenciaPage({
                   <Tr key={r.id}>
                     <Td className="font-mono">{formatIoTime(r.io_time)}</Td>
                     <Td>{person(r)}</Td>
-                    <Td className="font-mono text-xs">{r.national_id}</Td>
+                    <Td className="font-mono text-xs">{idCell(r)}</Td>
                     <Td>{r.site_name}</Td>
                     <Td>{r.device_name}</Td>
                   </Tr>
@@ -190,12 +202,12 @@ export default async function EmpresaAsistenciaPage({
             {logs.map((r) => (
               <MobileRow
                 key={r.id}
-                title={`${r.last_name}, ${r.first_name}`}
+                title={r.employee_id == null ? `${r.device_user_name || "Sin nombre"} · sin empleado` : `${r.last_name}, ${r.first_name}`}
                 tags={<span className="font-mono text-xs text-text/60">{formatIoTime(r.io_time)}</span>}
                 fields={[
                   { label: "Sede", value: r.site_name },
                   { label: "Equipo", value: r.device_name },
-                  { label: "Cédula", value: r.national_id },
+                  r.employee_id == null ? { label: "ID en equipo", value: r.user_id } : { label: "Cédula", value: r.national_id ?? "" },
                 ]}
               />
             ))}
@@ -203,7 +215,9 @@ export default async function EmpresaAsistenciaPage({
           <p className="m-0 text-xs text-text/70">
             {logs.length} marcación{logs.length === 1 ? "" : "es"}
             {truncated ? ` (mostrando las ${RESULT_LIMIT} más recientes)` : ""} · por contrato: es lo que se exporta a
-            nómina. Lo marcado en un equipo por cualquier ID está en Equipos → Marcaciones.
+            nómina.
+            {unmatchedShown > 0 &&
+              ` Las «Sin empleado» (${unmatchedShown}) son IDs del equipo que no son la cédula de nadie registrado: no salen en el export salvo que al exportar elijas de quién son.`}
           </p>
         </>
       )}

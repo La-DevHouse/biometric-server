@@ -224,3 +224,30 @@ test("IDs de equipo sin empleado: se detectan y, asignados solo para esa consult
   assert.deepEqual((await ca.companyAttendance(A.id, { ...range, order: "asc" })).map((r) => r.user_id), [fer]);
   assert.equal((await ca.companyUnmatchedDeviceUsers(A.id, range)).length, 1);
 });
+
+test("vista: incluye las marcaciones de IDs sin empleado (con su ID); el export no", async () => {
+  const A = await company("VW");
+  const dev = await device("vw1", A.siteId);
+  const gil = ced(8);
+  const gilId = await employee(gil);
+  await contract(gilId, A.id, "2026-09-01");
+  await db.runAsync(`INSERT INTO users (dev_id, user_id, user_name) VALUES (?, ?, ?)`, [dev, "31056872", "jhon adam"]);
+
+  await mark(dev, gil, "20260910080000");
+  await mark(dev, "31056872", "20260910090000");
+  await mark(dev, "31056872", "20260910090100"); // repetida del mismo ID → oculta
+  await mark(dev, "5", "20260910090030"); // otro ID: no es repetida de 31056872
+
+  const view = await ca.companyAttendanceView(A.id, { order: "asc" });
+  assert.deepEqual(
+    view.map((r) => ({ id: r.user_id, emp: r.employee_id, name: r.device_user_name ?? r.last_name })),
+    [
+      { id: gil, emp: gilId, name: P },
+      { id: "31056872", emp: null, name: "jhon adam" },
+      { id: "5", emp: null, name: null },
+    ]
+  );
+  assert.equal(await ca.companyAttendanceHiddenCount(A.id, { withUnmatched: true }), 1);
+  assert.deepEqual((await ca.companyAttendance(A.id)).map((r) => r.user_id), [gil], "el export solo lleva empleados");
+  await db.runAsync(`DELETE FROM users WHERE dev_id = ?`, [dev]);
+});

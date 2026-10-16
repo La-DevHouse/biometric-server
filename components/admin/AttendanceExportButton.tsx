@@ -68,13 +68,11 @@ export function AttendanceExportButton({
     }
   }
 
-  function finish(applyAssignments: boolean) {
+  function finish() {
     const list = unmatched ?? [];
-    const assignments = applyAssignments
-      ? list
-          .filter((u) => choice[key(u)])
-          .map((u) => ({ dev_id: u.dev_id, user_id: u.user_id, employee_id: Number(choice[key(u)]) }))
-      : [];
+    const assignments = list
+      .filter((u) => choice[key(u)])
+      .map((u) => ({ dev_id: u.dev_id, user_id: u.user_id, employee_id: Number(choice[key(u)]) }));
     setUnmatched(null);
     download(assignments.length > 0 ? `${href}&asg=${encodeURIComponent(JSON.stringify(assignments))}` : href);
   }
@@ -92,14 +90,14 @@ export function AttendanceExportButton({
         open={unmatched !== null}
         onClose={() => setUnmatched(null)}
         closable={!busy}
-        title="Marcaciones sin empleado"
+        title="Hay marcaciones sin empleado"
         footer={
-          <div className="flex flex-wrap justify-end gap-2">
-            <Btn onClick={() => finish(false)} disabled={busy}>
-              Excluir todas y exportar
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <Btn onClick={() => setUnmatched(null)} disabled={busy}>
+              Cancelar
             </Btn>
-            <Btn variant="primary" onClick={() => finish(true)} disabled={busy}>
-              {assignedCount > 0 ? `Asignar ${assignedCount} y exportar` : "Exportar sin estas"}
+            <Btn variant="primary" onClick={finish} disabled={busy}>
+              {assignedCount > 0 ? `Exportar e incluir ${assignedCount} ID${assignedCount === 1 ? "" : "s"}` : "Exportar sin incluirlas"}
             </Btn>
           </div>
         }
@@ -107,40 +105,47 @@ export function AttendanceExportButton({
         <div className="flex flex-col gap-3">
           <p className="m-0 text-sm">
             En este rango hay <strong>{totalMarks}</strong> marcaci{totalMarks === 1 ? "ón" : "ones"} de{" "}
-            <strong>{list.length}</strong> ID{list.length === 1 ? "" : "s"} del equipo que no corresponde
-            {list.length === 1 ? "" : "n"} a ningún empleado (su ID no es una cédula registrada). Así como están, no
-            salen en el export.
+            {list.length === 1 ? "un ID" : <><strong>{list.length}</strong> IDs</>} que no{" "}
+            {list.length === 1 ? "es la cédula" : "son la cédula"} de ningún empleado registrado.{" "}
+            <strong>Si no hacés nada, no se incluyen en el archivo.</strong>
           </p>
           <p className="m-0 text-xs text-text/70">
-            Elegí a quién pertenece cada ID para incluir sus marcaciones en este archivo, o dejalo en «Excluir». La
-            asignación es solo para esta descarga: no se guarda ni cambia nada en el sistema. Solo salen las que caen
-            dentro del contrato de esa persona con la empresa.
+            Si sabés de quién son, elegí a la persona y se incluyen a su nombre — solo en este archivo, no se guarda
+            nada. Si el ID es una cédula, es probablemente una persona que todavía no está registrada en el sistema.
           </p>
           <ul className="m-0 flex list-none flex-col gap-2 p-0">
             {list.map((u) => (
-              <li key={key(u)} className="flex flex-col gap-2 border border-neutral-300 p-3 sm:flex-row sm:items-center">
-                <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+              <li key={key(u)} className="flex flex-col gap-3 border border-neutral-300 p-3 sm:flex-row sm:items-end">
+                <div className="flex min-w-0 flex-1 flex-col gap-1">
+                  <span className="font-mono text-[11px] uppercase tracking-[0.08em] text-text/60">ID en el equipo</span>
+                  <span className="font-mono text-lg font-semibold leading-none">{u.user_id}</span>
                   <span className="text-sm">
-                    <span className="font-mono">{u.user_id}</span>
-                    {u.user_name ? <span className="text-text/80"> · {u.user_name}</span> : null}
+                    {u.user_name ? (
+                      <>Nombre en el equipo: {u.user_name}</>
+                    ) : (
+                      <span className="text-text/60">Sin nombre en el equipo</span>
+                    )}
                   </span>
                   <span className="text-xs text-text/70">
-                    {u.device_name} · {u.site_name} — {u.marks} marcaci{u.marks === 1 ? "ón" : "ones"} (
-                    {formatIoTime(u.first_io_time)}
-                    {u.first_io_time !== u.last_io_time ? ` → ${formatIoTime(u.last_io_time)}` : ""})
+                    {u.marks} marcaci{u.marks === 1 ? "ón" : "ones"} ·{" "}
+                    {u.first_io_time === u.last_io_time
+                      ? formatIoTime(u.first_io_time)
+                      : `${formatIoTime(u.first_io_time)} → ${formatIoTime(u.last_io_time)}`}{" "}
+                    · {u.device_name}, {u.site_name}
                   </span>
                 </div>
-                <div className="sm:w-64">
+                <label className="flex flex-col gap-1 sm:w-64">
+                  <span className="font-mono text-[11px] uppercase tracking-[0.08em] text-text/60">¿De quién son?</span>
                   <Combobox
                     options={employees}
                     value={choice[key(u)] ?? ""}
                     onChange={(v) => setChoice((c) => ({ ...c, [key(u)]: v }))}
-                    emptyLabel="Excluir"
+                    emptyLabel="No incluir"
                     placeholder="Buscar persona…"
-                    ariaLabel={`Persona para el ID ${u.user_id}`}
+                    ariaLabel={`¿De quién son las marcaciones del ID ${u.user_id}?`}
                     disabled={busy}
                   />
-                </div>
+                </label>
               </li>
             ))}
           </ul>
