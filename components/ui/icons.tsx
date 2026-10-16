@@ -76,6 +76,13 @@ export const Icon = {
       <circle cx="12" cy="10" r="2.5" />
     </Svg>
   ),
+  // Equipo (terminal con pantalla) + "+": agregar un equipo a una sede.
+  addDevice: (
+    <Svg>
+      <rect x="3" y="3" width="11" height="18" rx="2" />
+      <path d="M6.5 7h4M8.5 17h0M19 9v6M16 12h6" />
+    </Svg>
+  ),
   export: <Svg><path d="M12 3v12M7 10l5 5 5-5M4 21h16" /></Svg>,
 } as const;
 

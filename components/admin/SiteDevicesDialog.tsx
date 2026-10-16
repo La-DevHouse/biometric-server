@@ -55,7 +55,7 @@ export function SiteDevicesDialog({
 
   return (
     <>
-      <IconBtn icon={Icon.assign} label="Asignar equipo" onClick={() => setOpen(true)} />
+      <IconBtn icon={Icon.addDevice} label="Asignar equipo" onClick={() => setOpen(true)} />
       <Dialog open={open} onClose={() => setOpen(false)} closable={!pending} title={`Equipos de ${site.name}`}>
         <form onSubmit={onSubmit} className="flex flex-col gap-3">
           <input type="hidden" name="site_id" value={site.id} />
