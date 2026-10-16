@@ -1,7 +1,52 @@
 "use client";
 
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { cx } from "@/lib/cx";
+
+/** Mismo corte que el `md:` de Tailwind: debajo de esto el diálogo es hoja desde abajo. */
+const SHEET_QUERY = "(max-width: 767.98px)";
+
+/**
+ * Posición de la hoja móvil pegada al borde inferior de lo que de verdad se
+ * ve. Con solo CSS (`bottom: 0`) la hoja se ancla al fondo del viewport de
+ * layout, y en iOS (Chrome y Safari) ese fondo queda DEBAJO de la barra
+ * inferior del navegador: se veía el título y el primer label, y el resto de
+ * los campos quedaba tapado. `visualViewport` sí descuenta las barras (y el
+ * teclado, así un campo enfocado no queda abajo del teclado). Sin
+ * visualViewport, o en desktop, se queda con el CSS de siempre.
+ */
+function useSheetPosition(open: boolean): CSSProperties | undefined {
+  const [style, setStyle] = useState<CSSProperties>();
+
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!open || !vv) return;
+    const mq = window.matchMedia(SHEET_QUERY);
+    const update = () => {
+      if (!mq.matches) return setStyle(undefined);
+      setStyle({
+        top: vv.offsetTop + vv.height,
+        bottom: "auto",
+        marginTop: 0,
+        marginBottom: 0,
+        transform: "translateY(-100%)",
+        maxHeight: vv.height * 0.9,
+      });
+    };
+    const raf = requestAnimationFrame(update);
+    vv.addEventListener("resize", update);
+    vv.addEventListener("scroll", update);
+    mq.addEventListener("change", update);
+    return () => {
+      cancelAnimationFrame(raf);
+      vv.removeEventListener("resize", update);
+      vv.removeEventListener("scroll", update);
+      mq.removeEventListener("change", update);
+    };
+  }, [open]);
+
+  return open ? style : undefined;
+}
 
 /**
  * Native <dialog> gives focus trapping and Esc-to-close for free. Backdrop
@@ -36,6 +81,7 @@ export function Dialog({
   children: ReactNode;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
+  const sheetStyle = useSheetPosition(open);
 
   useEffect(() => {
     const dialog = ref.current;
@@ -55,6 +101,7 @@ export function Dialog({
   return (
     <dialog
       ref={ref}
+      style={sheetStyle}
       onCancel={(e) => {
         if (!closable) e.preventDefault();
       }}
