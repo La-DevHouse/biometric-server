@@ -3,45 +3,32 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { cx } from "@/lib/cx";
 
-/** Mismo corte que el `md:` de Tailwind: debajo de esto el diálogo es hoja desde abajo. */
-const SHEET_QUERY = "(max-width: 767.98px)";
-
 /**
- * Posición de la hoja móvil pegada al borde inferior de lo que de verdad se
- * ve. Con solo CSS (`bottom: 0`) la hoja se ancla al fondo del viewport de
- * layout, y en iOS (Chrome y Safari) ese fondo queda DEBAJO de la barra
- * inferior del navegador: se veía el título y el primer label, y el resto de
- * los campos quedaba tapado. `visualViewport` sí descuenta las barras (y el
- * teclado, así un campo enfocado no queda abajo del teclado). Sin
- * visualViewport, o en desktop, se queda con el CSS de siempre.
+ * Fondo de lo visible para la hoja móvil, como variables CSS que usan las
+ * clases `max-md:` del <dialog> (ver ahí). En iOS el CSS solo no alcanza:
+ * `bottom: 0` ancla la hoja al fondo del viewport de layout, que en Chrome
+ * de iPhone queda muy por debajo de lo que se ve (se veía el título y el
+ * primer label; el resto, tapado). `visualViewport` descuenta las barras y el
+ * teclado; si no existe, las clases caen a `100dvh`.
  */
-function useSheetPosition(open: boolean): CSSProperties | undefined {
+function useSheetViewport(open: boolean): CSSProperties | undefined {
   const [style, setStyle] = useState<CSSProperties>();
 
   useEffect(() => {
     const vv = window.visualViewport;
     if (!open || !vv) return;
-    const mq = window.matchMedia(SHEET_QUERY);
-    const update = () => {
-      if (!mq.matches) return setStyle(undefined);
+    const update = () =>
       setStyle({
-        top: vv.offsetTop + vv.height,
-        bottom: "auto",
-        marginTop: 0,
-        marginBottom: 0,
-        transform: "translateY(-100%)",
-        maxHeight: vv.height * 0.9,
-      });
-    };
+        "--vv-bottom": `${vv.offsetTop + vv.height}px`,
+        "--vv-max": `${vv.height * 0.9}px`,
+      } as CSSProperties);
     const raf = requestAnimationFrame(update);
     vv.addEventListener("resize", update);
     vv.addEventListener("scroll", update);
-    mq.addEventListener("change", update);
     return () => {
       cancelAnimationFrame(raf);
       vv.removeEventListener("resize", update);
       vv.removeEventListener("scroll", update);
-      mq.removeEventListener("change", update);
     };
   }, [open]);
 
@@ -81,7 +68,7 @@ export function Dialog({
   children: ReactNode;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
-  const sheetStyle = useSheetPosition(open);
+  const sheetStyle = useSheetViewport(open);
 
   useEffect(() => {
     const dialog = ref.current;
@@ -134,8 +121,13 @@ export function Dialog({
         "m-auto h-fit border border-text shadow-hard",
         "md:w-[min(92vw,460px)] md:max-h-[85dvh]",
         // Mobile: hoja modal desde abajo ("bottom sheet" de la maqueta móvil),
-        // a todo el ancho, con la manija arriba.
-        "max-md:mb-0 max-md:w-full max-md:max-w-full max-md:max-h-[90dvh] max-md:shadow-[0_-6px_0_rgb(16_18_21/4%)]"
+        // a todo el ancho, con la manija arriba. Se ancla por ARRIBA (top en el
+        // fondo de lo visible + translate -100%), no con bottom:0: en Chrome de
+        // iPhone el bottom:0 de un fixed cae debajo de las barras del navegador,
+        // mientras que 100dvh sí mide lo visible (es lo que usa AdminShell).
+        // --vv-* (useSheetViewport) lo afina con el teclado abierto.
+        "max-md:top-[min(100dvh,var(--vv-bottom,100dvh))] max-md:bottom-auto max-md:my-0 max-md:-translate-y-full",
+        "max-md:w-full max-md:max-w-full max-md:max-h-[min(90dvh,var(--vv-max,90dvh))] max-md:shadow-[0_-6px_0_rgb(16_18_21/4%)]"
       )}
     >
       <div className="flex justify-center pt-[8px] md:hidden" aria-hidden>
