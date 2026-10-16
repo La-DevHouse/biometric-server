@@ -6,13 +6,17 @@ import { MobileList, MobileRow } from "@/components/ui/MobileRow";
 import { Tag } from "@/components/ui/Tag";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { SiteFormDialog } from "@/components/admin/SiteFormDialog";
+import { SiteDevicesDialog, type SiteDeviceOption } from "@/components/admin/SiteDevicesDialog";
 import { RecordStatusButton } from "@/components/admin/RecordStatusButton";
 import { CompanyTabs } from "@/components/admin/CompanyTabs";
 import { setSiteStatusAction } from "@/app/admin/empresas/actions";
 
 export const dynamic = "force-dynamic";
 
-/** Empresa → Sedes (docs/11 C3). Toda empresa activa tiene al menos una sede activa (docs/10 R2). */
+/**
+ * Empresa → Sedes (docs/11 C3). Toda empresa activa tiene al menos una sede activa (docs/10 R2).
+ * Cada sede activa permite asignarle cualquier equipo sin ir al equipo (C5).
+ */
 export default async function EmpresaSedesPage({ params }: { params: Promise<{ id: string }> }) {
   await requireUser();
   const id = Number((await params).id);
@@ -28,11 +32,24 @@ export default async function EmpresaSedesPage({ params }: { params: Promise<{ i
   });
   if (!company) notFound();
 
+  // Todos los equipos, para asignar cualquiera a una sede desde acá (con dónde está hoy).
+  const allDevices = await prisma.devices.findMany({
+    select: { dev_id: true, name: true, site_id: true, site: { select: { name: true, company: { select: { name: true } } } } },
+    orderBy: [{ name: "asc" }, { dev_id: "asc" }],
+  });
+  const deviceOptions: SiteDeviceOption[] = allDevices.map((d) => ({
+    dev_id: d.dev_id,
+    label: d.name?.trim() || d.dev_id,
+    site_id: d.site_id,
+    where: d.site ? `${d.site.company.name} · ${d.site.name}` : null,
+  }));
+
   const statusTag = (active: boolean) => (
     <Tag variant={active ? "accent" : "neutral"}>{active ? "Activa" : "Inactiva"}</Tag>
   );
   const siteActions = (s: (typeof company.sites)[number]) => (
     <>
+      <SiteDevicesDialog site={{ id: s.id, name: s.name, active: s.status === "active" }} devices={deviceOptions} />
       <SiteFormDialog companyId={company.id} site={{ id: s.id, name: s.name, code: s.code, timezone: s.timezone }} />
       <RecordStatusButton id={s.id} active={s.status === "active"} label="sede" action={setSiteStatusAction} />
     </>

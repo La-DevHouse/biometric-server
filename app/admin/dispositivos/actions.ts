@@ -15,35 +15,31 @@ function str(fd: FormData, k: string) {
  * Asigna un dispositivo a una sede (docs/10 R3): la empresa sale de la sede, no
  * se guarda aparte. Sin sede = "pendiente de asignar" — el equipo queda fuera
  * del alcance de todos (congelado para el fan-out y el reconciliador). La sede
- * tiene que estar activa y ser de una empresa activa.
+ * tiene que estar activa y ser de una empresa activa. `note` undefined = no se toca.
  */
-export async function assignDeviceAction(
-  _prev: AdminActionState,
-  fd: FormData
+async function assignDeviceToSite(
+  actorId: number,
+  dev_id: string,
+  site_id: number | null,
+  note?: string | null
 ): Promise<AdminActionState> {
-  const user = await requireUser();
-  const dev_id = str(fd, "dev_id");
-  if (!dev_id) return { status: "error", error: "Equipo inválido." };
-
-  const siteRaw = str(fd, "site_id");
-  const site_id = siteRaw === "" ? null : Number(siteRaw);
-  const device_admin_note = str(fd, "device_admin_note") || null;
-
   const device = await prisma.devices.findUnique({
     where: { dev_id },
     select: { dev_id: true, site_id: true },
   });
   if (!device) return { status: "error", error: "El equipo no existe." };
 
+  let companyId: number | null = null;
   if (site_id != null) {
     if (!Number.isFinite(site_id)) return { status: "error", error: "Sede inválida." };
     const site = await prisma.site.findUnique({
       where: { id: site_id },
-      select: { status: true, company: { select: { status: true } } },
+      select: { status: true, company_id: true, company: { select: { status: true } } },
     });
     if (!site) return { status: "error", error: "La sede seleccionada no existe." };
     if (site.status !== "active" || site.company.status !== "active")
       return { status: "error", error: "La sede (o su empresa) está inactiva." };
+    companyId = site.company_id;
   }
 
   // Timestamp de "desde cuándo" está en esta sede (docs/09 §3.13 / AI 7): se
@@ -54,10 +50,10 @@ export async function assignDeviceAction(
 
   await prisma.devices.update({
     where: { dev_id },
-    data: { site_id, device_admin_note, company_linked_at },
+    data: { site_id, company_linked_at, ...(note !== undefined ? { device_admin_note: note } : {}) },
   });
   await writeAudit({
-    actorId: user.id,
+    actorId,
     action: "device.assign",
     entityType: "devices",
     entityId: dev_id,
@@ -68,17 +64,44 @@ export async function assignDeviceAction(
   // de su sede nueva y quita a quienes ya no aplican (docs/10 §4.3, T12). Sin sede → congelado.
   if (linkChanged && site_id != null) {
     try {
-      await startReconcileDevice(dev_id, { trigger: "event", actorId: user.id });
+      await startReconcileDevice(dev_id, { trigger: "event", actorId });
     } catch (e) {
       console.error("no se pudo disparar la sincronización del equipo:", e);
     }
   }
   revalidatePath(`/admin/dispositivos/${dev_id}`);
   revalidatePath("/admin/dispositivos");
+  if (companyId != null) revalidatePath(`/admin/empresas/${companyId}/sedes`);
   return {
     status: "ok",
     message: site_id == null ? "Equipo sin sede: queda pendiente de asignar." : "Equipo asignado.",
   };
+}
+
+/** Desde el equipo (Equipos → Asignar): sede + nota interna. */
+export async function assignDeviceAction(
+  _prev: AdminActionState,
+  fd: FormData
+): Promise<AdminActionState> {
+  const user = await requireUser();
+  const dev_id = str(fd, "dev_id");
+  if (!dev_id) return { status: "error", error: "Equipo inválido." };
+  const siteRaw = str(fd, "site_id");
+  const site_id = siteRaw === "" ? null : Number(siteRaw);
+  return assignDeviceToSite(user.id, dev_id, site_id, str(fd, "device_admin_note") || null);
+}
+
+/** Desde la sede (Empresa → Sedes → Asignar equipo): solo la sede; la nota del equipo no se toca. */
+export async function assignDeviceToSiteAction(
+  _prev: AdminActionState,
+  fd: FormData
+): Promise<AdminActionState> {
+  const user = await requireUser();
+  const dev_id = str(fd, "dev_id");
+  if (!dev_id) return { status: "error", error: "Elegí un equipo." };
+  const site_id = Number(str(fd, "site_id"));
+  if (!Number.isInteger(site_id)) return { status: "error", error: "Sede inválida." };
+  return assignDeviceToSite(user.id, dev_id, site_id);
 }
 
 /**

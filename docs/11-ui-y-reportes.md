@@ -46,6 +46,7 @@ Adempiere (`PANADERIA EL CASTILLO  Relación de Asistencia 2023054246
 | C2 | **Logo chico** en cada fila de empresa, cargado por `<img src="/admin/empresas/[id]/logo">` con carga diferida — **nunca** el binario en la consulta de la lista (hasta 512 KB c/u). |
 | C3 | Detalle con pestañas **Información** (RIF, grupo, modelo de negocio, dirección, rep. legal, umbrales; **logo grande arriba a la derecha**), **Sedes** (pestaña propia), **Empleados**, **Asistencia**. |
 | C4 | **Empresa → Asistencia muestra lo mismo que se exporta** (R3/b): las marcaciones de **sus empleados con contrato**, en cualquier equipo de su alcance, con columna **Sede** (dónde marcó). Solo cuentan las marcaciones **dentro del período del contrato**. El filtro de sede lista las sedes donde pueden marcar sus empleados (las propias y, si el grupo comparte empleados, las del grupo). La vista "dónde se marcó" (con IDs sin empleado) queda en Equipo → Marcaciones (E6). *Reemplaza la regla de pantalla de `10` R12 / F3.* |
+| C5 | **Asignar equipos desde la sede (2026-10-16):** en Empresa → Sedes, cada sede activa tiene "Asignar equipo": muestra los equipos que ya están en ella y un buscador con **todos** los equipos (con dónde está cada uno hoy, o "pendiente de asignar"). Si el elegido está en otra sede, avisa que se mueve; muestra el impacto en los equipos antes de guardar. Mismo efecto que Equipos → Asignar (`assignDeviceToSiteAction`): auditoría `device.assign` y corrida del reconciliador. No toca la nota interna del equipo. |
 
 ### Empleados y Categorías
 
