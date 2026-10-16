@@ -1,39 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { cx } from "@/lib/cx";
-
-/**
- * Fondo de lo visible para la hoja móvil, como variables CSS que usan las
- * clases `max-md:` del <dialog> (ver ahí). En iOS el CSS solo no alcanza:
- * `bottom: 0` ancla la hoja al fondo del viewport de layout, que en Chrome
- * de iPhone queda muy por debajo de lo que se ve (se veía el título y el
- * primer label; el resto, tapado). `visualViewport` descuenta las barras y el
- * teclado; si no existe, las clases caen a `100dvh`.
- */
-function useSheetViewport(open: boolean): CSSProperties | undefined {
-  const [style, setStyle] = useState<CSSProperties>();
-
-  useEffect(() => {
-    const vv = window.visualViewport;
-    if (!open || !vv) return;
-    const update = () =>
-      setStyle({
-        "--vv-bottom": `${vv.offsetTop + vv.height}px`,
-        "--vv-max": `${vv.height * 0.9}px`,
-      } as CSSProperties);
-    const raf = requestAnimationFrame(update);
-    vv.addEventListener("resize", update);
-    vv.addEventListener("scroll", update);
-    return () => {
-      cancelAnimationFrame(raf);
-      vv.removeEventListener("resize", update);
-      vv.removeEventListener("scroll", update);
-    };
-  }, [open]);
-
-  return open ? style : undefined;
-}
 
 /**
  * Native <dialog> gives focus trapping and Esc-to-close for free. Backdrop
@@ -68,7 +36,6 @@ export function Dialog({
   children: ReactNode;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
-  const sheetStyle = useSheetViewport(open);
 
   useEffect(() => {
     const dialog = ref.current;
@@ -88,7 +55,6 @@ export function Dialog({
   return (
     <dialog
       ref={ref}
-      style={sheetStyle}
       onCancel={(e) => {
         if (!closable) e.preventDefault();
       }}
@@ -121,13 +87,8 @@ export function Dialog({
         "m-auto h-fit border border-text shadow-hard",
         "md:w-[min(92vw,460px)] md:max-h-[85dvh]",
         // Mobile: hoja modal desde abajo ("bottom sheet" de la maqueta móvil),
-        // a todo el ancho, con la manija arriba. Se ancla por ARRIBA (top en el
-        // fondo de lo visible + translate -100%), no con bottom:0: en Chrome de
-        // iPhone el bottom:0 de un fixed cae debajo de las barras del navegador,
-        // mientras que 100dvh sí mide lo visible (es lo que usa AdminShell).
-        // --vv-* (useSheetViewport) lo afina con el teclado abierto.
-        "max-md:top-[min(100dvh,var(--vv-bottom,100dvh))] max-md:bottom-auto max-md:my-0 max-md:-translate-y-full",
-        "max-md:w-full max-md:max-w-full max-md:max-h-[min(90dvh,var(--vv-max,90dvh))] max-md:shadow-[0_-6px_0_rgb(16_18_21/4%)]"
+        // a todo el ancho, con la manija arriba.
+        "max-md:mb-0 max-md:w-full max-md:max-w-full max-md:max-h-[90dvh] max-md:shadow-[0_-6px_0_rgb(16_18_21/4%)]"
       )}
     >
       <div className="flex justify-center pt-[8px] md:hidden" aria-hidden>
@@ -146,7 +107,12 @@ export function Dialog({
           </button>
         )}
       </div>
-      <div className="flex flex-col gap-[14px] px-[14px] py-[16px] max-md:p-[16px] flex-1 min-h-0 overflow-y-auto">{children}</div>
+      {/* flex-auto, NO flex-1: con `flex: 1` (base 0) dentro de un diálogo
+          h-fit, WebKit (Safari y todo navegador de iPhone) calcula el alto del
+          diálogo con esa base 0 y el cuerpo colapsa a su padding — se veía el
+          título y el primer label, nada más. Con base auto el cuerpo mide su
+          contenido, y min-h-0 lo deja achicarse y hacer scroll al llegar al max-h. */}
+      <div className="flex flex-col gap-[14px] px-[14px] py-[16px] max-md:p-[16px] flex-auto min-h-0 overflow-y-auto">{children}</div>
       {footer && (
         <div className="flex-none flex justify-end gap-[10px] max-md:flex-col max-md:gap-[8px] border-t border-divider md:bg-chrome px-[14px] py-[12px] max-md:px-[16px] max-md:py-[14px]">
           {footer}
