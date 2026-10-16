@@ -23,6 +23,7 @@ import { syncCompanyAttendanceAction } from "@/app/admin/actions";
 import { formatIoTime } from "@/lib/ioTime";
 import { UrlFilters } from "@/components/admin/UrlFilters";
 import { filterSummary } from "@/lib/filterSummary";
+import { withReturn } from "@/lib/returnTo";
 
 export const dynamic = "force-dynamic";
 
@@ -91,8 +92,10 @@ export default async function EmpresaAsistenciaPage({
     </span>
   );
 
+  // Al abrir a una persona, "volver" regresa acá con los mismos filtros.
+  const backHere = `/admin/empresas/${company.id}/asistencia${exportParams.size > 0 ? `?${exportParams.toString()}` : ""}`;
   const person = (r: CompanyAttendanceRow) => (
-    <Link href={`/admin/empleados/${r.employee_id}`} className="text-accent no-underline hover:underline">
+    <Link href={withReturn(`/admin/empleados/${r.employee_id}`, backHere)} className="text-accent no-underline hover:underline">
       {r.last_name}, {r.first_name}
     </Link>
   );

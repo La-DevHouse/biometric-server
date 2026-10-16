@@ -21,7 +21,13 @@ function fmtDate(d: Date | null): string {
  * sin cambiar la empresa) y baja. No hay "Trasladar": otra empresa = baja +
  * contrato nuevo, cada paso con su aviso de impacto.
  */
-export default async function EmpleadoContratosPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function EmpleadoContratosPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ volver?: string }>;
+}) {
   await requireUser();
   const id = Number((await params).id);
   if (!Number.isFinite(id)) notFound();
@@ -68,7 +74,7 @@ export default async function EmpleadoContratosPage({ params }: { params: Promis
 
   return (
     <div className="flex max-w-5xl flex-col gap-4">
-      <EmployeeTabs employeeId={id} active="contratos" />
+      <EmployeeTabs employeeId={id} active="contratos" returnTo={(await searchParams).volver} />
 
       {employments.length === 0 ? (
         <EmptyState

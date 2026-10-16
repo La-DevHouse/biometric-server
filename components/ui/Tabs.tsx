@@ -45,6 +45,7 @@ export function Tabs({ items, active, label }: { items: TabItem[]; active: strin
 export function DetailHeader({
   backHref,
   backLabel,
+  secondaryLink,
   title,
   subtitle,
   badges,
@@ -52,6 +53,8 @@ export function DetailHeader({
 }: {
   backHref: string;
   backLabel: string;
+  /** Otra salida, menos destacada (ej. "Todos los empleados" cuando se volvió a una empresa). */
+  secondaryLink?: { href: string; label: string };
   title: React.ReactNode;
   subtitle?: React.ReactNode;
   badges?: React.ReactNode;
@@ -59,9 +62,16 @@ export function DetailHeader({
 }) {
   return (
     <div className="flex flex-col gap-1">
-      <Link href={backHref} className="self-start text-xs font-semibold text-accent-700 no-underline hover:underline">
-        ← {backLabel}
-      </Link>
+      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+        <Link href={backHref} className="text-xs font-semibold text-accent-700 no-underline hover:underline">
+          ← {backLabel}
+        </Link>
+        {secondaryLink && (
+          <Link href={secondaryLink.href} className="text-xs text-text/70 no-underline hover:underline">
+            {secondaryLink.label}
+          </Link>
+        )}
+      </div>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex min-w-0 flex-wrap items-center gap-3">
           <h2 className="m-0 font-heading text-2xl font-semibold tracking-[-0.02em]">{title}</h2>

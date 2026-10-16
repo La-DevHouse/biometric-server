@@ -12,7 +12,13 @@ function fmtDate(d: Date | null): string {
 }
 
 /** Empleado → Información (docs/11 P1): documento, RIF, nacimiento, foto de cédula. */
-export default async function EmpleadoInfoPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function EmpleadoInfoPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ volver?: string }>;
+}) {
   await requireUser();
   const id = Number((await params).id);
   if (!Number.isFinite(id)) notFound();
@@ -38,7 +44,7 @@ export default async function EmpleadoInfoPage({ params }: { params: Promise<{ i
 
   return (
     <div className="flex max-w-4xl flex-col gap-6">
-      <EmployeeTabs employeeId={employee.id} active="info" />
+      <EmployeeTabs employeeId={employee.id} active="info" returnTo={(await searchParams).volver} />
 
       <section className="flex flex-col gap-2 border border-divider p-4 text-sm">
         <Field label="Documento" value={employee.national_id} mono />

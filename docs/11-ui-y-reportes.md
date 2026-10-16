@@ -24,6 +24,7 @@ Adempiere (`PANADERIA EL CASTILLO  Relación de Asistencia 2023054246
 | U5 | **"Contratos de trabajo"** en lugar de "Empleos" en todo lo visible (la tabla sigue siendo `employment`, `10` R4). |
 | U6 | **Selector de empresa con búsqueda** (combobox) como componente global del sistema de diseño; se usa en la asignación de sede de un equipo y en los filtros por empresa. |
 | U7 | Se corrige el warning de React "two children with the same key" (el selector de sedes usaba el nombre de la empresa como key; hay dos empresas de prueba con el mismo nombre). Key = id. |
+| U8 | **Volver a donde venía (2026-10-16):** al abrir un empleado desde una empresa (Empleados o Asistencia), el link lleva `?volver=<ruta de la empresa con sus filtros>`. En el empleado, "←" vuelve a esa empresa (con su nombre) y "Todos los empleados" queda como salida secundaria; las pestañas conservan el regreso. Solo se aceptan rutas internas de empresas (`lib/returnTo.ts`); cualquier otra cosa se ignora y queda "← Empleados". |
 
 ### Equipos
 

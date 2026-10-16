@@ -11,6 +11,7 @@ import { ResyncEnrollmentsButton } from "@/components/admin/ResyncEnrollmentsBut
 import { ImportEmployeesButton } from "@/components/admin/ImportEmployeesButton";
 import { activeEmploymentWhere, devicesInCompanyScope } from "@/lib/scope";
 import { cedulaDigits, MAX_FINGERPRINTS } from "@/lib/fingerprints";
+import { withReturn } from "@/lib/returnTo";
 
 export const dynamic = "force-dynamic";
 
@@ -153,7 +154,7 @@ export default async function EmpresaEmpleadosPage({ params }: { params: Promise
                   return (
                     <Tr key={r.employeeId}>
                       <Td>
-                        <Link href={`/admin/empleados/${r.employeeId}`} className="text-accent no-underline hover:underline">
+                        <Link href={withReturn(`/admin/empleados/${r.employeeId}`, `/admin/empresas/${id}/empleados`)} className="text-accent no-underline hover:underline">
                           {r.name}
                         </Link>
                       </Td>
@@ -182,7 +183,7 @@ export default async function EmpresaEmpleadosPage({ params }: { params: Promise
               return (
                 <MobileRow
                   key={r.employeeId}
-                  href={`/admin/empleados/${r.employeeId}`}
+                  href={withReturn(`/admin/empleados/${r.employeeId}`, `/admin/empresas/${id}/empleados`)}
                   title={r.name}
                   tags={<Tag variant={st.variant}>{st.label}</Tag>}
                   fields={[

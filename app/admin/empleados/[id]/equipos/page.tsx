@@ -20,7 +20,13 @@ function fmtDate(d: Date | null): string {
  * Empleado → Equipos y huellas (docs/11 P1): estado por equipo (los de su
  * alcance ∪ donde está vinculada hoy, docs/10 §6) y sus huellas de referencia.
  */
-export default async function EmpleadoEquiposPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function EmpleadoEquiposPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ volver?: string }>;
+}) {
   await requireUser();
   const id = Number((await params).id);
   if (!Number.isFinite(id)) notFound();
@@ -86,7 +92,7 @@ export default async function EmpleadoEquiposPage({ params }: { params: Promise<
 
   return (
     <div className="flex max-w-4xl flex-col gap-6">
-      <EmployeeTabs employeeId={id} active="equipos" />
+      <EmployeeTabs employeeId={id} active="equipos" returnTo={(await searchParams).volver} />
 
       <section className="flex flex-col gap-2">
         <h3 className="m-0 text-sm font-semibold uppercase tracking-wide text-text/75">Equipos ({deviceStatus.length})</h3>

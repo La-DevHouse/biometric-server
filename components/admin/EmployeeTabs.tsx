@@ -7,6 +7,7 @@ import { Icon } from "@/components/ui/icons";
 import { EmployeeFormDialog, type EmployeeValues } from "./EmployeeFormDialog";
 import { MultiOpButton } from "./MultiOpButton";
 import { syncEmployeeNowAction } from "@/app/admin/actions";
+import { companyReturn, withReturn } from "@/lib/returnTo";
 
 export type EmployeeTab = "info" | "contratos" | "equipos";
 
@@ -18,15 +19,28 @@ function fmtDate(d: Date | null): string | null {
  * Encabezado + pestañas de un empleado (docs/11 P1): Información / Contratos de
  * trabajo / Equipos y huellas. Acciones: editar datos y sincronizar ahora.
  * Carga lo suyo (sin traer el binario de la foto de cédula); 404 si no existe.
+ * Si se llegó desde una empresa (`returnTo`, ?volver=…), "volver" lleva a esa
+ * empresa —con sus filtros— y "Todos los empleados" queda como salida secundaria;
+ * las pestañas conservan el regreso.
  */
-export async function EmployeeTabs({ employeeId, active }: { employeeId: number; active: EmployeeTab }) {
-  const [employee, withPhoto, vigentes] = await Promise.all([
+export async function EmployeeTabs({
+  employeeId,
+  active,
+  returnTo,
+}: {
+  employeeId: number;
+  active: EmployeeTab;
+  returnTo?: string | string[];
+}) {
+  const ret = companyReturn(returnTo);
+  const [employee, withPhoto, vigentes, fromCompany] = await Promise.all([
     prisma.employee.findUnique({
       where: { id: employeeId },
       select: { id: true, national_id: true, tax_id: true, first_name: true, last_name: true, birth_date: true },
     }),
     prisma.$queryRaw<{ id: number }[]>`SELECT id FROM employee WHERE id = ${employeeId} AND cedula_photo IS NOT NULL`,
     prisma.employment.count({ where: { employee_id: employeeId, ...activeEmploymentWhere() } }),
+    ret ? prisma.client_company.findUnique({ where: { id: ret.companyId }, select: { name: true } }) : null,
   ]);
   if (!employee) notFound();
 
@@ -40,12 +54,15 @@ export async function EmployeeTabs({ employeeId, active }: { employeeId: number;
     has_cedula_photo: withPhoto.length > 0,
   };
   const base = `/admin/empleados/${employee.id}`;
+  const back = ret && fromCompany ? ret.path : null;
+  const tab = (href: string) => withReturn(href, back);
 
   return (
     <div className="flex flex-col gap-3">
       <DetailHeader
-        backHref="/admin/empleados"
-        backLabel="Empleados"
+        backHref={back ?? "/admin/empleados"}
+        backLabel={back && fromCompany ? fromCompany.name : "Empleados"}
+        secondaryLink={back ? { href: "/admin/empleados", label: "Todos los empleados" } : undefined}
         title={`${employee.first_name} ${employee.last_name}`}
         badges={vigentes > 0 ? <Tag variant="accent">Activo</Tag> : <Tag variant="neutral">Pool</Tag>}
         subtitle={<span className="font-mono">{employee.national_id}</span>}
@@ -68,9 +85,9 @@ export async function EmployeeTabs({ employeeId, active }: { employeeId: number;
         label="Secciones del empleado"
         active={active}
         items={[
-          { key: "info", label: "Información", href: base },
-          { key: "contratos", label: "Contratos de trabajo", href: `${base}/contratos` },
-          { key: "equipos", label: "Equipos y huellas", href: `${base}/equipos` },
+          { key: "info", label: "Información", href: tab(base) },
+          { key: "contratos", label: "Contratos de trabajo", href: tab(`${base}/contratos`) },
+          { key: "equipos", label: "Equipos y huellas", href: tab(`${base}/equipos`) },
         ]}
       />
     </div>
