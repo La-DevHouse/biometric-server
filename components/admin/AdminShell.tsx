@@ -10,21 +10,21 @@ import { ToastProvider } from "./Toaster";
 import { OperationsTrackerProvider } from "./OperationsTracker";
 import { logoutAction } from "@/app/login/actions";
 import { CommandPalette } from "./CommandPalette";
+import { Icon } from "@/components/ui/icons";
 
-// Glifos mono por ítem — parte de la maqueta "Menú lateral" (2026-09-23), no
-// del set de acciones de components/ui/icons.tsx (ese es para botones de
-// toolbar; estos son de navegación, un caso aparte).
+// Una figura por sección (components/ui/icons.tsx → nav*), en SVG como el resto
+// del panel: antes eran caracteres Unicode (⌂ ▤ ▢ ◉ ☰ ◫ ⚿) que no decían nada.
 const NAV_ITEMS = [
-  { href: "/admin", label: "Inicio", icon: "⌂" },
-  { href: "/admin/dispositivos", label: "Equipos", icon: "▤" },
+  { href: "/admin", label: "Inicio", icon: Icon.navHome },
+  { href: "/admin/dispositivos", label: "Equipos", icon: Icon.navDevices },
 ] as const;
 
 const ADMIN_ITEMS = [
-  { href: "/admin/empresas", label: "Empresas", icon: "▢" },
-  { href: "/admin/empleados", label: "Empleados", icon: "◉" },
-  { href: "/admin/categorias", label: "Categorías", icon: "☰" },
-  { href: "/admin/horarios", label: "Horarios y turnos", icon: "◫" },
-  { href: "/admin/cuentas", label: "Cuentas", icon: "⚿" }
+  { href: "/admin/empresas", label: "Empresas", icon: Icon.navCompanies },
+  { href: "/admin/empleados", label: "Empleados", icon: Icon.navEmployees },
+  { href: "/admin/categorias", label: "Categorías", icon: Icon.navCategories },
+  { href: "/admin/horarios", label: "Horarios y turnos", icon: Icon.navSchedules },
+  { href: "/admin/cuentas", label: "Cuentas", icon: Icon.navAccounts }
 ] as const;
 
 const TITLES: Array<{ prefix: string; title: string }> = [
@@ -95,7 +95,7 @@ export function AdminShell({
 
   function navIconClass(href: string) {
     return cx(
-      "font-mono text-[18px] leading-none w-[18px] flex-none text-center",
+      "text-[18px] leading-none w-[18px] flex-none flex items-center justify-center",
       isNavActive(pathname, href) ? "text-[#cfe0f1]" : "text-neutral-700"
     );
   }

@@ -76,6 +76,59 @@ export const Icon = {
       <circle cx="12" cy="10" r="2.5" />
     </Svg>
   ),
+  // --- Menú lateral (AdminShell): una figura por sección ---
+  navHome: (
+    <Svg>
+      <path d="M3 11l9-7 9 7M5 9.5V20h14V9.5M10 20v-5h4v5" />
+    </Svg>
+  ),
+  // Huella: los equipos son biométricos.
+  navDevices: (
+    <Svg>
+      <path d="M5.2 6.5a8.5 8.5 0 0 1 13.6 0" />
+      <path d="M6.6 19.5C6 17.9 5.5 16 5.5 13.5a6.5 6.5 0 0 1 13 0c0 1.2-.1 2.4-.3 3.5" />
+      <path d="M10.4 21c-.7-1.9-1.1-4.2-1.1-7.2a2.7 2.7 0 0 1 5.4 0c0 2.4-.3 4.6-.9 6.7M12 13.8c0 2.4.2 4.5.7 6.2" />
+    </Svg>
+  ),
+  navCompanies: (
+    <Svg>
+      <path d="M4 21V5.5L12 3v18M12 21V9l8 2.5V21M2.5 21h19" />
+      <path d="M7.5 8h1.5M7.5 12h1.5M7.5 16h1.5M15.5 14h1.5M15.5 17.5h1.5" />
+    </Svg>
+  ),
+  // Capas: un grupo de empresas (buscador).
+  navGroups: (
+    <Svg>
+      <path d="M12 3.5l8.5 4.5-8.5 4.5L3.5 8z" />
+      <path d="M3.5 12.5l8.5 4.5 8.5-4.5M3.5 16.5l8.5 4.5 8.5-4.5" />
+    </Svg>
+  ),
+  navEmployees: (
+    <Svg>
+      <circle cx="12" cy="8" r="4" />
+      <path d="M4.5 21c0-4.1 3.4-7 7.5-7s7.5 2.9 7.5 7" />
+    </Svg>
+  ),
+  navCategories: (
+    <Svg>
+      <path d="M3.5 3.5h7.8l9.2 9.2-7.8 7.8-9.2-9.2z" />
+      <circle cx="8" cy="8" r="1.4" />
+    </Svg>
+  ),
+  navSchedules: (
+    <Svg>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7v5l3.2 2" />
+    </Svg>
+  ),
+  // Persona dentro de un círculo (avatar de cuenta), distinta de Empleados.
+  navAccounts: (
+    <Svg>
+      <circle cx="12" cy="12" r="9" />
+      <circle cx="12" cy="10" r="3" />
+      <path d="M6.6 18.6c1.3-1.9 3.2-2.9 5.4-2.9s4.1 1 5.4 2.9" />
+    </Svg>
+  ),
   // Equipo (terminal con pantalla) + "+": agregar un equipo a una sede.
   addDevice: (
     <Svg>

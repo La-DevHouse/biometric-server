@@ -4,15 +4,17 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { cx } from "@/lib/cx";
 import type { SearchHit, SearchKind } from "@/lib/search";
+import { Icon } from "@/components/ui/icons";
 
-const KIND: Record<SearchKind, { label: string; icon: string }> = {
-  empleado: { label: "Empleados", icon: "◉" },
-  empresa: { label: "Empresas", icon: "▢" },
-  equipo: { label: "Equipos", icon: "▤" },
-  sede: { label: "Sedes", icon: "⌖" },
-  grupo: { label: "Grupos", icon: "▣" },
-  horario: { label: "Horarios", icon: "◫" },
-  puesto: { label: "Puestos", icon: "☰" },
+// Mismas figuras que el menú lateral (components/ui/icons.tsx → nav*).
+const KIND: Record<SearchKind, { label: string; icon: React.ReactNode }> = {
+  empleado: { label: "Empleados", icon: Icon.navEmployees },
+  empresa: { label: "Empresas", icon: Icon.navCompanies },
+  equipo: { label: "Equipos", icon: Icon.navDevices },
+  sede: { label: "Sedes", icon: Icon.assign },
+  grupo: { label: "Grupos", icon: Icon.navGroups },
+  horario: { label: "Horarios", icon: Icon.navSchedules },
+  puesto: { label: "Puestos", icon: Icon.navCategories },
 };
 const ORDER: SearchKind[] = ["empleado", "empresa", "equipo", "sede", "grupo", "horario", "puesto"];
 
@@ -257,7 +259,7 @@ export function CommandPalette() {
                             i === active && "bg-accent-100"
                           )}
                         >
-                          <span aria-hidden className="w-4 flex-none text-center font-mono text-text/60">
+                          <span aria-hidden className="flex w-4 flex-none items-center justify-center text-base text-text/60">
                             {KIND[h.kind].icon}
                           </span>
                           <span className="min-w-0 flex-1">
