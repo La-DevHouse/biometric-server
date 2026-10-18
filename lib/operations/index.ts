@@ -33,7 +33,7 @@ import {
 import { sweepStaleOperations } from "./advance";
 import { isDeviceOnline } from "@/lib/deviceStatus";
 import { isPlaceholderDevId } from "@/lib/deviceIdentity";
-import { SERIAL_PATTERN } from "@/lib/deviceRekey";
+import { LOOKS_LIKE_SERIAL, serialCorrectionReason } from "@/lib/deviceRekey";
 
 export type { OperationKind, OperationStage, Privilege };
 export { PRIVILEGE_SCREEN_LABEL };
@@ -143,17 +143,19 @@ export async function startSyncClock(devId: string): Promise<StartResult> {
  * lib/deviceIdentity): se le escribe el serial de la caja con SET_FK_NAME y, al
  * confirmarlo, protocol-handlers mueve su registro al serial (lib/deviceRekey).
  * Para equipos normales no aplica: su identidad es el dev_id del cable y el
- * servidor ya mantiene su fk_name igual al serial.
+ * servidor ya mantiene su fk_name igual al serial. Tampoco para un facial que
+ * ya tiene un serial válido sin choques (serialCorrectionReason).
  */
 export async function startSetDeviceSerial(devId: string, serialRaw: string): Promise<StartResult> {
   const dev = await ensureDevice(devId);
   const serial = serialRaw.trim();
-  if (!SERIAL_PATTERN.test(serial)) throw new Error("El serial solo puede tener letras, números y guiones (4 a 24).");
+  if (!LOOKS_LIKE_SERIAL.test(serial)) throw new Error("El serial tiene que ser el número de la caja: solo dígitos, de 8 a 16.");
   if (isPlaceholderDevId(serial)) throw new Error("Ese número es el id genérico de fábrica, no el serial del equipo.");
   if (serial === devId) throw new Error("El equipo ya se identifica con ese serial.");
-  const row = await prisma.devices.findUnique({ where: { dev_id: devId }, select: { reported_dev_id: true } });
-  if (!isPlaceholderDevId(row?.reported_dev_id)) {
-    throw new Error("Este equipo ya se identifica por su serial de fábrica; no hace falta corregirlo.");
+  // Solo si hace falta: un facial cuyo nombre no parece serial (ej. FK_DEV) o con
+  // el que consulta más de un equipo. Un serial de verdad y sin choque no se toca.
+  if (!(await serialCorrectionReason(devId))) {
+    throw new Error("Este equipo ya se identifica con un serial válido y sin choques; no hace falta corregirlo.");
   }
   if (await prisma.devices.findUnique({ where: { dev_id: serial }, select: { dev_id: true } })) {
     throw new Error(`Ya hay un equipo registrado con el serial ${serial}.`);

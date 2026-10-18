@@ -26,7 +26,9 @@ const FACE_B = `${P}B`;
 const NORMAL = `${P}N`;
 const FK_DEV = `FK_${P}`;
 const SERIAL = `9${String(Date.now()).slice(-9)}`;
-const DEVS = [FACE_A, FACE_B, NORMAL, PLACEHOLDER, FK_DEV, SERIAL];
+const SERIAL_TAKEN = `8${String(Date.now()).slice(-9)}`;
+const SERIAL_OK = `7${String(Date.now()).slice(-9)}`;
+const DEVS = [FACE_A, FACE_B, NORMAL, PLACEHOLDER, FK_DEV, SERIAL, SERIAL_TAKEN, SERIAL_OK];
 
 after(async () => {
   await db.runAsync(`DELETE FROM commands WHERE dev_id = ANY(?::text[])`, [DEVS]);
@@ -184,10 +186,12 @@ test("corregir serial: un facial con nombre de fábrica pasa al serial de la caj
   await poll(PLACEHOLDER, FK_DEV); // llega con el nombre de fábrica
   await db.runAsync(`INSERT INTO users (dev_id, user_id, user_name) VALUES (?, '123', 'x')`, [FK_DEV]);
 
-  // Validaciones: equipo normal, serial ocupado, serial = placeholder.
-  await assert.rejects(ops.startSetDeviceSerial(NORMAL, "1234567890"), /ya se identifica por su serial/);
-  await assert.rejects(ops.startSetDeviceSerial(FK_DEV, FACE_A), /Ya hay un equipo/);
-  await assert.rejects(ops.startSetDeviceSerial(FK_DEV, PLACEHOLDER), /genérico/);
+  // Validaciones: equipo normal, serial ocupado, serial que no es un número de caja.
+  await prisma.devices.create({ data: { dev_id: SERIAL_TAKEN, fk_name: SERIAL_TAKEN } });
+  await assert.rejects(ops.startSetDeviceSerial(NORMAL, "1234567890"), /no hace falta corregirlo/);
+  await assert.rejects(ops.startSetDeviceSerial(FK_DEV, SERIAL_TAKEN), /Ya hay un equipo/);
+  await assert.rejects(ops.startSetDeviceSerial(FK_DEV, "FK_DEV2"), /solo dígitos/);
+  await assert.rejects(ops.startSetDeviceSerial(FK_DEV, "12345"), /solo dígitos/);
 
   const { id } = await ops.startSetDeviceSerial(FK_DEV, SERIAL);
   // Se cuela el GET_DEVICE_STATUS automático de los faciales: se consulta hasta que salga el SET_FK_NAME.
@@ -219,4 +223,18 @@ test("corregir serial: un facial con nombre de fábrica pasa al serial de la caj
   await poll(PLACEHOLDER, SERIAL);
   assert.equal(await prisma.devices.count({ where: { dev_id: { in: [FK_DEV, SERIAL] } } }), 1);
   await db.runAsync(`DELETE FROM users WHERE dev_id = ?`, [SERIAL]);
+});
+
+
+test("corregir serial solo si hace falta: un facial con serial válido y sin choques no se toca", async () => {
+  const rekey = require("../lib/deviceRekey") as typeof import("../lib/deviceRekey");
+  await poll(PLACEHOLDER, SERIAL_OK);
+  assert.equal(await rekey.serialCorrectionReason(SERIAL_OK), null);
+  await assert.rejects(ops.startSetDeviceSerial(SERIAL_OK, "1234567890"), /no hace falta corregirlo/);
+  assert.equal(await rekey.serialCorrectionReason(NORMAL), null, "equipo de huella: nunca");
+
+  // Si con ese mismo nombre consulta más de un equipo (≫ 6 por minuto), sí.
+  for (let i = 0; i < 10; i++) await poll(PLACEHOLDER, SERIAL_OK);
+  assert.equal(await rekey.serialCorrectionReason(SERIAL_OK), "shared");
+  await db.runAsync(`DELETE FROM raw_traffic WHERE dev_id = ?`, [SERIAL_OK]);
 });

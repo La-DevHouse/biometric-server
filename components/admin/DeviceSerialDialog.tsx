@@ -53,7 +53,8 @@ export function DeviceSerialDialog({
               value={serial}
               onChange={(e) => setSerial(e.target.value.trim())}
               required
-              pattern="[A-Za-z0-9\-]{4,24}"
+              pattern="[0-9]{8,16}"
+              inputMode="numeric"
               placeholder="2401058627"
               autoFocus
               autoComplete="off"
@@ -64,7 +65,7 @@ export function DeviceSerialDialog({
             </span>
           </label>
           {startError && <p className="m-0 text-sm text-text">{startError}</p>}
-          <Btn type="submit" variant="primary" disabled={busy || serial.length < 4}>
+          <Btn type="submit" variant="primary" disabled={busy || !/^\d{8,16}$/.test(serial)}>
             {busy ? "Enviando…" : "Enviar serial al equipo"}
           </Btn>
         </form>

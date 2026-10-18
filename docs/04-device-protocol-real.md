@@ -119,9 +119,13 @@ no lo afecta. Regla (`lib/deviceIdentity.ts`):
   el nombre del equipo. Si alguien le cambia el nombre, aparece como equipo nuevo.
 - **No todos traen el serial de fábrica** (2026-10-18: uno llegó como `FK_DEV`,
   nombre de fábrica — si llegan varios así, se ven como un solo equipo). En el
-  detalle del equipo, **"Corregir serial"** (ícono de llave, solo en estos
-  faciales; con la etiqueta "Serial sin corregir" si el nombre no es numérico):
-  se escribe el serial de la caja → `SET_FK_NAME` (operación `RENAME_DEVICE`,
+  detalle del equipo, **"Corregir serial"** (ícono de llave). **Solo aparece —y
+  el servidor solo lo acepta— si hace falta** (`serialCorrectionReason`): un
+  facial cuyo nombre no parece un serial (8–16 dígitos; etiqueta "Serial sin
+  corregir") o con el que consulta más de un equipo (etiqueta "Serial
+  repetido"). Un facial con serial válido y sin choques, o un equipo de huella,
+  no se puede cambiar. El serial nuevo también tiene que ser de 8–16 dígitos y
+  no existir ya. Se escribe el serial de la caja → `SET_FK_NAME` (operación `RENAME_DEVICE`,
   reintentada ante `Error`) → cuando el equipo lo acepta, `lib/deviceRekey.ts`
   mueve su registro y todo lo suyo al serial, y su próxima consulta ya llega
   así. Si hay más de ~7 consultas por minuto con ese nombre (más de un equipo

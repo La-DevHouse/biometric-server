@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { initDb, prisma, getAsync } from "@/lib/db";
+import { initDb, prisma } from "@/lib/db";
 import { isDeviceOnline } from "@/lib/deviceStatus";
 import { formatRelativeTime } from "@/lib/formatRelativeTime";
 import { Tabs, DetailHeader } from "@/components/ui/Tabs";
@@ -9,7 +9,7 @@ import { OpButton } from "./OpButton";
 import { RenameDeviceDialog } from "./RenameDeviceDialog";
 import { DeviceAssignDialog } from "./DeviceAssignDialog";
 import { DeviceSerialDialog } from "./DeviceSerialDialog";
-import { isPlaceholderDevId } from "@/lib/deviceIdentity";
+import { serialCorrectionReason } from "@/lib/deviceRekey";
 import { syncClockAction, updateDeviceAction } from "@/app/admin/actions";
 
 export type DeviceTab = "info" | "usuarios" | "marcaciones";
@@ -49,20 +49,9 @@ export async function DeviceTabs({ devId, active }: { devId: string; active: Dev
     company_tax_id: s.company.tax_id,
   }));
 
-  // Facial identificado por su nombre interno (lib/deviceIdentity): se le puede
-  // corregir el serial. Más de ~7 consultas por minuto con este nombre = hay más
-  // de un equipo físico detrás (cada uno consulta cada ~10 s).
-  const byName = isPlaceholderDevId(device.reported_dev_id);
-  const looksLikeSerial = /^\d{6,}$/.test(device.dev_id);
-  const polls = byName
-    ? await getAsync<{ n: number }>(
-        `SELECT COUNT(*)::int AS n FROM raw_traffic
-          WHERE direction = 'out' AND request_code = 'receive_cmd' AND dev_id = ?
-            AND created_at > (extract(epoch from now()) * 1000)::bigint - 60000`,
-        [device.dev_id]
-      )
-    : null;
-  const suspectShared = Number(polls?.n ?? 0) > 9;
+  // "Corregir serial" solo cuando hace falta (lib/deviceRekey): facial cuyo nombre
+  // no parece serial, o con el que consulta más de un equipo. Si no, ni se ofrece.
+  const serialFix = await serialCorrectionReason(device.dev_id);
 
   const lastSeen = device.last_seen_at == null ? null : Number(device.last_seen_at);
   const online = isDeviceOnline(lastSeen);
@@ -79,9 +68,14 @@ export async function DeviceTabs({ devId, active }: { devId: string; active: Dev
           <>
             <Tag variant={online ? "accent" : "neutral"}>{online ? "En línea" : "Desconectado"}</Tag>
             {frozen && <Tag variant="neutral">Pendiente de asignar</Tag>}
-            {byName && !looksLikeSerial && (
+            {serialFix === "not_serial" && (
               <span title="Este facial se identifica por su nombre interno y no parece un serial. Corregilo con el ícono de la llave.">
                 <Tag variant="neutral">Serial sin corregir</Tag>
+              </span>
+            )}
+            {serialFix === "shared" && (
+              <span title="Más de un equipo está consultando con este mismo nombre. Corregí el serial del que no corresponda.">
+                <Tag variant="neutral">Serial repetido</Tag>
               </span>
             )}
           </>
@@ -101,7 +95,7 @@ export async function DeviceTabs({ devId, active }: { devId: string; active: Dev
         actions={
           <>
             <RenameDeviceDialog devId={device.dev_id} currentName={device.name} />
-            {byName && <DeviceSerialDialog devId={device.dev_id} suspectShared={suspectShared} />}
+            {serialFix && <DeviceSerialDialog devId={device.dev_id} suspectShared={serialFix === "shared"} />}
             <OpButton
               action={syncClockAction}
               hidden={{ dev_id: device.dev_id }}
