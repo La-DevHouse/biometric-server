@@ -94,6 +94,8 @@ Detalle en `docs/04` y `docs/05`. Modelos: huella `WS535BW1_BSCS_v1.5.31`; facia
 - **Faciales:**
   - `dev_id` siempre `000000000001` → identidad por `fk_name`. Si alguien cambia el nombre del
     facial desde su teclado, aparece como equipo nuevo. Si `fk_name` está vacío, queda en cuarentena.
+    Algunos llegan con un nombre de fábrica (`FK_DEV`, 2026-10-18): se corrige con "Corregir serial"
+    en el detalle del equipo (escribe el serial con `SET_FK_NAME` y mueve el registro, `lib/deviceRekey.ts`).
   - Sus `realtime_glog`/`realtime_enroll_data` no se pueden atribuir y se descartan; las
     marcaciones entran por `GET_LOG_DATA` (lo conservan en memoria). Se pierden las fotos de marcación.
   - `GET_LOG_DATA`: **no responde con 0 marcaciones** e **ignora el rango de fechas**.
@@ -175,7 +177,7 @@ Detalle en `docs/04` y `docs/05`. Modelos: huella `WS535BW1_BSCS_v1.5.31`; facia
   commit (regla de `CLAUDE.md`). Las reglas de UI/reportes nuevas van como filas en `docs/11`.
 - **Decisiones del usuario que hay que respetar:** no cambiar cómo se guardan las marcaciones
   (deduplicar / asignar solo al leer o exportar); asignaciones de IDs sin empleado **no
-  persistentes**; el `fk_name` de los equipos no se edita desde el panel.
+  persistentes**; el `fk_name` de los equipos no se edita desde el panel (única excepción: "Corregir serial" de un facial).
 - **Al proponer algo con trade-offs**, dar una recomendación concreta; el usuario decide rápido.
   Si pregunta "¿qué falta?" o "¿por qué pasa X?", responder sin ejecutar cambios.
 

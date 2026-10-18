@@ -6,7 +6,7 @@
 
 export type OperationKind =
   | "SYNC_CLOCK"
-  | "RENAME_DEVICE" // histórico: el fk_name ya no se cambia desde el panel (lib/deviceIdentity)
+  | "RENAME_DEVICE" // solo "Corregir serial" de un facial (startSetDeviceSerial); el nombre visible es devices.name
   | "SYNC_USERS"
   | "RENAME_USER"
   | "CHANGE_PRIVILEGE"
@@ -71,7 +71,7 @@ export function truncateUserName(name: string): string {
 
 export const OPERATION_LABELS: Record<OperationKind, string> = {
   SYNC_CLOCK: "Sincronizar hora",
-  RENAME_DEVICE: "Renombrar equipo",
+  RENAME_DEVICE: "Corregir serial del equipo",
   SYNC_USERS: "Sincronizar lista de usuarios",
   RENAME_USER: "Renombrar usuario",
   CHANGE_PRIVILEGE: "Cambiar privilegio",

@@ -117,6 +117,15 @@ no lo afecta. Regla (`lib/deviceIdentity.ts`):
 - Placeholder con `fk_name` vacío → **cuarentena**: se contesta OK sin
   comandos y no se registra. Arreglo manual: escribir el serial de la caja en
   el nombre del equipo. Si alguien le cambia el nombre, aparece como equipo nuevo.
+- **No todos traen el serial de fábrica** (2026-10-18: uno llegó como `FK_DEV`,
+  nombre de fábrica — si llegan varios así, se ven como un solo equipo). En el
+  detalle del equipo, **"Corregir serial"** (ícono de llave, solo en estos
+  faciales; con la etiqueta "Serial sin corregir" si el nombre no es numérico):
+  se escribe el serial de la caja → `SET_FK_NAME` (operación `RENAME_DEVICE`,
+  reintentada ante `Error`) → cuando el equipo lo acepta, `lib/deviceRekey.ts`
+  mueve su registro y todo lo suyo al serial, y su próxima consulta ya llega
+  así. Si hay más de ~7 consultas por minuto con ese nombre (más de un equipo
+  detrás), el diálogo avisa: el comando le llega al primero que consulte.
 - Solo `receive_cmd` trae `fk_name`. `send_cmd_result` se atribuye por
   `trans_id` (el `commands.dev_id` al que se le mandó).
 - `realtime_glog` / `realtime_enroll_data` de un placeholder **no se pueden

@@ -236,10 +236,11 @@ export async function advanceOperationForCommand(input: AdvanceInput): Promise<v
 /** Single-command operations: one command, done on success. */
 async function advanceSimple(op: OperationRow, input: AdvanceInput): Promise<void> {
   if (op.kind === "RENAME_DEVICE") {
-    // Optimistic local write skipped deliberately — see the fk_name empty-
-    // string quirk in protocol-handlers.ts. The device is the source of
-    // truth and reports the new name on its own within ~10s.
-    await finishOperation(op.id, "done", "El equipo confirmó el cambio de nombre.");
+    // Corregir serial: el equipo aceptó el nombre nuevo. Su registro pasa al
+    // serial en protocol-handlers (lib/deviceRekey) justo después de esto, y en
+    // su próxima consulta (~10 s) ya se reporta con él.
+    const serial = op.params_json ? String(JSON.parse(op.params_json).fk_name ?? "") : "";
+    await finishOperation(op.id, "done", serial ? `El equipo aceptó el serial ${serial}.` : "El equipo aceptó el serial.");
     return;
   }
   if (op.kind === "CLEAR_ENROLL") {

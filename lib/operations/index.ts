@@ -32,6 +32,8 @@ import {
 } from "@/lib/fingerprints";
 import { sweepStaleOperations } from "./advance";
 import { isDeviceOnline } from "@/lib/deviceStatus";
+import { isPlaceholderDevId } from "@/lib/deviceIdentity";
+import { SERIAL_PATTERN } from "@/lib/deviceRekey";
 
 export type { OperationKind, OperationStage, Privilege };
 export { PRIVILEGE_SCREEN_LABEL };
@@ -133,6 +135,39 @@ export async function startSyncClock(devId: string): Promise<StartResult> {
   // No `time` param — handleReceiveCmd stamps toDeviceTime() at delivery so
   // the clock lands accurate instead of seconds behind. Must stay this way.
   await queueCommandForOperation(id, devId, "SET_TIME", {});
+  return { id, warning: offlineWarning(dev) };
+}
+
+/**
+ * Corregir serial de un facial (dev_id placeholder, identificado por su fk_name —
+ * lib/deviceIdentity): se le escribe el serial de la caja con SET_FK_NAME y, al
+ * confirmarlo, protocol-handlers mueve su registro al serial (lib/deviceRekey).
+ * Para equipos normales no aplica: su identidad es el dev_id del cable y el
+ * servidor ya mantiene su fk_name igual al serial.
+ */
+export async function startSetDeviceSerial(devId: string, serialRaw: string): Promise<StartResult> {
+  const dev = await ensureDevice(devId);
+  const serial = serialRaw.trim();
+  if (!SERIAL_PATTERN.test(serial)) throw new Error("El serial solo puede tener letras, números y guiones (4 a 24).");
+  if (isPlaceholderDevId(serial)) throw new Error("Ese número es el id genérico de fábrica, no el serial del equipo.");
+  if (serial === devId) throw new Error("El equipo ya se identifica con ese serial.");
+  const row = await prisma.devices.findUnique({ where: { dev_id: devId }, select: { reported_dev_id: true } });
+  if (!isPlaceholderDevId(row?.reported_dev_id)) {
+    throw new Error("Este equipo ya se identifica por su serial de fábrica; no hace falta corregirlo.");
+  }
+  if (await prisma.devices.findUnique({ where: { dev_id: serial }, select: { dev_id: true } })) {
+    throw new Error(`Ya hay un equipo registrado con el serial ${serial}.`);
+  }
+
+  const existing = await findActiveOperation("RENAME_DEVICE", devId);
+  if (existing) return { id: existing };
+  const id = await createOperation({
+    kind: "RENAME_DEVICE",
+    label: `Corregir serial: ${serial}`,
+    devId,
+    params: { fk_name: serial },
+  });
+  await queueCommandForOperation(id, devId, "SET_FK_NAME", { fk_name: serial });
   return { id, warning: offlineWarning(dev) };
 }
 

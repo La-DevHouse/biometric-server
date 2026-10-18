@@ -50,7 +50,9 @@ alguien haya configurado bien este campo.
 > esos equipos el sistema se identifica por el **nombre del equipo** (`fk_name`),
 > que de fábrica trae el serial. **No cambiar el nombre de un facial desde su
 > teclado**: el servidor lo vería como un equipo nuevo. Si llega con el nombre
-> vacío o cambiado, escribir ahí el serial de la caja (o de "Info del sistema").
+> vacío o cambiado, escribir ahí el serial de la caja (o de "Info del sistema"),
+> o desde el panel: detalle del equipo → **"Corregir serial"** (si llegó con un
+> nombre de fábrica como `FK_DEV`, conectarlos de a uno).
 > Ver `04-device-protocol-real.md` → "dev_id placeholder".
 
 Aun así, para que sea legible a simple vista en el menú del equipo (Ezequiel lo

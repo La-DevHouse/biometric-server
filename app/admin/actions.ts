@@ -15,11 +15,13 @@ import {
   startClearEnrollData,
   startViewBiometrics,
   startRefreshStatus,
+  startSetDeviceSerial,
   cancelOperation,
   type Privilege,
 } from "@/lib/operations";
 import type { OpActionState, MultiOpActionState } from "@/lib/opActionState";
 import { requireUser } from "@/lib/auth";
+import { writeAudit } from "@/lib/audit";
 import { startReconcileDevice, reconcileAll, resolveSyncHold, triggerReconcile, devicesAffectedByEmployee } from "@/lib/sync/reconcile";
 import { previewImpact, type ScopeChange, type ImpactResult } from "@/lib/sync/impact";
 import { attendancePullDevices } from "@/lib/sync/attendance";
@@ -232,6 +234,31 @@ export async function cancelOperationAction(id: number): Promise<{ ok: boolean; 
 // ---------------------------------------------------------------------------
 // Sincronización de huellas (reconciliador, docs/10 §4.2–§4.5)
 // ---------------------------------------------------------------------------
+
+/**
+ * "Corregir serial" de un facial que llegó con el nombre de fábrica (ej. FK_DEV)
+ * en vez del serial: se le escribe el de la caja (startSetDeviceSerial).
+ */
+export async function setDeviceSerialAction(_prev: OpActionState, formData: FormData): Promise<OpActionState> {
+  const user = await requireUser();
+  const devId = String(formData.get("dev_id") || "");
+  const serial = String(formData.get("serial") || "").trim();
+  try {
+    const { id, warning } = await startSetDeviceSerial(devId, serial);
+    await writeAudit({
+      actorId: user.id,
+      action: "device.set_serial",
+      entityType: "devices",
+      entityId: devId,
+      before: { dev_id: devId },
+      after: { serial },
+    });
+    await afterStart();
+    return { status: "ok", id, warning };
+  } catch (err) {
+    return opError(err);
+  }
+}
 
 /** "Sincronizar ahora" de un equipo: corrida forzada (relee el equipo aunque los contadores no cambien). */
 export async function syncDeviceNowAction(_prev: OpActionState, formData: FormData): Promise<OpActionState> {

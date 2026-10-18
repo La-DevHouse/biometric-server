@@ -15,6 +15,7 @@ import { strict as assert } from "node:assert";
 const db = require("../lib/db") as typeof import("../lib/db");
 const identity = require("../lib/deviceIdentity") as typeof import("../lib/deviceIdentity");
 const handlers = require("../lib/handlers/protocol-handlers") as typeof import("../lib/handlers/protocol-handlers");
+const ops = require("../lib/operations") as typeof import("../lib/operations");
 const { NextRequest } = require("next/server") as typeof import("next/server");
 const { prisma } = db;
 
@@ -23,7 +24,9 @@ const P = `IDT${Date.now()}`;
 const FACE_A = `${P}A`;
 const FACE_B = `${P}B`;
 const NORMAL = `${P}N`;
-const DEVS = [FACE_A, FACE_B, NORMAL, PLACEHOLDER];
+const FK_DEV = `FK_${P}`;
+const SERIAL = `9${String(Date.now()).slice(-9)}`;
+const DEVS = [FACE_A, FACE_B, NORMAL, PLACEHOLDER, FK_DEV, SERIAL];
 
 after(async () => {
   await db.runAsync(`DELETE FROM commands WHERE dev_id = ANY(?::text[])`, [DEVS]);
@@ -174,4 +177,46 @@ test("placeholder: la revisión periódica es un GET_DEVICE_STATUS suelto, no un
   );
   assert.ok(cmds.some((c) => c.cmd_code === "GET_DEVICE_STATUS"));
   assert.ok(!cmds.some((c) => c.cmd_code === "GET_LOG_DATA"));
+});
+
+
+test("corregir serial: un facial con nombre de fábrica pasa al serial de la caja, con lo suyo", async () => {
+  await poll(PLACEHOLDER, FK_DEV); // llega con el nombre de fábrica
+  await db.runAsync(`INSERT INTO users (dev_id, user_id, user_name) VALUES (?, '123', 'x')`, [FK_DEV]);
+
+  // Validaciones: equipo normal, serial ocupado, serial = placeholder.
+  await assert.rejects(ops.startSetDeviceSerial(NORMAL, "1234567890"), /ya se identifica por su serial/);
+  await assert.rejects(ops.startSetDeviceSerial(FK_DEV, FACE_A), /Ya hay un equipo/);
+  await assert.rejects(ops.startSetDeviceSerial(FK_DEV, PLACEHOLDER), /genérico/);
+
+  const { id } = await ops.startSetDeviceSerial(FK_DEV, SERIAL);
+  // Se cuela el GET_DEVICE_STATUS automático de los faciales: se consulta hasta que salga el SET_FK_NAME.
+  let transId = 0;
+  for (let i = 0; i < 4 && !transId; i++) {
+    const res = await poll(PLACEHOLDER, FK_DEV);
+    if (res.headers.get("cmd_code") === "SET_FK_NAME") transId = Number(res.headers.get("trans_id"));
+  }
+  assert.ok(transId, "el equipo recibe el SET_FK_NAME");
+
+  // Un "Error" al azar se reintenta (no mueve nada todavía).
+  await handlers.handleSendCmdResult(req({ trans_id: String(transId), cmd_return_code: "Error" }), Buffer.alloc(0), PLACEHOLDER);
+  assert.ok(await prisma.devices.findUnique({ where: { dev_id: FK_DEV } }));
+  const retry = await poll(PLACEHOLDER, FK_DEV);
+  assert.equal(retry.headers.get("cmd_code"), "SET_FK_NAME");
+
+  await handlers.handleSendCmdResult(
+    req({ trans_id: String(retry.headers.get("trans_id")), cmd_return_code: "OK" }),
+    Buffer.alloc(0),
+    PLACEHOLDER
+  );
+  assert.equal(await prisma.devices.findUnique({ where: { dev_id: FK_DEV } }), null, "el nombre viejo ya no existe");
+  const moved = await prisma.devices.findUnique({ where: { dev_id: SERIAL }, select: { fk_name: true } });
+  assert.equal(moved?.fk_name, SERIAL);
+  assert.equal((await db.allAsync(`SELECT 1 FROM users WHERE dev_id = ?`, [SERIAL])).length, 1, "sus usuarios lo siguen");
+  assert.equal((await db.getAsync<{ stage: string }>(`SELECT stage FROM operations WHERE id = ?`, [id]))?.stage, "done");
+
+  // Su próxima consulta ya llega con el serial: mismo registro, no uno nuevo.
+  await poll(PLACEHOLDER, SERIAL);
+  assert.equal(await prisma.devices.count({ where: { dev_id: { in: [FK_DEV, SERIAL] } } }), 1);
+  await db.runAsync(`DELETE FROM users WHERE dev_id = ?`, [SERIAL]);
 });

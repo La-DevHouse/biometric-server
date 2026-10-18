@@ -75,9 +75,10 @@ async function maybeHealFkName(devId: string): Promise<void> {
  * propósito: no está verificado que un "Error" no haya escrito, y repetirlo
  * sobre un usuario ya creado dispara el reindexado destructivo (docs/05).
  * Solo el literal "Error": los equipos de huella responden otros códigos
- * (ERROR_NO_USER…) o se callan, y eso sí significa algo.
+ * (ERROR_NO_USER…) o se callan, y eso sí significa algo. SET_FK_NAME también:
+ * escribir el mismo nombre dos veces no hace daño (corregir serial, abajo).
  */
-const RETRY_ON_ERROR: ReadonlySet<string> = new Set(["GET_USER_INFO", "SET_ENROLL_DATA"]);
+const RETRY_ON_ERROR: ReadonlySet<string> = new Set(["GET_USER_INFO", "SET_ENROLL_DATA", "SET_FK_NAME"]);
 const FACIAL_ERROR_RETRIES = Number(process.env.FACIAL_ERROR_RETRIES ?? 10);
 
 export function shouldRetryCommand(cmdCode: string, returnCode: string, attempt: number): boolean {
@@ -411,8 +412,14 @@ export async function handleSendCmdResult(
   const { json: resultJson, binaries } = parseBody(finalData);
   const resultBinary = binaries.length > 0 ? binaries[0] : null;
 
-  const command = await getAsync<{ cmd_code: string; op_id: number | null; dev_id: string; attempt: number }>(
-    `SELECT cmd_code, op_id, dev_id, attempt FROM commands WHERE trans_id = ?`,
+  const command = await getAsync<{
+    cmd_code: string;
+    op_id: number | null;
+    dev_id: string;
+    attempt: number;
+    cmd_param: string | null;
+  }>(
+    `SELECT cmd_code, op_id, dev_id, attempt, cmd_param FROM commands WHERE trans_id = ?`,
     [transId]
   );
   // El resultado es del equipo al que se le mandó el comando: con un dev_id
@@ -541,6 +548,22 @@ export async function handleSendCmdResult(
       }
     } catch (err) {
       console.error("[operations] fallo al propagar huella capturada:", command.op_id, err);
+    }
+  }
+
+  // Corregir serial (lib/deviceRekey): un facial que se identifica por su nombre
+  // acaba de aceptar uno nuevo → su registro pasa a llamarse así, antes de que
+  // vuelva a consultar con el nombre nuevo. Al final: la operación ya se cerró.
+  if (command?.cmd_code === "SET_FK_NAME" && cmdReturnCode === "OK" && isPlaceholderDevId(reportedDevId)) {
+    try {
+      const target = String(JSON.parse(command.cmd_param ?? "{}").fk_name ?? "").trim();
+      if (target && target !== devId) {
+        const { rekeyDevice } = await import("@/lib/deviceRekey");
+        const moved = await rekeyDevice(devId, target);
+        console.log(`[identity] ${devId} → ${target}: ${moved ? "registro movido" : "no se movió (el destino ya existe)"}`);
+      }
+    } catch (err) {
+      console.error("[identity] no se pudo mover el equipo al serial nuevo:", devId, err);
     }
   }
 
