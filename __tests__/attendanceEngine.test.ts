@@ -159,3 +159,13 @@ test("turno nocturno y persona sin horario", async () => {
   assert.equal(f["2026-10-05"].status, "no_schedule");
   assert.equal(f["2026-10-05"].worked_minutes, 360);
 });
+
+test("rango por defecto: los últimos 35 días cerrados, hasta ayer", () => {
+  assert.deepEqual(engine.defaultComputeRange("2026-10-19"), { from: "2026-09-14", to: "2026-10-18" });
+});
+
+test("corrida de todas las empresas: no se cae si no hay nada que calcular", async () => {
+  const r = await engine.computeAllCompanies();
+  assert.equal(r.failed, 0);
+  assert.ok(r.companies >= 1);
+});

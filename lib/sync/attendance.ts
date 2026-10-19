@@ -57,7 +57,8 @@ export async function attendancePullAll(trigger: SyncTrigger = "cron"): Promise<
   return (await attendancePullDevices(null, trigger)).length;
 }
 
-/** Hito 4: procesar marcajes → attendance_day. Sin motor todavía (docs/10 §4.6 b). */
-export async function attendanceComputeAll(): Promise<void> {
-  // intencionalmente vacío hasta que exista el motor de asistencia
+/** Hito 4: marcaciones → attendance_day de todas las empresas activas (docs/16). */
+export async function attendanceComputeAll() {
+  const { computeAllCompanies } = await import("@/lib/attendance/engine");
+  return computeAllCompanies();
 }

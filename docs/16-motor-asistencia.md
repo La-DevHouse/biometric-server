@@ -1,9 +1,21 @@
 # 16 — Motor de asistencia (Hito 4)
 
-**Estado (2026-10-19):** paso 1 hecho — cálculo y guardado de los días (`lib/attendance/`),
-con pruebas. Pendiente: cálculo nocturno automático y botón "Recalcular" (paso 2), pantallas
+**Estado (2026-10-19):** pasos 1 y 2 hechos — cálculo y guardado de los días
+(`lib/attendance/`), cálculo nocturno automático y botón "Recalcular". Pendiente: pantallas
 "Por día", pestaña Asistencia del empleado y asignación de horario en masa (paso 3), y
 correcciones manuales auditadas (paso 4).
+
+## Cuándo se calcula
+
+- **Cada noche** (worker, cola `attendance-compute`, `SYNC_COMPUTE_CRON`, por defecto
+  `30 4 * * *` en `SYNC_TZ`): todas las empresas activas, los últimos
+  `ATTENDANCE_COMPUTE_DAYS` días cerrados (35 por defecto, hasta ayer). Corre a las 4:30 y no
+  junto con el pull de las 2:00, para que las marcaciones de los equipos ya hayan llegado. Una
+  empresa que falla no frena a las demás.
+- **A pedido:** Empresa → Asistencia → "Recalcular asistencia" (`recomputeAttendanceAction`):
+  el rango filtrado, o los últimos días cerrados si no hay filtro. Queda en la auditoría
+  (`attendance.compute`) y muestra un resumen por estado.
+- Se guarda en lote (`unnest` + `ON CONFLICT`), no una consulta por día.
 
 ## Qué hace
 

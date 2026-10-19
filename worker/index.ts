@@ -14,7 +14,8 @@
 // Env: DATABASE_URL, SYNC_FINGERPRINTS_INTERVAL_MIN (30), SYNC_ATTENDANCE_CRON
 // ("0 2 * * *"), SYNC_TZ ("America/Caracas"), SYNC_MAX_REMOVALS_PER_DEVICE (5),
 // SYNC_MAX_REMOVALS_PCT (20), SYNC_AUDIT_CRON ("0 3 * * *": revisión nocturna de
-// usuarios de cada equipo, docs/10 §4.2), WORKER_HEALTH_PORT (3001; 0 = sin healthcheck).
+// usuarios de cada equipo, docs/10 §4.2), SYNC_COMPUTE_CRON ("30 4 * * *": cálculo de
+// asistencia, docs/16), ATTENDANCE_COMPUTE_DAYS (35), WORKER_HEALTH_PORT (3001; 0 = sin healthcheck).
 //
 // Además, cada minuto, expira las operaciones colgadas (sweepStaleOperations).
 // Antes solo corría cuando algún equipo consultaba o alguien abría el panel: la
@@ -32,6 +33,7 @@ import { startHealthServer, setWorkerState, reportWorkerError } from "./health";
 
 const FINGERPRINTS = "sync-fingerprints";
 const ATTENDANCE = "sync-attendance";
+const COMPUTE = "attendance-compute";
 const AUDIT = "sync-audit";
 const SWEEP = "sweep-operations";
 
@@ -97,11 +99,14 @@ async function main() {
   });
   await boss.start();
 
-  for (const q of [FINGERPRINTS, ATTENDANCE, AUDIT, SWEEP]) await boss.createQueue(q);
+  for (const q of [FINGERPRINTS, ATTENDANCE, AUDIT, SWEEP, COMPUTE]) await boss.createQueue(q);
   await boss.schedule(FINGERPRINTS, fingerprintsCron(), {}, { tz });
   await boss.schedule(ATTENDANCE, process.env.SYNC_ATTENDANCE_CRON ?? "0 2 * * *", {}, { tz });
   await boss.schedule(AUDIT, process.env.SYNC_AUDIT_CRON ?? "0 3 * * *", {}, { tz });
   await boss.schedule(SWEEP, "* * * * *", {}, { tz });
+  // Cálculo de asistencia (docs/16): después de que el pull de las 02:00 tuvo
+  // tiempo de traer las marcaciones de los equipos.
+  await boss.schedule(COMPUTE, process.env.SYNC_COMPUTE_CRON ?? "30 4 * * *", {}, { tz });
 
   await boss.work(FINGERPRINTS, async () => {
     const ids = await reconcileAll("cron");
@@ -120,14 +125,17 @@ async function main() {
   });
   await boss.work(ATTENDANCE, async () => {
     const n = await attendancePullAll("cron");
-    await attendanceComputeAll();
     console.log(`[worker] asistencia: ${n} pull(s) encolado(s)`);
+  });
+  await boss.work(COMPUTE, async () => {
+    const r = await attendanceComputeAll();
+    console.log(`[worker] cálculo de asistencia: ${r.companies} empresa(s), ${r.days} día(s)${r.failed ? `, ${r.failed} con error` : ""}`);
   });
 
   setWorkerState("running");
   console.log(
     `[worker] listo — huellas ${fingerprintsCron()}, asistencia ${process.env.SYNC_ATTENDANCE_CRON ?? "0 2 * * *"}, ` +
-      `revisión ${process.env.SYNC_AUDIT_CRON ?? "0 3 * * *"} (${tz})`
+      `revisión ${process.env.SYNC_AUDIT_CRON ?? "0 3 * * *"}, cálculo ${process.env.SYNC_COMPUTE_CRON ?? "30 4 * * *"} (${tz})`
   );
 
   const stop = async () => {

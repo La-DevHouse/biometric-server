@@ -15,6 +15,7 @@ import { Table, Th, Td, Tr } from "@/components/ui/Table";
 import { MobileList, MobileRow } from "@/components/ui/MobileRow";
 import { DisabledBtn } from "@/components/ui/Btn";
 import { AttendanceExportButton } from "@/components/admin/AttendanceExportButton";
+import { RecomputeAttendanceButton } from "@/components/admin/RecomputeAttendanceButton";
 import { Tip } from "@/components/ui/IconBtn";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { CompanyTabs } from "@/components/admin/CompanyTabs";
@@ -121,6 +122,7 @@ export default async function EmpresaAsistenciaPage({
         actions={
           <>
             {exportAction}
+            <RecomputeAttendanceButton companyId={company.id} from={f.from} to={f.to} />
             <MultiOpButton
               action={syncCompanyAttendanceAction}
               hidden={{ company_id: String(company.id) }}

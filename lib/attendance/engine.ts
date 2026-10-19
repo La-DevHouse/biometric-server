@@ -77,6 +77,68 @@ function toInstant(ymd: string, sec: number, tz: string): Date | null {
   return parseDeviceTime(wall, tz);
 }
 
+interface DayRow {
+  employmentId: number;
+  employeeId: number;
+  date: string;
+  shiftId: number | null;
+  firstIn: Date | null;
+  lastOut: Date | null;
+  worked: number | null;
+  overtime: number | null;
+  late: number | null;
+  early: number | null;
+  scheduled: number | null;
+  markCount: number;
+  status: DayStatus;
+}
+
+/** Filas por sentencia: una empresa grande en 35 días son miles de días. */
+const SAVE_BATCH = 2000;
+
+/**
+ * Guarda en lote (unnest + ON CONFLICT por contrato y fecha), no una consulta por
+ * día: el cálculo nocturno recorre todas las empresas.
+ */
+async function saveDays(rows: DayRow[]): Promise<void> {
+  for (let i = 0; i < rows.length; i += SAVE_BATCH) {
+    const b = rows.slice(i, i + SAVE_BATCH);
+    await prisma.$executeRaw`
+      INSERT INTO attendance_day
+        (employment_id, employee_id, date, shift_id, first_in, last_out, worked_minutes, overtime_minutes,
+         late_minutes, early_leave_minutes, scheduled_minutes, mark_count, status, computed_at, updated_at)
+      SELECT t.employment_id, t.employee_id, t.date, t.shift_id, t.first_in, t.last_out, t.worked, t.overtime,
+             t.late, t.early, t.scheduled, t.mark_count, t.status::attendance_status, now(), now()
+        FROM unnest(
+          ${b.map((r) => r.employmentId)}::int[], ${b.map((r) => r.employeeId)}::int[], ${b.map((r) => r.date)}::date[],
+          ${b.map((r) => r.shiftId)}::int[], ${b.map((r) => r.firstIn)}::timestamptz[], ${b.map((r) => r.lastOut)}::timestamptz[],
+          ${b.map((r) => r.worked)}::int[], ${b.map((r) => r.overtime)}::int[], ${b.map((r) => r.late)}::int[],
+          ${b.map((r) => r.early)}::int[], ${b.map((r) => r.scheduled)}::int[], ${b.map((r) => r.markCount)}::int[],
+          ${b.map((r) => r.status)}::text[]
+        ) AS t(employment_id, employee_id, date, shift_id, first_in, last_out, worked, overtime,
+               late, early, scheduled, mark_count, status)
+      ON CONFLICT (employment_id, date) DO UPDATE SET
+        employee_id = EXCLUDED.employee_id, shift_id = EXCLUDED.shift_id,
+        first_in = EXCLUDED.first_in, last_out = EXCLUDED.last_out,
+        worked_minutes = EXCLUDED.worked_minutes, overtime_minutes = EXCLUDED.overtime_minutes,
+        late_minutes = EXCLUDED.late_minutes, early_leave_minutes = EXCLUDED.early_leave_minutes,
+        scheduled_minutes = EXCLUDED.scheduled_minutes, mark_count = EXCLUDED.mark_count,
+        status = EXCLUDED.status, computed_at = now(), updated_at = now()`;
+  }
+}
+
+/** Borra los días de esos contratos en [from, to] que esta corrida ya no produjo. */
+async function removeStaleDays(employmentIds: number[], from: string, to: string, kept: DayRow[]): Promise<number> {
+  if (employmentIds.length === 0) return 0;
+  return prisma.$executeRaw`
+    DELETE FROM attendance_day d
+     WHERE d.employment_id = ANY(${employmentIds}::int[])
+       AND d.date BETWEEN ${from}::date AND ${to}::date
+       AND NOT EXISTS (
+         SELECT 1 FROM unnest(${kept.map((r) => r.employmentId)}::int[], ${kept.map((r) => r.date)}::date[]) AS k(e, dt)
+          WHERE k.e = d.employment_id AND k.dt = d.date)`;
+}
+
 export interface ComputeSummary {
   employments: number;
   days: number;
@@ -164,7 +226,7 @@ export async function computeCompanyAttendance(
     byEmployee.set(m.employee_id, list);
   }
 
-  const now = new Date();
+  const rows: DayRow[] = [];
   for (const em of employments) {
     summary.employments++;
     const group = em.schedule_group && em.schedule_group.status === "active" ? em.schedule_group : null;
@@ -181,43 +243,66 @@ export async function computeCompanyAttendance(
       planFor
     );
 
-    const kept: string[] = [];
     for (let ymd = startYmd; ymd <= endYmd; ymd = addDays(ymd, 1)) {
       const r = computeDay(planFor(ymd), perDay.get(ymd) ?? [], t);
       if (!r) continue;
-      kept.push(ymd);
-      const data = {
-        employee_id: em.employee_id,
-        shift_id: r.shiftId,
-        first_in: r.firstIn != null ? toInstant(ymd, r.firstIn, tz) : null,
-        last_out: r.lastOut != null ? toInstant(ymd, r.lastOut, tz) : null,
-        worked_minutes: r.workedMinutes,
-        overtime_minutes: r.overtimeMinutes,
-        late_minutes: r.lateMinutes,
-        early_leave_minutes: r.earlyLeaveMinutes,
-        scheduled_minutes: r.scheduledMinutes,
-        mark_count: r.markCount,
+      rows.push({
+        employmentId: em.id,
+        employeeId: em.employee_id,
+        date: ymd,
+        shiftId: r.shiftId,
+        firstIn: r.firstIn != null ? toInstant(ymd, r.firstIn, tz) : null,
+        lastOut: r.lastOut != null ? toInstant(ymd, r.lastOut, tz) : null,
+        worked: r.workedMinutes,
+        overtime: r.overtimeMinutes,
+        late: r.lateMinutes,
+        early: r.earlyLeaveMinutes,
+        scheduled: r.scheduledMinutes,
+        markCount: r.markCount,
         status: r.status,
-        computed_at: now,
-      };
-      const date = new Date(`${ymd}T00:00:00Z`);
-      await prisma.attendance_day.upsert({
-        where: { employment_id_date: { employment_id: em.id, date } },
-        create: { employment_id: em.id, date, ...data },
-        update: data,
       });
       summary.days++;
       summary.byStatus[r.status] = (summary.byStatus[r.status] ?? 0) + 1;
     }
-
-    const stale = await prisma.attendance_day.deleteMany({
-      where: {
-        employment_id: em.id,
-        date: { gte: new Date(`${from}T00:00:00Z`), lte: new Date(`${last}T00:00:00Z`) },
-        NOT: { date: { in: kept.map((d) => new Date(`${d}T00:00:00Z`)) } },
-      },
-    });
-    summary.removed += stale.count;
   }
+
+  await saveDays(rows);
+  summary.removed = await removeStaleDays(
+    employments.map((e) => e.id),
+    from,
+    last,
+    rows
+  );
   return summary;
+}
+
+/** Días hacia atrás que recalcula la corrida nocturna (marcaciones que llegan tarde de equipos sin red). */
+export function computeWindowDays(): number {
+  const n = Number(process.env.ATTENDANCE_COMPUTE_DAYS ?? 35);
+  return Number.isInteger(n) && n >= 1 && n <= 366 ? n : 35;
+}
+
+/** El rango por defecto: los últimos N días cerrados (hasta ayer). */
+export function defaultComputeRange(today = dateKeyInTz(new Date(), DEFAULT_TZ)): { from: string; to: string } {
+  return { from: addDays(today, -computeWindowDays()), to: addDays(today, -1) };
+}
+
+/**
+ * Corrida nocturna (worker): todas las empresas activas, últimos N días. Una
+ * empresa que falla no frena a las demás.
+ */
+export async function computeAllCompanies(): Promise<{ companies: number; days: number; failed: number }> {
+  const { from, to } = defaultComputeRange();
+  const companies = await prisma.client_company.findMany({ where: { status: "active" }, select: { id: true, name: true } });
+  let days = 0;
+  let failed = 0;
+  for (const c of companies) {
+    try {
+      days += (await computeCompanyAttendance(c.id, from, to)).days;
+    } catch (err) {
+      failed++;
+      console.error(`[asistencia] no se pudo calcular ${c.name} (${c.id}):`, err);
+    }
+  }
+  return { companies: companies.length, days, failed };
 }
