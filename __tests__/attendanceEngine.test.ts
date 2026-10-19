@@ -12,6 +12,7 @@ import { strict as assert } from "node:assert";
 
 const db = require("../lib/db") as typeof import("../lib/db");
 const engine = require("../lib/attendance/engine") as typeof import("../lib/attendance/engine");
+const queries = require("../lib/attendance/queries") as typeof import("../lib/attendance/queries");
 const { prisma } = db;
 
 const P = `ENG_${Date.now()}_`;
@@ -123,6 +124,19 @@ test("una semana de turno diurno: cada estado, y recalcular no duplica", async (
   assert.equal(d["2026-10-09"].early_leave_minutes, 30);
   assert.equal(d["2026-10-10"].overtime_minutes, 180);
   assert.equal(s1.days, 7);
+
+  // Lo que leen las pantallas: por empresa (más reciente primero), filtro por estado, conteos y por persona.
+  const all = await queries.companyAttendanceDays(companyId, { from: "2026-10-05", to: "2026-10-11" });
+  assert.deepEqual(all.map((r) => r.date), ["2026-10-11", "2026-10-10", "2026-10-09", "2026-10-08", "2026-10-07", "2026-10-06", "2026-10-05"]);
+  assert.equal(all[5].lateMinutes, 20);
+  assert.equal(all[0].scheduleName, P + "Diurno");
+  const lates = await queries.companyAttendanceDays(companyId, { from: "2026-10-05", to: "2026-10-11", status: "late" });
+  assert.deepEqual(lates.map((r) => r.date), ["2026-10-06"]);
+  const counts = await queries.companyAttendanceDayCounts(companyId, "2026-10-05", "2026-10-11");
+  assert.equal(counts.get("absent"), 1);
+  const mine = await queries.employeeAttendanceDays(p.employeeId, { from: "2026-10-05", to: "2026-10-11" });
+  assert.equal(mine.length, 7);
+  assert.equal(mine[0].companyId, companyId);
 
   // Recalcular: mismos 7 días, sin duplicar.
   await engine.computeCompanyAttendance(companyId, "2026-10-05", "2026-10-11", { today: "2026-10-12" });

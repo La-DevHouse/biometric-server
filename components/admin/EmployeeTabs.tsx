@@ -9,7 +9,7 @@ import { MultiOpButton } from "./MultiOpButton";
 import { syncEmployeeNowAction } from "@/app/admin/actions";
 import { companyReturn, withReturn } from "@/lib/returnTo";
 
-export type EmployeeTab = "info" | "contratos" | "equipos";
+export type EmployeeTab = "info" | "contratos" | "equipos" | "asistencia";
 
 function fmtDate(d: Date | null): string | null {
   return d ? d.toISOString().slice(0, 10) : null;
@@ -88,6 +88,7 @@ export async function EmployeeTabs({
           { key: "info", label: "Información", href: tab(base) },
           { key: "contratos", label: "Contratos de trabajo", href: tab(`${base}/contratos`) },
           { key: "equipos", label: "Equipos y huellas", href: tab(`${base}/equipos`) },
+          { key: "asistencia", label: "Asistencia", href: tab(`${base}/asistencia`) },
         ]}
       />
     </div>

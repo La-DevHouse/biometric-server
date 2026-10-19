@@ -1,9 +1,22 @@
 # 16 — Motor de asistencia (Hito 4)
 
-**Estado (2026-10-19):** pasos 1 y 2 hechos — cálculo y guardado de los días
-(`lib/attendance/`), cálculo nocturno automático y botón "Recalcular". Pendiente: pantallas
-"Por día", pestaña Asistencia del empleado y asignación de horario en masa (paso 3), y
-correcciones manuales auditadas (paso 4).
+**Estado (2026-10-19):** pasos 1 a 3 hechos — cálculo y guardado de los días
+(`lib/attendance/`), cálculo nocturno y botón "Recalcular", y pantallas. Pendiente: correcciones
+manuales auditadas (paso 4).
+
+## Pantallas
+
+- **Empresa → Asistencia → "Por día"** (`?vista=dias`, `app/admin/empresas/[id]/asistencia/DaysView.tsx`):
+  fecha, persona, entrada, salida (con "+1" si es del día siguiente), horas, extra y estado con
+  sus minutos. Filtros: desde, hasta y estado. Sin rango, los últimos días cerrados. Arriba, el
+  resumen por estado y un aviso de cuántos contratos vigentes no tienen horario. "Marcaciones"
+  sigue siendo la vista de siempre (la que se exporta).
+- **Empleado → Asistencia** (`app/admin/empleados/[id]/asistencia/page.tsx`): los días de la
+  persona en todas sus empresas, con totales de horas y extra del período.
+- **Empresa → Empleados → "Asignar horario"** (`AssignScheduleDialog`, `assignScheduleAction`):
+  elegir un horario (o quitarlo) para varias personas a la vez, con atajos "Seleccionar todos" y
+  "Solo los sin horario". Queda en la auditoría (`employment.assign_schedule`) y recalcula la
+  asistencia de los últimos días al guardar.
 
 ## Cuándo se calcula
 

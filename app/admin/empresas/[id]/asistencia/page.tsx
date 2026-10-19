@@ -16,6 +16,7 @@ import { MobileList, MobileRow } from "@/components/ui/MobileRow";
 import { DisabledBtn } from "@/components/ui/Btn";
 import { AttendanceExportButton } from "@/components/admin/AttendanceExportButton";
 import { RecomputeAttendanceButton } from "@/components/admin/RecomputeAttendanceButton";
+import { AttendanceDaysView, AttendanceViewSwitch } from "./DaysView";
 import { Tip } from "@/components/ui/IconBtn";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { CompanyTabs } from "@/components/admin/CompanyTabs";
@@ -44,7 +45,7 @@ export default async function EmpresaAsistenciaPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ from?: string; to?: string; sede?: string }>;
+  searchParams: Promise<{ from?: string; to?: string; sede?: string; vista?: string; estado?: string }>;
 }) {
   await requireUser();
   await initDb();
@@ -57,6 +58,24 @@ export default async function EmpresaAsistenciaPage({
     select: { id: true, name: true },
   });
   if (!company) notFound();
+
+  // "Por día" (docs/16): los días calculados por el motor, con su propio filtro.
+  const vista = f.vista === "dias" ? "dias" : "marcaciones";
+  const switcher = <AttendanceViewSwitch companyId={company.id} vista={vista} from={f.from} to={f.to} />;
+  if (vista === "dias") {
+    return (
+      <div className="flex max-w-5xl flex-col gap-4">
+        <CompanyTabs
+          companyId={company.id}
+          companyName={company.name}
+          active="asistencia"
+          actions={<RecomputeAttendanceButton companyId={company.id} from={f.from} to={f.to} />}
+        />
+        {switcher}
+        <AttendanceDaysView companyId={company.id} from={f.from} to={f.to} estado={f.estado} />
+      </div>
+    );
+  }
 
   const siteId = f.sede && Number.isFinite(Number(f.sede)) ? Number(f.sede) : null;
   const filters = { from: f.from, to: f.to, siteId, withUnmatched: true };
@@ -135,6 +154,7 @@ export default async function EmpresaAsistenciaPage({
           </>
         }
       />
+      {switcher}
 
       <div className="flex items-center justify-between gap-3">
         <p className="m-0 text-sm text-text/75">

@@ -12,6 +12,7 @@ import { ImportEmployeesButton } from "@/components/admin/ImportEmployeesButton"
 import { activeEmploymentWhere, devicesInCompanyScope } from "@/lib/scope";
 import { cedulaDigits, MAX_FINGERPRINTS } from "@/lib/fingerprints";
 import { withReturn } from "@/lib/returnTo";
+import { AssignScheduleDialog, type SchedulePerson } from "@/components/admin/AssignScheduleDialog";
 
 export const dynamic = "force-dynamic";
 
@@ -97,6 +98,26 @@ export default async function EmpresaEmpleadosPage({ params }: { params: Promise
     });
   }
 
+  // Asignar horario a varios (docs/16): un contrato vigente por persona.
+  const schedules = await prisma.schedule_group.findMany({
+    where: { company_id: id, status: "active" },
+    select: { id: true, name: true },
+    orderBy: { name: "asc" },
+  });
+  const schedulePeople: SchedulePerson[] = [];
+  const seenForSchedule = new Set<number>();
+  for (const c of contracts) {
+    if (seenForSchedule.has(c.employee_id)) continue;
+    seenForSchedule.add(c.employee_id);
+    schedulePeople.push({
+      employmentId: c.id,
+      name: `${c.employee.last_name}, ${c.employee.first_name}`,
+      nationalId: c.employee.national_id,
+      scheduleId: c.schedule_group_id,
+      scheduleName: c.schedule_group?.name ?? null,
+    });
+  }
+
   const total = scopeDevices.length;
   const status = (r: Row) =>
     r.fingerprints === 0
@@ -116,6 +137,9 @@ export default async function EmpresaEmpleadosPage({ params }: { params: Promise
         actions={
           <>
             <ImportEmployeesButton companyId={company.id} />
+            {schedulePeople.length > 0 && (
+              <AssignScheduleDialog companyId={company.id} people={schedulePeople} schedules={schedules} />
+            )}
             <ResyncEnrollmentsButton companyId={company.id} />
           </>
         }
