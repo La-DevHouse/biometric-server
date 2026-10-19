@@ -43,6 +43,13 @@ de tests) y después todos los `lib/**/*.test.ts` y `__tests__/**/*.test.ts` en 
 `biometric_test`). Si en la nube no hay Docker, apuntar `DATABASE_URL`/`TEST_DATABASE_URL` a
 cualquier Postgres 16+ y correr `npm run db:migrate:deploy`. Al 2026-10-16: **185/185 tests pasan**.
 
+**Desarrollo contra producción (2026-10-18):** el usuario corre el panel local contra la base de
+producción por un túnel SSH (`DATABASE_URL` → `localhost:5432`). Consecuencias: todo lo que se
+haga en el panel local es real; **no correr `prisma migrate` desde local** (las migraciones las
+aplica el deploy); no apuntar equipos al PC; y `npm test` **se niega** a correr sin un
+`TEST_DATABASE_URL` aparte (candado en `scripts/test-db-setup.ts`). Cada consulta tarda ~1 s por
+el túnel.
+
 **Comandos útiles:** `npm run dev` (app + protocolo en `:3000`) · `npm run worker:dev` ·
 `npx tsc --noEmit -p .` · `npx eslint <archivos>` · `npm run db:migrate:deploy` ·
 `npx prisma generate`.
