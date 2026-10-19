@@ -154,7 +154,7 @@ Detalle en `docs/04` y `docs/05`. Modelos: huella `WS535BW1_BSCS_v1.5.31`; facia
   tolerancias, qué es ausencia, marcaciones impares. Ojo: el `HANDOFF` viejo proponía resolver
   marcaciones vía `employee_device_enrollment`; hoy se resuelven por **cédula = user_id**
   (`docs/10` §4.6), así que esa pieza ya no aplica.
-- **Hito 5 — reportes:** consolidado del período por empleado (días, horas, tardanzas, ausencias,
+- **Hito 5 — reportes: Consolidado e Incidencias HECHOS (2026-10-19, `docs/17`).** Antes decía: consolidado del período por empleado (días, horas, tardanzas, ausencias,
   extra), reporte de incidencias, reporte por empleado (la ficha no tiene pestaña de asistencia).
   Dependen del motor. El export a Galepso ya existe (`docs/11` R1–R11); falta confirmar con ALCO
   el texto del pie y el nombre de la hoja (O-UI1/O-UI2).

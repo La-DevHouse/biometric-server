@@ -16,7 +16,9 @@ const YMD = /^\d{4}-\d{2}-\d{2}$/;
 const STATUSES = Object.keys(DAY_STATUS_LABEL) as DayStatus[];
 const fmtYmd = (ymd: string) => `${ymd.slice(8, 10)}/${ymd.slice(5, 7)}/${ymd.slice(0, 4)}`;
 
-/** Selector "Marcaciones / Por día" de Empresa → Asistencia (conserva el rango). */
+export type AttendanceVista = "marcaciones" | "dias" | "consolidado" | "incidencias";
+
+/** Selector de vistas de Empresa → Asistencia (conserva el rango). */
 export function AttendanceViewSwitch({
   companyId,
   vista,
@@ -24,7 +26,7 @@ export function AttendanceViewSwitch({
   to,
 }: {
   companyId: number;
-  vista: "marcaciones" | "dias";
+  vista: AttendanceVista;
   from?: string;
   to?: string;
 }) {
@@ -36,7 +38,7 @@ export function AttendanceViewSwitch({
     const s = p.toString();
     return `/admin/empresas/${companyId}/asistencia${s ? `?${s}` : ""}`;
   };
-  const item = (key: "marcaciones" | "dias", label: string, href: string) => (
+  const item = (key: AttendanceVista, label: string, href: string) => (
     <Link
       href={href}
       aria-current={vista === key ? "page" : undefined}
@@ -49,9 +51,11 @@ export function AttendanceViewSwitch({
     </Link>
   );
   return (
-    <div className="flex gap-0" role="tablist" aria-label="Vista de asistencia">
+    <div className="flex flex-wrap gap-0" role="tablist" aria-label="Vista de asistencia">
       {item("marcaciones", "Marcaciones", qs(null))}
       {item("dias", "Por día", qs("dias"))}
+      {item("consolidado", "Consolidado", qs("consolidado"))}
+      {item("incidencias", "Incidencias", qs("incidencias"))}
     </div>
   );
 }

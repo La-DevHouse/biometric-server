@@ -4,6 +4,7 @@
 // contra el Postgres de Docker (se niega con cualquier otra base).
 import { test, expect, type Page } from "@playwright/test";
 import { execSync } from "node:child_process";
+import ExcelJS from "exceljs";
 import { closeToastIfAny } from "./helpers";
 
 interface Seed {
@@ -151,5 +152,46 @@ test.describe.serial("Asistencia por día (motor de asistencia)", () => {
     // La marcación agregada sale en la lista (y en el export), marcada como corrección.
     await expect(page.locator("table tbody tr", { hasText: seed.beto.name }).filter({ hasText: "Corrección manual" })).toHaveCount(1);
     await shot(page, "08-marcaciones");
+  });
+
+  test("Consolidado del período: totales por persona y su .xlsx", async ({ page }) => {
+    await page.goto(daysUrl());
+    await page.getByRole("link", { name: "Consolidado" }).click();
+    await expect(page).toHaveURL(/vista=consolidado/);
+    const beto = rowsOf(page, seed.beto.name);
+    // Beto: lun tardanza 25, mar ausente, mié corregido (salida agregada), jue salió 30 antes, vie presente.
+    await expect(beto).toContainText("4 de 5");
+    await expect(beto).toContainText("1 · 25 min");
+    await expect(beto).toContainText("1 · 30 min");
+    await expect(rowsOf(page, seed.ana.name)).toContainText("5 de 5");
+    await expect(page.locator("table tbody tr", { hasText: "Total" })).toContainText("9 de 10");
+    await shot(page, "09-consolidado");
+
+    const [download] = await Promise.all([page.waitForEvent("download"), page.getByRole("link", { name: "Descargar .xlsx" }).click()]);
+    expect(download.suggestedFilename()).toMatch(/ Consolidado \d{8}_\d{8}\.xlsx$/);
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.readFile(await download.path());
+    const ws = wb.getWorksheet("Consolidado")!;
+    const rows: unknown[][] = [];
+    ws.eachRow((r) => rows.push(r.values as unknown[]));
+    const betoRow = rows.find((r) => String(r[2] ?? "").startsWith("Variado E2E"))!;
+    // [, cédula, nombre, ref, horario, laborables, trabajados, horas, extra, tardanzas, min, salidas, min, ausencias, …]
+    expect([betoRow[5], betoRow[6], betoRow[9], betoRow[10], betoRow[11], betoRow[12], betoRow[13]]).toEqual([5, 4, 1, 25, 1, 30, 1]);
+  });
+
+  test("Incidencias del período: con la corrección y filtro por tipo", async ({ page }) => {
+    await page.goto(`/admin/empresas/${seed.companyId}/asistencia?vista=incidencias&from=${seed.from}&to=${seed.to}`);
+    const beto = rowsOf(page, seed.beto.name);
+    await expect(beto.filter({ hasText: "Tardanza" })).toContainText("25 min tarde");
+    await expect(beto.filter({ hasText: "Salida anticipada" })).toContainText("salió 30 min antes");
+    await expect(beto.filter({ hasText: "Ausencia" })).toHaveCount(1);
+    await expect(beto.filter({ hasText: "Marcación agregada a mano" })).toContainText("Olvidó marcar la salida (QA E2E)");
+    // La anulación que se deshizo no es una incidencia.
+    await expect(beto.filter({ hasText: "Marcación anulada a mano" })).toHaveCount(0);
+    await shot(page, "10-incidencias");
+    await page.goto(`/admin/empresas/${seed.companyId}/asistencia?vista=incidencias&from=${seed.from}&to=${seed.to}&tipo=absent`);
+    await expect(page.locator("table tbody tr")).toHaveCount(1);
+    const [download] = await Promise.all([page.waitForEvent("download"), page.getByRole("link", { name: "Descargar .xlsx" }).click()]);
+    expect(download.suggestedFilename()).toMatch(/ Incidencias \d{8}_\d{8}\.xlsx$/);
   });
 });

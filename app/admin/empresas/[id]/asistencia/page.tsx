@@ -16,7 +16,8 @@ import { MobileList, MobileRow } from "@/components/ui/MobileRow";
 import { DisabledBtn } from "@/components/ui/Btn";
 import { AttendanceExportButton } from "@/components/admin/AttendanceExportButton";
 import { RecomputeAttendanceButton } from "@/components/admin/RecomputeAttendanceButton";
-import { AttendanceDaysView, AttendanceViewSwitch } from "./DaysView";
+import { AttendanceDaysView, AttendanceViewSwitch, type AttendanceVista } from "./DaysView";
+import { AttendanceIncidentsView, AttendanceSummaryView } from "./ReportsView";
 import { Tip } from "@/components/ui/IconBtn";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { CompanyTabs } from "@/components/admin/CompanyTabs";
@@ -45,7 +46,7 @@ export default async function EmpresaAsistenciaPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ from?: string; to?: string; sede?: string; vista?: string; estado?: string }>;
+  searchParams: Promise<{ from?: string; to?: string; sede?: string; vista?: string; estado?: string; tipo?: string }>;
 }) {
   await requireUser();
   await initDb();
@@ -59,10 +60,11 @@ export default async function EmpresaAsistenciaPage({
   });
   if (!company) notFound();
 
-  // "Por día" (docs/16): los días calculados por el motor, con su propio filtro.
-  const vista = f.vista === "dias" ? "dias" : "marcaciones";
+  // "Por día" (docs/16) y los reportes "Consolidado" / "Incidencias" (docs/17): los
+  // días calculados por el motor, cada uno con su propio filtro.
+  const vista: AttendanceVista = (["dias", "consolidado", "incidencias"] as const).find((v) => v === f.vista) ?? "marcaciones";
   const switcher = <AttendanceViewSwitch companyId={company.id} vista={vista} from={f.from} to={f.to} />;
-  if (vista === "dias") {
+  if (vista !== "marcaciones") {
     return (
       <div className="flex max-w-5xl flex-col gap-4">
         <CompanyTabs
@@ -72,7 +74,9 @@ export default async function EmpresaAsistenciaPage({
           actions={<RecomputeAttendanceButton companyId={company.id} from={f.from} to={f.to} />}
         />
         {switcher}
-        <AttendanceDaysView companyId={company.id} from={f.from} to={f.to} estado={f.estado} />
+        {vista === "dias" && <AttendanceDaysView companyId={company.id} from={f.from} to={f.to} estado={f.estado} />}
+        {vista === "consolidado" && <AttendanceSummaryView companyId={company.id} from={f.from} to={f.to} />}
+        {vista === "incidencias" && <AttendanceIncidentsView companyId={company.id} from={f.from} to={f.to} tipo={f.tipo} />}
       </div>
     );
   }
