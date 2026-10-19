@@ -90,6 +90,11 @@ export function EmploymentFields({
             </option>
           ))}
         </select>
+        {defaults?.schedule_group_id !== undefined && (
+          <span className="text-xs font-normal text-text/70">
+            Un cambio de horario aquí rige desde hoy. Para otra fecha use Empresa → Empleados → Asignar horario.
+          </span>
+        )}
       </label>
 
       <label className={LABEL}>

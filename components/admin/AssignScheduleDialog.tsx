@@ -18,19 +18,24 @@ export interface SchedulePerson {
 }
 
 /**
- * Asignar un horario a varias personas de la empresa a la vez (docs/16). Sin
+ * Asignar un horario a varias personas de la empresa a la vez, vigente desde una
+ * fecha (docs/16): los días anteriores conservan el horario que tenían. Sin
  * horario, el motor de asistencia solo cuenta horas: ni tardanzas ni ausencias.
  */
 export function AssignScheduleDialog({
   companyId,
   people,
   schedules,
+  today,
 }: {
   companyId: number;
   people: SchedulePerson[];
   schedules: { id: number; name: string }[];
+  /** Hoy en Caracas ("YYYY-MM-DD"): valor por defecto y tope de "Vigente desde". */
+  today: string;
 }) {
   const [open, setOpen] = useState(false);
+  const [startsOn, setStartsOn] = useState(today);
   const [scheduleId, setScheduleId] = useState<string>(schedules[0] ? String(schedules[0].id) : "");
   const [picked, setPicked] = useState<Set<number>>(new Set());
   const [pending, start] = useTransition();
@@ -50,7 +55,7 @@ export function AssignScheduleDialog({
 
   function submit() {
     start(async () => {
-      const r = await assignScheduleAction(companyId, scheduleId === "" ? null : Number(scheduleId), [...picked]);
+      const r = await assignScheduleAction(companyId, scheduleId === "" ? null : Number(scheduleId), [...picked], startsOn);
       push(r.ok ? "ok" : "error", r.ok ? r.message : r.error);
       if (r.ok) {
         setPicked(new Set());
@@ -74,7 +79,7 @@ export function AssignScheduleDialog({
             <Btn onClick={() => setOpen(false)} disabled={pending}>
               Cancelar
             </Btn>
-            <Btn variant="primary" onClick={submit} disabled={pending || picked.size === 0 || schedules.length === 0}>
+            <Btn variant="primary" onClick={submit} disabled={pending || picked.size === 0 || schedules.length === 0 || !startsOn}>
               {pending ? "Guardando…" : `${removing ? "Quitar horario a" : "Asignar a"} ${picked.size} persona(s)`}
             </Btn>
           </div>
@@ -101,6 +106,19 @@ export function AssignScheduleDialog({
                 ))}
                 <option value="">— Quitar el horario —</option>
               </select>
+            </label>
+          )}
+          {schedules.length > 0 && (
+            <label className={LABEL}>
+              Vigente desde
+              <input
+                type="date"
+                className={INPUT}
+                value={startsOn}
+                max={today}
+                onChange={(e) => setStartsOn(e.target.value)}
+                disabled={pending}
+              />
             </label>
           )}
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
@@ -138,7 +156,10 @@ export function AssignScheduleDialog({
               </li>
             ))}
           </ul>
-          <p className="m-0 text-xs text-text/70">Al guardar se recalcula la asistencia de los últimos días con el horario nuevo.</p>
+          <p className="m-0 text-xs text-text/70">
+            Los días anteriores a esa fecha conservan el horario que tenían; si un contrato empezó después, cuenta desde su
+            inicio. Al guardar se recalcula la asistencia desde esa fecha.
+          </p>
         </div>
       </Dialog>
     </>

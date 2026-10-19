@@ -13,6 +13,7 @@ import { activeEmploymentWhere, devicesInCompanyScope } from "@/lib/scope";
 import { cedulaDigits, MAX_FINGERPRINTS } from "@/lib/fingerprints";
 import { withReturn } from "@/lib/returnTo";
 import { AssignScheduleDialog, type SchedulePerson } from "@/components/admin/AssignScheduleDialog";
+import { DEFAULT_TZ, dateKeyInTz } from "@/lib/time";
 
 export const dynamic = "force-dynamic";
 
@@ -138,7 +139,12 @@ export default async function EmpresaEmpleadosPage({ params }: { params: Promise
           <>
             <ImportEmployeesButton companyId={company.id} />
             {schedulePeople.length > 0 && (
-              <AssignScheduleDialog companyId={company.id} people={schedulePeople} schedules={schedules} />
+              <AssignScheduleDialog
+                companyId={company.id}
+                people={schedulePeople}
+                schedules={schedules}
+                today={dateKeyInTz(new Date(), DEFAULT_TZ)}
+              />
             )}
             <ResyncEnrollmentsButton companyId={company.id} />
           </>

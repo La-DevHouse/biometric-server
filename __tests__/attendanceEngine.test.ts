@@ -183,3 +183,68 @@ test("corrida de todas las empresas: no se cae si no hay nada que calcular", asy
   assert.equal(r.failed, 0);
   assert.ok(r.companies >= 1);
 });
+
+test("el horario cuenta desde su fecha: antes, sin horario; cada tramo con el suyo", async () => {
+  const { companyId, dev } = await setup();
+  const diurno = await group(companyId, "HistDiurno", { start: "08:00", end: "17:00", workdays: [1, 2, 3, 4, 5], hours: 8 });
+  const tarde = await group(companyId, "HistTarde", { start: "13:00", end: "22:00", workdays: [1, 2, 3, 4, 5], hours: 8 });
+  const p = await person(companyId, 7, null);
+  assert.equal(await prisma.employment_schedule.count({ where: { employment_id: p.employmentId } }), 0);
+  // Como "Asignar horario": historial con su fecha y después el contrato. El trigger
+  // ve que el último registro ya es ese horario y no agrega otro "desde hoy".
+  const at = (ymd: string) => new Date(`${ymd}T00:00:00Z`);
+  await prisma.employment_schedule.create({ data: { employment_id: p.employmentId, schedule_group_id: diurno, starts_on: at("2026-10-07") } });
+  await prisma.employment_schedule.create({ data: { employment_id: p.employmentId, schedule_group_id: tarde, starts_on: at("2026-10-09") } });
+  await prisma.employment.update({ where: { id: p.employmentId }, data: { schedule_group_id: tarde } });
+  assert.equal(await prisma.employment_schedule.count({ where: { employment_id: p.employmentId } }), 2);
+
+  await mark(dev, p.userId, "20261005080000"); // lunes, antes de tener horario: solo horas
+  await mark(dev, p.userId, "20261005170000");
+  // martes 6: sin horario y sin marcas → no hay día; miércoles 7 (Diurno): ausente
+  await mark(dev, p.userId, "20261008083000"); // jueves (Diurno): 30 min tarde
+  await mark(dev, p.userId, "20261008170000");
+  await mark(dev, p.userId, "20261009130000"); // viernes (Tarde): a tiempo
+  await mark(dev, p.userId, "20261009220000");
+  await engine.computeCompanyAttendance(companyId, "2026-10-05", "2026-10-09", { today: "2026-10-12" });
+  const d = await days(p.employmentId);
+  assert.deepEqual(
+    Object.fromEntries(Object.entries(d).map(([k, v]) => [k, v.status])),
+    { "2026-10-05": "no_schedule", "2026-10-07": "absent", "2026-10-08": "late", "2026-10-09": "present" }
+  );
+  assert.equal(d["2026-10-08"].late_minutes, 30);
+  assert.equal(d["2026-10-05"].worked_minutes, 9 * 60);
+});
+
+test("el trigger deja historial para cualquier camino que toque el horario del contrato", async () => {
+  const { companyId } = await setup();
+  const a = await group(companyId, "TrigA", { start: "08:00", end: "17:00", workdays: [1, 2, 3, 4, 5] });
+  const b = await group(companyId, "TrigB", { start: "08:00", end: "17:00", workdays: [1, 2, 3, 4, 5] });
+  const hist = async (employmentId: number) =>
+    (await prisma.employment_schedule.findMany({ where: { employment_id: employmentId }, orderBy: [{ starts_on: "asc" }, { id: "asc" }] })).map(
+      (h) => [h.starts_on.toISOString().slice(0, 10), h.schedule_group_id]
+    );
+  // Contrato nuevo con horario: desde su inicio.
+  const p = await person(companyId, 8, a);
+  assert.deepEqual(await hist(p.employmentId), [["2026-09-01", a]]);
+  // Mover el inicio arrastra el primer tramo (antes y después).
+  await prisma.employment.update({ where: { id: p.employmentId }, data: { start_date: new Date("2026-08-15T00:00:00Z") } });
+  assert.deepEqual(await hist(p.employmentId), [["2026-08-15", a]]);
+  await prisma.employment.update({ where: { id: p.employmentId }, data: { start_date: new Date("2026-09-10T00:00:00Z") } });
+  assert.deepEqual(await hist(p.employmentId), [["2026-09-10", a]]);
+  // Cambio de horario desde el formulario del contrato: rige desde hoy (Caracas).
+  await prisma.employment.update({ where: { id: p.employmentId }, data: { schedule_group_id: b } });
+  const [{ today }] = await prisma.$queryRaw<{ today: Date }[]>`SELECT (now() AT TIME ZONE 'America/Caracas')::date AS today`;
+  assert.deepEqual(await hist(p.employmentId), [["2026-09-10", a], [today.toISOString().slice(0, 10), b]]);
+  // Mismo horario otra vez: nada nuevo. Quitarlo: tramo "sin horario" (reemplaza el de hoy).
+  await prisma.employment.update({ where: { id: p.employmentId }, data: { schedule_group_id: b } });
+  await prisma.employment.update({ where: { id: p.employmentId }, data: { schedule_group_id: null } });
+  assert.deepEqual(await hist(p.employmentId), [["2026-09-10", a], [today.toISOString().slice(0, 10), null]]);
+  // scheduleOnDate: el último que empezó en o antes del día.
+  const h = [
+    { starts_on: new Date("2026-09-10T00:00:00Z"), schedule_group: { status: "active", n: 1 } },
+    { starts_on: new Date("2026-10-01T00:00:00Z"), schedule_group: { status: "inactive", n: 2 } },
+  ];
+  assert.equal(engine.scheduleOnDate(h, "2026-09-09"), null);
+  assert.equal(engine.scheduleOnDate(h, "2026-09-30")?.n, 1);
+  assert.equal(engine.scheduleOnDate(h, "2026-10-05"), null);
+});

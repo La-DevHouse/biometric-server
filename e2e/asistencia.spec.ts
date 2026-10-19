@@ -35,16 +35,20 @@ test.describe.serial("Asistencia por día (motor de asistencia)", () => {
     await shot(page, "01-sin-horario");
   });
 
-  test("Asignar horario a varios: solo los sin horario", async ({ page }) => {
+  test("Asignar horario a varios: solo los sin horario, vigente desde el lunes sembrado", async ({ page }) => {
     await page.goto(`/admin/empresas/${seed.companyId}/empleados`);
     await page.getByRole("button", { name: "Asignar horario" }).click();
     const dialog = page.getByRole("dialog");
     // El select (no las casillas, cuya fila también dice "sin horario").
     await expect(dialog.getByRole("combobox", { name: /^Horario/ })).toHaveValue(/\d+/);
     await dialog.getByRole("button", { name: "solo los sin horario (2)" }).click();
+    // Por defecto rige desde hoy; se fecha al lunes de la semana sembrada.
+    await expect(dialog.getByLabel("Vigente desde")).toHaveValue(/^\d{4}-\d{2}-\d{2}$/);
+    await dialog.getByLabel("Vigente desde").fill(seed.from);
     await shot(page, "02-dialogo-asignar");
     await dialog.getByRole("button", { name: "Asignar a 2 persona(s)" }).click();
-    await expect(page.getByText("Horario asignado a 2 persona(s)")).toBeVisible({ timeout: 30_000 });
+    const [y, m, d] = seed.from.split("-");
+    await expect(page.getByText(`Horario asignado a 2 persona(s) desde el ${d}/${m}/${y}`)).toBeVisible({ timeout: 30_000 });
     await shot(page, "03-asignado");
     await closeToastIfAny(page);
   });
@@ -81,6 +85,10 @@ test.describe.serial("Asistencia por día (motor de asistencia)", () => {
     // lunes de esa semana es la tardanza de 25 min.
     const [y, m, d] = seed.from.split("-");
     await expect(page.locator("table tbody tr", { hasText: `${d}/${m}/${y}` })).toContainText("25 min tarde");
+    // Antes del lunes no tenía horario: el viernes anterior (laborable, sin marcas)
+    // no es "Ausente" — no aparece. El horario solo cuenta desde su fecha.
+    const fri = new Date(Date.UTC(+y, +m - 1, +d - 3)).toISOString().slice(0, 10).split("-");
+    await expect(page.locator("table tbody tr", { hasText: `${fri[2]}/${fri[1]}/${fri[0]}` })).toHaveCount(0);
     await shot(page, "06-empleado-asistencia");
     // El "←" vuelve a la empresa, a la misma vista.
     await page.getByRole("link", { name: `← ${seed.companyName}` }).click();

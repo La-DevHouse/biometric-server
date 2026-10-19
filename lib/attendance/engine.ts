@@ -4,6 +4,9 @@
 // marcaciones que muestra y exporta Empresa → Asistencia (companyAttendance: sin
 // repetidas, con el historial de sede, por contrato).
 //
+// El horario sale del historial del contrato (employment_schedule): el de un día
+// es el último que empezó en o antes de ese día; antes del primero, sin horario.
+//
 // Idempotente: un día por contrato y fecha (upsert). Recalcular reemplaza, no
 // duplica. Días de un contrato que ya no corresponden en el rango (cambió la
 // fecha del contrato, se le quitó el horario y ya no marcó) se borran.
@@ -55,10 +58,36 @@ export function planForDate(shifts: ShiftRow[] | null, ymd: string): DayPlan {
   return today.length ? { kind: "work", shift: today[0] } : { kind: "rest" };
 }
 
-function thresholdsFor(
-  group: { late_tolerance_min: number | null; early_leave_tolerance_min: number | null; absence_rule: string | null; absence_min_hours: number | null } | null,
-  company: { late_tolerance_min: number | null; early_leave_tolerance_min: number | null; absence_rule: string | null; absence_min_hours: number | null }
-): Thresholds {
+interface ToleranceRow {
+  late_tolerance_min: number | null;
+  early_leave_tolerance_min: number | null;
+  absence_rule: string | null;
+  absence_min_hours: number | null;
+}
+
+interface GroupRow extends ToleranceRow {
+  status: string;
+  shifts: ShiftRow[];
+}
+
+/**
+ * El horario vigente en `ymd` según el historial del contrato (ordenado por
+ * starts_on): el último que empezó en o antes de ese día. null = sin horario
+ * (antes del primero, quitado, o un horario inactivo).
+ */
+export function scheduleOnDate<G extends { status: string }>(
+  history: { starts_on: Date; schedule_group: G | null }[],
+  ymd: string
+): G | null {
+  let found: G | null = null;
+  for (const h of history) {
+    if (ymdOf(h.starts_on) > ymd) break;
+    found = h.schedule_group;
+  }
+  return found && found.status === "active" ? found : null;
+}
+
+function thresholdsFor(group: ToleranceRow | null, company: ToleranceRow): Thresholds {
   return {
     lateToleranceMin: group?.late_tolerance_min ?? company.late_tolerance_min ?? DEFAULT_THRESHOLDS.lateToleranceMin,
     earlyLeaveToleranceMin:
@@ -180,25 +209,31 @@ export async function computeCompanyAttendance(
       employee_id: true,
       start_date: true,
       end_date: true,
-      schedule_group: {
+      schedule_history: {
+        orderBy: [{ starts_on: "asc" }, { id: "asc" }],
         select: {
-          status: true,
-          late_tolerance_min: true,
-          early_leave_tolerance_min: true,
-          absence_rule: true,
-          absence_min_hours: true,
-          shifts: {
+          starts_on: true,
+          schedule_group: {
             select: {
-              id: true,
-              start_time: true,
-              end_time: true,
-              break_start: true,
-              break_end: true,
-              hours: true,
-              variable_in_out: true,
-              workdays: true,
-              effective_from: true,
-              effective_to: true,
+              status: true,
+              late_tolerance_min: true,
+              early_leave_tolerance_min: true,
+              absence_rule: true,
+              absence_min_hours: true,
+              shifts: {
+                select: {
+                  id: true,
+                  start_time: true,
+                  end_time: true,
+                  break_start: true,
+                  break_end: true,
+                  hours: true,
+                  variable_in_out: true,
+                  workdays: true,
+                  effective_from: true,
+                  effective_to: true,
+                },
+              },
             },
           },
         },
@@ -229,10 +264,14 @@ export async function computeCompanyAttendance(
   const rows: DayRow[] = [];
   for (const em of employments) {
     summary.employments++;
-    const group = em.schedule_group && em.schedule_group.status === "active" ? em.schedule_group : null;
-    const shifts = group ? (group.shifts as ShiftRow[]) : null;
-    const t = thresholdsFor(group, company);
-    const planFor = (ymd: string) => planForDate(shifts, ymd);
+    const history = em.schedule_history as { starts_on: Date; schedule_group: GroupRow | null }[];
+    const thresholds = new Map<GroupRow | null, Thresholds>();
+    const tFor = (g: GroupRow | null) => {
+      let t = thresholds.get(g);
+      if (!t) thresholds.set(g, (t = thresholdsFor(g, company)));
+      return t;
+    };
+    const planFor = (ymd: string) => planForDate(scheduleOnDate(history, ymd)?.shifts ?? null, ymd);
 
     const startYmd = ymdOf(em.start_date) > from ? ymdOf(em.start_date) : from;
     const endYmd = em.end_date && ymdOf(em.end_date) < last ? ymdOf(em.end_date) : last;
@@ -244,7 +283,7 @@ export async function computeCompanyAttendance(
     );
 
     for (let ymd = startYmd; ymd <= endYmd; ymd = addDays(ymd, 1)) {
-      const r = computeDay(planFor(ymd), perDay.get(ymd) ?? [], t);
+      const r = computeDay(planFor(ymd), perDay.get(ymd) ?? [], tFor(scheduleOnDate(history, ymd)));
       if (!r) continue;
       rows.push({
         employmentId: em.id,

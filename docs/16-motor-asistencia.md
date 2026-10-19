@@ -14,9 +14,10 @@ manuales auditadas (paso 4).
 - **Empleado → Asistencia** (`app/admin/empleados/[id]/asistencia/page.tsx`): los días de la
   persona en todas sus empresas, con totales de horas y extra del período.
 - **Empresa → Empleados → "Asignar horario"** (`AssignScheduleDialog`, `assignScheduleAction`):
-  elegir un horario (o quitarlo) para varias personas a la vez, con atajos "Seleccionar todos" y
-  "Solo los sin horario". Queda en la auditoría (`employment.assign_schedule`) y recalcula la
-  asistencia de los últimos días al guardar.
+  elegir un horario (o quitarlo) para varias personas a la vez, **vigente desde** una fecha (por
+  defecto hoy; no futura, hasta un año atrás), con atajos "Seleccionar todos" y "Solo los sin
+  horario". Queda en la auditoría (`employment.assign_schedule`, con `starts_on`) y recalcula la
+  asistencia desde esa fecha al guardar.
 
 ## Cuándo se calcula
 
@@ -46,7 +47,8 @@ el equipo en ese momento (historial, O-UI6) y dentro del período del contrato. 
 
 | Tema | Regla |
 | --- | --- |
-| Turno del día | El horario del contrato → el turno vigente en esa fecha (`effective_from/to`) cuyo `workdays` incluye ese día. Si hay varios, el que empieza antes |
+| Horario del día | El del **historial del contrato** (`employment_schedule`): el último que empezó en o antes de ese día. Antes del primero, sin horario — asignar un horario hoy no vuelve "Ausente" los días pasados |
+| Turno del día | Ese horario → el turno vigente en esa fecha (`effective_from/to`) cuyo `workdays` incluye ese día. Si hay varios, el que empieza antes |
 | Entrada / salida | Primera marcación del día / última. Las del medio no cuentan para las horas |
 | Turno que cruza la medianoche | La salida de la madrugada cuenta para el día en que empezó el turno (hasta 6 h después del fin), salvo que ya sea la llegada del turno del día siguiente (hasta 4 h antes de su inicio) |
 | Horas trabajadas | Salida − entrada − la parte del descanso del turno que cae dentro |
@@ -83,6 +85,22 @@ el equipo en ese momento (historial, O-UI6) y dentro del período del contrato. 
   corresponden en el rango (p. ej. el contrato terminó antes).
 - Las horas guardadas en `first_in` / `last_out` son instantes reales (hora de pared de la sede
   convertida con su zona horaria).
+
+## Historial de horario por contrato (2026-10-19)
+
+Un horario rige **desde una fecha**. `employment_schedule` (migración
+`20261019160000_employment_schedule_history`) guarda cada tramo: contrato, horario (null = "sin
+horario desde ahí") y `starts_on`. `employment.schedule_group_id` sigue siendo el horario actual
+(lo que muestran las listas).
+
+- **"Asignar horario"** escribe el tramo con su "Vigente desde" (si el contrato empezó después,
+  desde su inicio), borra los tramos que empezaban en o después de esa fecha y actualiza el
+  contrato.
+- **Trigger `employment_schedule_history`** en `employment`, para cualquier otro camino:
+  contrato nuevo con horario → desde su inicio; cambio de horario en el formulario del contrato
+  → **desde hoy** (Caracas), salvo que la app ya lo haya registrado con su fecha; cambio de la
+  fecha de inicio → el tramo que regía al inicio se mueve con ella.
+- Los contratos que ya tenían horario al migrar lo tienen desde su inicio (nada cambia).
 
 ## Código
 

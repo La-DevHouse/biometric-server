@@ -420,7 +420,8 @@ model employment {
   created_at        DateTime          @default(now()) @db.Timestamptz(6)
   updated_at        DateTime          @updatedAt @db.Timestamptz(6)
 
-  attendance_days attendance_day[]
+  attendance_days  attendance_day[]
+  schedule_history employment_schedule[]
 
   @@index([employee_id])
   @@index([company_id, status])
@@ -509,6 +510,7 @@ model schedule_group {
 
   shifts      shift[]
   employments employment[]
+  employment_schedules employment_schedule[]
 
   @@index([company_id])
 }
@@ -811,4 +813,22 @@ model device_site_assignment {
 
   @@index([dev_id])
   @@index([site_id])
+}
+
+/// Historial de horario por contrato (docs/16): el horario de un día es el último
+/// con starts_on <= ese día; antes del primero, sin horario. schedule_group_id null
+/// = "sin horario desde esa fecha". Lo mantiene el trigger employment_schedule_history
+/// (contrato nuevo / cambio de horario desde hoy); "Asignar horario" lo escribe con
+/// su fecha "Vigente desde".
+model employment_schedule {
+  id                Int             @id @default(autoincrement())
+  employment_id     Int
+  employment        employment      @relation(fields: [employment_id], references: [id], onDelete: Cascade)
+  schedule_group_id Int?
+  schedule_group    schedule_group? @relation(fields: [schedule_group_id], references: [id], onDelete: SetNull)
+  starts_on         DateTime        @db.Date
+  created_at        DateTime        @default(now()) @db.Timestamptz(6)
+
+  @@index([employment_id, starts_on])
+  @@index([schedule_group_id])
 }
