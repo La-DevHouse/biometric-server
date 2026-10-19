@@ -129,6 +129,15 @@ export const Icon = {
       <path d="M6.6 18.6c1.3-1.9 3.2-2.9 5.4-2.9s4.1 1 5.4 2.9" />
     </Svg>
   ),
+  // Hoja con renglones y lupa: el registro de quién hizo qué.
+  navAudit: (
+    <Svg>
+      <path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h5" />
+      <path d="M8 8h6M8 12h4" />
+      <circle cx="16.5" cy="16.5" r="3.5" />
+      <path d="M19 19l2.5 2.5" />
+    </Svg>
+  ),
   // Equipo (terminal con pantalla) + "+": agregar un equipo a una sede.
   addDevice: (
     <Svg>

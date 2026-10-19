@@ -165,8 +165,9 @@ Detalle en `docs/04` y `docs/05`. Modelos: huella `WS535BW1_BSCS_v1.5.31`; facia
   sincronización cada 30 min ni carga diaria de marcaciones).
 - ~~**O-UI6**~~ **Resuelto (2026-10-19):** historial de sede por equipo (`device_site_assignment`,
   trigger sobre `devices.site_id`); cada marcación cuenta para la sede de ese momento.
-- Control de acceso por perfil (hay `app_user.role`, verificar que restrinja algo), una pantalla
-  para consultar `audit_log`, el plan de pruebas físicas `docs/13`, capacitación y entrega.
+- Control de acceso por perfil (hay `app_user.role`; hoy NO restringe nada, por decisión de ALCO
+  en `docs/07` §4 — pendiente de confirmar contra el contrato), ~~una pantalla para consultar
+  `audit_log`~~ (hecha 2026-10-19: menú Auditoría), el plan de pruebas físicas `docs/13`, capacitación y entrega.
 
 ---
 

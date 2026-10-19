@@ -392,6 +392,13 @@ después si hace falta (ej. cuando entre el sistema de nómina de Fase 2).
 **Entidad nueva.** Requisito: "registro de auditoría de acciones sensibles".
 Aunque no haya restricción de permisos, sí hay que registrar **quién** hizo qué.
 
+> **Pantalla de consulta (2026-10-19):** menú **Auditoría** (`/admin/auditoria`): fecha y hora,
+> usuario, acción en palabras, sobre qué (con su nombre actual y enlace) y qué cambió campo por
+> campo. Filtros por fecha, usuario y área; 100 por página. Solo lectura. Código:
+> `lib/auditLog.ts` (etiquetas de acciones y campos, `auditEntries`, `auditChanges`) y
+> `app/admin/auditoria/page.tsx`; pruebas en `__tests__/auditLog.test.ts` y `e2e/auditoria.spec.ts`.
+> Una acción nueva sin etiqueta en `AUDIT_ACTION_LABEL` se muestra con su código.
+
 | Campo | Notas |
 | --- | --- |
 | `actor_app_user_id` | quién |

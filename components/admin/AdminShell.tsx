@@ -24,7 +24,8 @@ const ADMIN_ITEMS = [
   { href: "/admin/empleados", label: "Empleados", icon: Icon.navEmployees },
   { href: "/admin/categorias", label: "Categorías", icon: Icon.navCategories },
   { href: "/admin/horarios", label: "Horarios y turnos", icon: Icon.navSchedules },
-  { href: "/admin/cuentas", label: "Cuentas", icon: Icon.navAccounts }
+  { href: "/admin/cuentas", label: "Cuentas", icon: Icon.navAccounts },
+  { href: "/admin/auditoria", label: "Auditoría", icon: Icon.navAudit },
 ] as const;
 
 const TITLES: Array<{ prefix: string; title: string }> = [
@@ -38,6 +39,7 @@ const TITLES: Array<{ prefix: string; title: string }> = [
   { prefix: "/admin/horarios/", title: "Detalle de horario" },
   { prefix: "/admin/horarios", title: "Horarios y turnos" },
   { prefix: "/admin/cuentas", title: "Cuentas de plataforma" },
+  { prefix: "/admin/auditoria", title: "Auditoría" },
   { prefix: "/admin/diagnostico", title: "Diagnóstico / Avanzado" },
   { prefix: "/admin", title: "Inicio" },
 ];
