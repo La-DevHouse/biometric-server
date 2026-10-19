@@ -7,7 +7,7 @@ import { UrlFilters } from "@/components/admin/UrlFilters";
 import { AttendanceDaysTable } from "@/components/admin/AttendanceDaysTable";
 import { employeeAttendanceDays } from "@/lib/attendance/queries";
 import { defaultComputeRange } from "@/lib/attendance/engine";
-import { DAY_STATUS_PLURAL } from "@/lib/attendance/labels";
+import { DAY_STATUS_LABEL, statusCount } from "@/lib/attendance/labels";
 import type { DayStatus } from "@/lib/attendance/compute";
 
 export const dynamic = "force-dynamic";
@@ -40,7 +40,7 @@ export default async function EmpleadoAsistenciaPage({
   for (const d of days) if (d.status) counts.set(d.status, (counts.get(d.status) ?? 0) + 1);
   const worked = days.reduce((n, d) => n + (d.workedMinutes ?? 0), 0);
   const overtime = days.reduce((n, d) => n + (d.overtimeMinutes ?? 0), 0);
-  const summary = [...counts].map(([s, n]) => `${n} ${DAY_STATUS_PLURAL[s]}`);
+  const summary = (Object.keys(DAY_STATUS_LABEL) as DayStatus[]).filter((s) => counts.get(s)).map((s) => statusCount(s, counts.get(s)!));
 
   return (
     <div className="flex max-w-5xl flex-col gap-4">

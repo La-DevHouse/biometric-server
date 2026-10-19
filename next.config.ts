@@ -1,6 +1,9 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Carpeta de build aparte para QA (e2e contra un server propio en otro puerto,
+  // sin pisar el .next del `npm run dev` que esté corriendo). Por defecto, .next.
+  distDir: process.env.NEXT_DIST_DIR || ".next",
   // pdf-parse (lib/pdfText.ts, parseo de RIF) usa pdf.js por debajo, que
   // resuelve su "worker" con rutas relativas al paquete — si Next lo empaqueta
   // (Turbopack/webpack) esas rutas se rompen ("Setting up fake worker failed").

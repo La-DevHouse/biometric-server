@@ -23,3 +23,8 @@ export const DAY_STATUS_PLURAL: Record<DayStatus, string> = {
   rest_day_worked: "días libres trabajados",
   no_schedule: "sin horario",
 };
+
+/** "1 tardanza" / "3 tardanzas". */
+export function statusCount(status: DayStatus, n: number): string {
+  return `${n} ${n === 1 ? DAY_STATUS_LABEL[status].toLowerCase() : DAY_STATUS_PLURAL[status]}`;
+}

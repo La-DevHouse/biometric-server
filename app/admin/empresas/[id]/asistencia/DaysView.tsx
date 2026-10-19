@@ -7,7 +7,7 @@ import { UrlFilters } from "@/components/admin/UrlFilters";
 import { AttendanceDaysTable } from "@/components/admin/AttendanceDaysTable";
 import { companyAttendanceDays, companyAttendanceDayCounts } from "@/lib/attendance/queries";
 import { defaultComputeRange } from "@/lib/attendance/engine";
-import { DAY_STATUS_LABEL, DAY_STATUS_PLURAL } from "@/lib/attendance/labels";
+import { DAY_STATUS_LABEL, statusCount } from "@/lib/attendance/labels";
 import type { DayStatus } from "@/lib/attendance/compute";
 import { withReturn } from "@/lib/returnTo";
 
@@ -92,7 +92,7 @@ export async function AttendanceDaysView({
   if (status) back.set("estado", status);
   const backHere = `/admin/empresas/${companyId}/asistencia?${back.toString()}`;
 
-  const summary = STATUSES.filter((s) => counts.get(s)).map((s) => `${counts.get(s)} ${DAY_STATUS_PLURAL[s]}`);
+  const summary = STATUSES.filter((s) => counts.get(s)).map((s) => statusCount(s, counts.get(s)!));
 
   return (
     <div className="flex flex-col gap-4">

@@ -15,15 +15,26 @@ import { defineConfig, devices } from "@playwright/test";
  * `npm run test-vision` (llamada real sin UI) y a mano
  * (docs/qa-hito-3.md §2.7 / §5.1b).
  */
+// Corrida de QA con evidencia (E2E_RUN_DIR=e2e/.artifacts/runs/<fecha-hora>): video y
+// trace de cada test + reporte HTML en esa carpeta. Sin la variable, como siempre.
+const RUN_DIR = process.env.E2E_RUN_DIR;
+
 export default defineConfig({
   testDir: "./e2e",
   fullyParallel: false,
   workers: 1,
   retries: 0,
-  reporter: [["list"]],
+  reporter: RUN_DIR ? [["list"], ["html", { outputFolder: `${RUN_DIR}/report`, open: "never" }]] : [["list"]],
+  outputDir: RUN_DIR ? `${RUN_DIR}/test-results` : undefined,
+  // Con evidencia se corre contra un server de desarrollo aparte, que compila cada
+  // página la primera vez: más margen para las esperas.
+  expect: { timeout: RUN_DIR ? 20_000 : 5_000 },
+  timeout: RUN_DIR ? 120_000 : 30_000,
   use: {
     baseURL: process.env.E2E_BASE_URL || "http://localhost:3000",
-    trace: "retain-on-failure",
+    trace: RUN_DIR ? "on" : "retain-on-failure",
+    video: RUN_DIR ? "on" : "off",
+    launchOptions: { slowMo: Number(process.env.E2E_SLOWMO || 0) },
   },
   projects: [
     { name: "setup", testMatch: /.*\.setup\.ts/ },

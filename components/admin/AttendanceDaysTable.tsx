@@ -101,7 +101,7 @@ export function AttendanceDaysTable({
                 <Td>{who(r)}</Td>
                 <Td className="whitespace-nowrap font-mono">{fmtTime(r.firstIn, r.date)}</Td>
                 <Td className="whitespace-nowrap font-mono">{fmtTime(r.lastOut, r.date)}</Td>
-                <Td className="whitespace-nowrap">{fmtMin(r.workedMinutes)}</Td>
+                <Td className="whitespace-nowrap">{r.status === "absent" ? "—" : fmtMin(r.workedMinutes)}</Td>
                 <Td className="whitespace-nowrap">{r.overtimeMinutes ? fmtMin(r.overtimeMinutes) : "—"}</Td>
                 <Td>
                   <DayStatusCell r={r} />
@@ -119,7 +119,7 @@ export function AttendanceDaysTable({
             tags={<span className="font-mono text-xs text-text/60">{fmtDay(r.date)}</span>}
             fields={[
               { label: "Entrada / salida", value: `${fmtTime(r.firstIn, r.date)} – ${fmtTime(r.lastOut, r.date)}` },
-              { label: "Horas", value: fmtMin(r.workedMinutes) },
+              { label: "Horas", value: r.status === "absent" ? "—" : fmtMin(r.workedMinutes) },
               { label: "Extra", value: r.overtimeMinutes ? fmtMin(r.overtimeMinutes) : "—" },
               { label: "Estado", value: <DayStatusCell r={r} /> },
             ]}

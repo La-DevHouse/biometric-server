@@ -118,9 +118,10 @@ export function computeShiftTimes(i: ShiftTimesInput): ShiftTimesResult {
   return { ok: true, crossesMidnight, workedMinutes, hours: (workedMinutes / 60).toFixed(2) };
 }
 
-/** 390 → "6 h 30 min". */
+/** 390 → "6 h 30 min"; 5 → "5 min" (sin "0 h"). */
 export function formatMinutes(min: number): string {
   const h = Math.floor(min / 60);
   const m = min % 60;
+  if (h === 0) return `${m} min`;
   return m ? `${h} h ${String(m).padStart(2, "0")} min` : `${h} h`;
 }

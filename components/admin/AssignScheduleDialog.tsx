@@ -103,16 +103,23 @@ export function AssignScheduleDialog({
               </select>
             </label>
           )}
-          <div className="flex flex-wrap gap-2">
-            <Btn onClick={() => setPicked(new Set(people.map((p) => p.employmentId)))} disabled={pending}>
-              Seleccionar todos
-            </Btn>
-            <Btn onClick={() => setPicked(new Set(withoutSchedule))} disabled={pending || withoutSchedule.length === 0}>
-              Solo los sin horario ({withoutSchedule.length})
-            </Btn>
-            <Btn onClick={() => setPicked(new Set())} disabled={pending || picked.size === 0}>
-              Ninguno
-            </Btn>
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+            <span className="text-text/70">Seleccionar:</span>
+            {[
+              { label: "todos", ids: people.map((p) => p.employmentId), off: false },
+              { label: `solo los sin horario (${withoutSchedule.length})`, ids: withoutSchedule, off: withoutSchedule.length === 0 },
+              { label: "ninguno", ids: [] as number[], off: picked.size === 0 },
+            ].map((o) => (
+              <button
+                key={o.label}
+                type="button"
+                onClick={() => setPicked(new Set(o.ids))}
+                disabled={pending || o.off}
+                className="cursor-pointer border-0 bg-transparent p-0 text-sm text-accent underline-offset-2 hover:underline disabled:cursor-default disabled:text-text/40 disabled:no-underline"
+              >
+                {o.label}
+              </button>
+            ))}
           </div>
           <ul className="m-0 flex max-h-[50vh] list-none flex-col gap-1 overflow-y-auto p-0">
             {people.map((p) => (

@@ -47,6 +47,7 @@ test("shiftTime - horas de jornada y medianoche", () => {
   assert.ok(noBreak.ok && noBreak.workedMinutes === 480 && !noBreak.crossesMidnight);
   assert.equal(formatMinutes(450), "7 h 30 min");
   assert.equal(formatMinutes(480), "8 h");
+  assert.equal(formatMinutes(5), "5 min", "menos de una hora, sin \"0 h\"");
 });
 
 test("shiftTime - errores por campo", () => {

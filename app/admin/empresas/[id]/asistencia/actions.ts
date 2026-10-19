@@ -7,7 +7,7 @@ import { companyUnmatchedDeviceUsers, type UnmatchedDeviceUser } from "@/lib/com
 import { revalidatePath } from "next/cache";
 import { writeAudit } from "@/lib/audit";
 import { computeCompanyAttendance, defaultComputeRange } from "@/lib/attendance/engine";
-import { DAY_STATUS_PLURAL } from "@/lib/attendance/labels";
+import { statusCount } from "@/lib/attendance/labels";
 import type { DayStatus } from "@/lib/attendance/compute";
 
 export interface ExportFilters {
@@ -81,7 +81,7 @@ export async function recomputeAttendanceAction(
     }
     const parts = (Object.entries(r.byStatus) as [DayStatus, number][])
       .sort((a, b) => b[1] - a[1])
-      .map(([st, n]) => `${n} ${DAY_STATUS_PLURAL[st]}`);
+      .map(([st, n]) => statusCount(st, n));
     return {
       ok: true,
       message: `Asistencia calculada del ${fmtYmd(from)} al ${fmtYmd(to)}: ${r.days} día(s) de ${r.employments} contrato(s) — ${parts.join(", ")}.`,

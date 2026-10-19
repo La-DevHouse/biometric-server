@@ -96,3 +96,25 @@ el equipo en ese momento (historial, O-UI6) y dentro del período del contrato. 
 No hay horarios cargados (0 horarios, 0 turnos; ningún contrato con horario). Hasta que ALCO los
 cargue, todos los días saldrían como "Sin horario" (solo horas). De ahí la asignación de horario
 en masa del paso 3.
+
+## QA de punta a punta (Playwright)
+
+`e2e/asistencia.spec.ts` recorre el paso 3 (asignar horario a varios, "Por día" con cada estado,
+filtro por estado, pestaña del empleado y volver, "Recalcular", "Marcaciones" igual). Los datos
+los crea `e2e/seed-asistencia.ts`, que **se niega a correr contra otra base que no sea el Postgres
+de Docker** (puerto 55432). Para no tocar el server de desarrollo de nadie (ni producción, si el
+`.env` apunta ahí por el túnel), se levanta uno aparte en otro puerto, con su propia carpeta:
+
+```bash
+# server de QA (desarrollo, carpeta .next-qa, base de Docker)
+DATABASE_URL="postgresql://biometric:biometric@localhost:55432/biometric?schema=public" \
+  NEXT_DIST_DIR=.next-qa PORT=3100 npx tsx server.ts
+# en otra terminal: la corrida, con video y trace de cada test en e2e/.artifacts/runs/<fecha-hora>/
+DATABASE_URL="postgresql://biometric:biometric@localhost:55432/biometric?schema=public" \
+  E2E_BASE_URL=http://localhost:3100 E2E_RUN_DIR="e2e/.artifacts/runs/$(date +%Y-%m-%d_%H%M%S)" \
+  npx playwright test e2e/asistencia.spec.ts
+```
+
+Al terminar: detener el server de QA y borrar `.next-qa/` (Next agrega esa carpeta a
+`tsconfig.json` al usarla: no commitear ese cambio). La primera corrida de 2026-10-19 pasó 8/8
+(reporte y videos en `e2e/.artifacts/`, fuera de git).

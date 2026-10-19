@@ -17,6 +17,10 @@ setup("crear usuario de prueba y loguearse", async ({ page }) => {
   await page.getByLabel("Email").fill(E2E_EMAIL);
   await page.getByLabel("Contraseña").fill(E2E_PASSWORD);
   await page.getByRole("button", { name: "Ingresar" }).click();
+  // En un segundo server de desarrollo (QA en otro puerto, E2E_BASE_URL) el salto
+  // automático a /admin tras el login a veces no ocurre aunque la sesión ya quedó
+  // creada (la cookie está): se navega a mano. En el server normal no hace falta.
+  await page.waitForURL(/\/admin$/, { timeout: 10_000 }).catch(() => page.goto("/admin"));
   await expect(page).toHaveURL(/\/admin$/);
 
   await page.context().storageState({ path: AUTH_FILE });
