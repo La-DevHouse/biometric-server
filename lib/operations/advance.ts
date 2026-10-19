@@ -331,6 +331,15 @@ async function advanceSyncUsers(op: OperationRow, input: AdvanceInput): Promise<
         : `${synced.length} usuarios sincronizados.`;
     const finalStage = failed.length > 0 && synced.length === 0 ? "error" : "done";
     await finishOperation(op.id, finalStage, note);
+    // Lo leído quedó en la caché pero sin asignar a los empleados: la corrida del
+    // reconciliador lo ingiere desde la caché (ingestCachedFingerprints) y lo
+    // propaga. Antes quedaban "Sin huella" teniendo su huella en el equipo.
+    // Import dinámico: lib/sync importa lib/operations.
+    if (synced.length > 0) {
+      void import("@/lib/sync/reconcile")
+        .then(({ startReconcileDevice }) => startReconcileDevice(op.dev_id, { trigger: "event" }))
+        .catch((err) => console.error("[sync] no se pudo lanzar la corrida tras sincronizar usuarios:", op.dev_id, err));
+    }
     // No local pruning here on purpose (a previous version deleted local
     // `users`/`enroll_data` rows not present in this list — reverted).
     // Verified against real hardware: GET_USER_ID_LIST does NOT enumerate

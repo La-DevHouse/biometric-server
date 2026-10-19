@@ -27,7 +27,7 @@ import { OPERATION_LABELS } from "@/lib/operations/kinds";
 import { upsertUserFromInfo, type UserInfoResult } from "@/lib/operations/persist";
 import { startAddEmployeeToDevice, startDeleteUser } from "@/lib/operations";
 import { batchSize, employeesWithActiveAdd, startAddEmployeesBatch } from "@/lib/operations/batch";
-import { ingestUserInfo, employeeIdsByCedula, cedulaDigits, desiredFingerprintIdsMany } from "@/lib/fingerprints";
+import { ingestUserInfo, ingestCachedFingerprints, employeeIdsByCedula, cedulaDigits, desiredFingerprintIdsMany } from "@/lib/fingerprints";
 import { activeEmploymentWhere, scopeCompanyIds, applicableDevices } from "@/lib/scope";
 import { planReconcile, selectUsersToRead, auditVerdict, type ReconcilePlan, type ScopedEmployee } from "./plan";
 
@@ -503,6 +503,11 @@ async function decideAndApply(op: OperationRow, plan: ReconcilePlanState, readDe
   // borrado desde el teclado deja de figurar (y, si corresponde, se lo vuelve a crear).
   const audit = plan.audit ? await applyAudit(devId, plan) : null;
 
+  // Huellas de empleados que ya están en la caché del equipo pero sin asignar
+  // (p. ej. leídas por "Sincronizar lista de usuarios"): se ingieren desde la caché,
+  // sin GET_USER_INFO, antes de planear — así cuentan como suyas y se propagan.
+  const healed = await ingestCachedFingerprints(devId);
+
   const [inScope, cachedUsers, linked, byCedula] = await Promise.all([
     scopedEmployees(devId, companyId),
     prisma.users.findMany({ where: { dev_id: devId }, select: { user_id: true, user_privilege: true } }),
@@ -529,7 +534,7 @@ async function decideAndApply(op: OperationRow, plan: ReconcilePlanState, readDe
   // Huellas físicas nuevas ingeridas acá → los demás equipos de esas personas
   // tienen que recibirlas: se les dispara su propia corrida (docs/10 §4.3).
   const others = new Set<string>();
-  for (const employeeId of plan.newFingerprintEmployees ?? []) {
+  for (const employeeId of new Set([...(plan.newFingerprintEmployees ?? []), ...healed])) {
     for (const d of await applicableDevices(employeeId)) if (d !== devId) others.add(d);
   }
   const propagated = others.size ? (await triggerReconcile(others, "event")).length : 0;
@@ -553,12 +558,14 @@ async function decideAndApply(op: OperationRow, plan: ReconcilePlanState, readDe
     unknown: decision.unknownUsers,
     overflow,
     propagated_to: propagated,
+    healed_from_cache: healed.length,
     errors: notes,
   };
   await finishRun(plan.runId, true, stats);
 
   const parts = [
     readDevice ? `${plan.infoOk ?? 0} usuario(s) leídos` : "sin cambios en el equipo",
+    healed.length && `${healed.length} persona(s) con huellas ya leídas, ahora asignadas`,
     decision.add.length && `${decision.add.length} alta(s)`,
     decision.complete.length && `${decision.complete.length} a completar huellas`,
     decision.remove.length && `${decision.remove.length} baja(s)`,

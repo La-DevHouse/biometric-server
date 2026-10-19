@@ -130,6 +130,48 @@ export async function ingestUserInfo(
   return { employeeId: employee.id, newFingerprintIds, slots };
 }
 
+/**
+ * Huellas que ya están en la caché del equipo (enroll_data, forma limpia de
+ * GET_USER_INFO) de usuarios que son la cédula de un empleado, pero sin registro
+ * de procedencia: se ingieren desde ahí, sin volver a preguntarle al equipo.
+ *
+ * Por qué existe (visto en producción 2026-10-18, equipo 2023054246): "Sincronizar
+ * lista de usuarios" leía a todos y llenaba la caché sin ingerir; después el
+ * reconciliador los daba por conocidos (selectUsersToRead) y, con los contadores
+ * quietos, ni leía el equipo → 13 empleados quedaban "Sin huella" teniendo su
+ * huella en el equipo. Se pasan TODOS los slots en caché de cada usuario (no solo
+ * los nuevos): ingestUserInfo borra del registro los slots que no se le reportan.
+ * Devuelve los empleados que quedaron con huellas nuevas (para propagarlas).
+ */
+export async function ingestCachedFingerprints(devId: string): Promise<number[]> {
+  const rows = await prisma.$queryRaw<{ user_id: string; backup_number: number; data: Uint8Array }[]>(Prisma.sql`
+    SELECT ed.user_id, ed.backup_number, ed.data
+      FROM enroll_data ed
+     WHERE ed.dev_id = ${devId} AND ed.backup_number BETWEEN 0 AND ${MAX_FINGERPRINTS - 1}
+       AND ed.user_id IN (
+         SELECT c.user_id FROM enroll_data c
+          WHERE c.dev_id = ${devId} AND c.backup_number BETWEEN 0 AND ${MAX_FINGERPRINTS - 1}
+            AND length(c.data) >= ${MIN_TEMPLATE_BYTES}
+            AND NOT EXISTS (SELECT 1 FROM device_fingerprint_slot s
+                             WHERE s.dev_id = c.dev_id AND s.device_user_id = c.user_id AND s.backup_number = c.backup_number)
+            AND EXISTS (SELECT 1 FROM employee e WHERE regexp_replace(e.national_id, '\\D', '', 'g') = c.user_id)
+       )
+     ORDER BY ed.user_id, ed.backup_number`);
+  const byUser = new Map<string, typeof rows>();
+  for (const r of rows) byUser.set(r.user_id, [...(byUser.get(r.user_id) ?? []), r]);
+
+  const withNew: number[] = [];
+  for (const [userId, slots] of byUser) {
+    const info = {
+      user_id: userId,
+      enroll_data_array: slots.map((s, i) => ({ backup_number: s.backup_number, enroll_data: `BIN_${i + 1}` })),
+    };
+    const res = await ingestUserInfo(devId, info, slots.map((s) => Buffer.from(s.data)));
+    if (res.employeeId !== null && res.newFingerprintIds.length > 0) withNew.push(res.employeeId);
+  }
+  return withNew;
+}
+
 /** Las huellas que deberían estar en cada equipo del alcance: las 10 activas más antiguas (R10 / O8). */
 export async function desiredFingerprints(employeeId: number) {
   return prisma.employee_fingerprint.findMany({

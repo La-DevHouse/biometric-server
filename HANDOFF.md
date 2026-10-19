@@ -124,14 +124,12 @@ Detalle en `docs/04` y `docs/05`. Modelos: huella `WS535BW1_BSCS_v1.5.31`; facia
 
 ### Bugs / problemas abiertos
 
-1. **"Sincronizar lista de usuarios" no asigna huellas a empleados** (diagnosticado, sin
-   implementar). `advanceSyncUsers` (lib/operations/advance.ts) guarda lo leído en la caché
-   (`users`/`enroll_data`) pero no llama a `ingestUserInfo`. Después el reconciliador
-   (`selectUsersToRead`, lib/sync/plan.ts) los da por conocidos y no los relee → los empleados
-   quedan "Sin huella" y "en 0 de 1" aunque el equipo tenga sus huellas (visto en producción,
-   empresa "El Castillo del Pan"). Arreglo propuesto: (a) que `advanceSyncUsers` llame a
-   `ingestUserInfo`; (b) que el reconciliador relea a quien tiene huellas en caché pero sin
-   registro de procedencia (`device_fingerprint_slot`), para sanar lo existente solo.
+1. ~~**"Sincronizar lista de usuarios" no asigna huellas a empleados**~~ **Resuelto (2026-10-18).**
+   La caché del equipo tenía las huellas (forma limpia) pero sin asignar, y el reconciliador no
+   las releía. Ahora cada corrida ingiere desde la caché las huellas de empleados sin registro de
+   procedencia (`ingestCachedFingerprints`, lib/fingerprints.ts) — sin `GET_USER_INFO` — y las
+   propaga; y "Sincronizar lista de usuarios" lanza una corrida al terminar. Al confirmarlo en
+   prod (solo lectura): 12 personas en el equipo `2023054246` + 1 en un facial.
 2. **Faciales no aceptan crear usuarios** (`SET_USER_INFO`): 14/14 rechazados en local, antes y
    después de reiniciar. Pero en producción sí se crearon algunos (p. ej. en el facial "Equipo 2").
    Sin entender esto, la sincronización no puede poner empleados nuevos en un facial. Siguiente
