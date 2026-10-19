@@ -18,6 +18,9 @@ const testUrl = process.env.TEST_DATABASE_URL ?? swapDb(base, "biometric_test");
 const testDbName = new URL(testUrl).pathname.slice(1);
 
 /** El Postgres de desarrollo de docker-compose.yml (puerto 55432). */
+/** Para mensajes: la URL sin contraseña (nunca imprimir credenciales). */
+const redact = (url: string) => url.replace(/(\/\/[^:/@]+:)[^@]*@/g, "$1***@");
+
 const isDockerDev = (url: string) => /@(localhost|127\.0\.0\.1):55432\//.test(url);
 const sameDb = (a: string, b: string) => {
   const ua = new URL(a);
@@ -34,14 +37,14 @@ const sameDb = (a: string, b: string) => {
 function guard() {
   if (process.env.TEST_DATABASE_URL) {
     if (sameDb(process.env.TEST_DATABASE_URL, base)) {
-      throw new Error("[test-db] TEST_DATABASE_URL es la misma base que DATABASE_URL. Los tests la borrarían/llenarían: usá una base de pruebas aparte.");
+      throw new Error("[test-db] TEST_DATABASE_URL es la misma base que DATABASE_URL. Los tests la borrarían/llenarían: use una base de pruebas aparte.");
     }
     return;
   }
   if (!isDockerDev(base)) {
     throw new Error(
       "[test-db] DATABASE_URL no es el Postgres local de Docker (puerto 55432) — puede ser producción.\n" +
-        "Para correr los tests, seteá TEST_DATABASE_URL a una base de pruebas que NO sea producción\n" +
+        "Para correr los tests, defina TEST_DATABASE_URL con una base de pruebas que NO sea producción\n" +
         '(p. ej. TEST_DATABASE_URL="postgresql://biometric:biometric@localhost:55432/biometric_test?schema=public").'
     );
   }
@@ -49,12 +52,15 @@ function guard() {
 
 async function main() {
   guard();
-  const admin = new Client({ connectionString: swapDb(base, "postgres") });
+  // La base de tests se crea en el servidor de la base de TESTS, nunca en el de
+  // DATABASE_URL: si ese es producción (túnel), crearía ahí una base vacía.
+  const adminUrl = swapDb(testUrl, "postgres");
+  const admin = new Client({ connectionString: adminUrl });
   try {
     await admin.connect();
   } catch (err) {
     console.error(
-      `[test-db] no se pudo conectar a Postgres (${swapDb(base, "postgres")}).\n` +
+      `[test-db] no se pudo conectar a Postgres (${redact(adminUrl)}).\n` +
         `¿Está corriendo? -> docker compose up -d db`
     );
     throw err;
@@ -77,6 +83,7 @@ async function main() {
 }
 
 main().catch((err) => {
-  console.error(err);
+  // El error de pg puede traer la cadena de conexión: solo el mensaje, sin credenciales.
+  console.error(redact(err instanceof Error ? err.message : String(err)));
   process.exit(1);
 });
