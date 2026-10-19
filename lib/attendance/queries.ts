@@ -6,6 +6,7 @@ export interface AttendanceDayRow {
   id: number;
   /** "YYYY-MM-DD" */
   date: string;
+  employmentId: number;
   employeeId: number;
   employeeName: string;
   nationalId: string;
@@ -43,6 +44,7 @@ async function readDays(where: Record<string, unknown>, f: DaysFilter): Promise<
     select: {
       id: true,
       date: true,
+      employment_id: true,
       employee_id: true,
       first_in: true,
       last_out: true,
@@ -62,6 +64,7 @@ async function readDays(where: Record<string, unknown>, f: DaysFilter): Promise<
   return rows.map((r) => ({
     id: r.id,
     date: r.date.toISOString().slice(0, 10),
+    employmentId: r.employment_id,
     employeeId: r.employee_id,
     employeeName: `${r.employee.last_name}, ${r.employee.first_name}`,
     nationalId: r.employee.national_id,

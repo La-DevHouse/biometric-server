@@ -95,10 +95,50 @@ test.describe.serial("Asistencia por día (motor de asistencia)", () => {
     await expect(page).toHaveURL(/vista=dias/);
   });
 
+  test("Corregir: agregar la salida que falta, anular y deshacer", async ({ page }) => {
+    await page.goto(daysUrl());
+    const beto = rowsOf(page, seed.beto.name);
+    // Miércoles: una sola marcación (08:00) → agregar la salida.
+    await beto.filter({ hasText: "Incompleto" }).getByRole("button", { name: "Corregir marcaciones" }).click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog.getByRole("listitem").filter({ hasText: "08:00" })).toBeVisible();
+    // Sin motivo no deja.
+    await dialog.getByLabel("Hora").fill("17:00");
+    await dialog.getByRole("button", { name: "Agregar marcación" }).click();
+    await expect(page.getByText(/Escriba primero el motivo/)).toBeVisible();
+    await closeToastIfAny(page);
+    await dialog.getByLabel("Motivo (obligatorio)").fill("Olvidó marcar la salida (QA E2E)");
+    await dialog.getByRole("button", { name: "Agregar marcación" }).click();
+    await expect(page.getByText("Marcación agregada.")).toBeVisible({ timeout: 30_000 });
+    await expect(dialog.getByRole("listitem").filter({ hasText: "Agregada" })).toContainText("Olvidó marcar la salida (QA E2E)");
+    await shot(page, "07a-correccion-agregada");
+    await closeToastIfAny(page);
+    await dialog.getByRole("button", { name: "Cerrar" }).last().click();
+    await expect(beto.filter({ hasText: "Incompleto" })).toHaveCount(0);
+    await expect(beto.filter({ hasText: "Presente" })).toHaveCount(2);
+
+    // Lunes (tardanza 08:25): anular la entrada → queda "una sola marcación"; deshacer → tardanza otra vez.
+    await beto.filter({ hasText: "Tardanza" }).getByRole("button", { name: "Corregir marcaciones" }).click();
+    await dialog.getByLabel("Motivo (obligatorio)").fill("Marcación de prueba QA E2E");
+    await dialog.getByRole("listitem").filter({ hasText: "08:25" }).getByRole("button", { name: "Anular" }).click();
+    await expect(page.getByText("Marcación anulada.")).toBeVisible({ timeout: 30_000 });
+    await expect(dialog.getByRole("heading", { name: "Anuladas" })).toBeVisible();
+    await shot(page, "07b-correccion-anulada");
+    await closeToastIfAny(page);
+    await dialog.getByRole("listitem").filter({ hasText: "08:25" }).getByRole("button", { name: "Deshacer" }).click();
+    await expect(page.getByText("La marcación vuelve a contar.")).toBeVisible({ timeout: 30_000 });
+    await expect(dialog.getByRole("heading", { name: "Anuladas" })).toHaveCount(0);
+    await closeToastIfAny(page);
+    await dialog.getByRole("button", { name: "Cerrar" }).last().click();
+    await expect(beto.filter({ hasText: "Tardanza" })).toContainText("25 min tarde");
+  });
+
   test("Recalcular asistencia del período filtrado", async ({ page }) => {
     await page.goto(daysUrl());
     await page.getByRole("button", { name: "Recalcular asistencia del período filtrado" }).click();
     await expect(page.getByText(/Asistencia calculada del/)).toBeVisible({ timeout: 30_000 });
+    // La salida agregada a mano sigue contando después de recalcular.
+    await expect(rowsOf(page, seed.beto.name).filter({ hasText: "Incompleto" })).toHaveCount(0);
     await shot(page, "07-recalcular");
     await closeToastIfAny(page);
   });
@@ -108,6 +148,8 @@ test.describe.serial("Asistencia por día (motor de asistencia)", () => {
     await page.getByRole("link", { name: "Marcaciones" }).click();
     await expect(page.getByRole("columnheader", { name: "Fecha y hora" })).toBeVisible();
     await expect(page.locator("table tbody tr", { hasText: seed.beto.name }).first()).toBeVisible();
+    // La marcación agregada sale en la lista (y en el export), marcada como corrección.
+    await expect(page.locator("table tbody tr", { hasText: seed.beto.name }).filter({ hasText: "Corrección manual" })).toHaveCount(1);
     await shot(page, "08-marcaciones");
   });
 });

@@ -102,6 +102,28 @@ horario desde ahí") y `starts_on`. `employment.schedule_group_id` sigue siendo 
   fecha de inicio → el tramo que regía al inicio se mueve con ella.
 - Los contratos que ya tenían horario al migrar lo tienen desde su inicio (nada cambia).
 
+## Correcciones manuales (paso 4, 2026-10-19)
+
+Un día se corrige con el lápiz ("Corregir marcaciones") de su fila, en Empresa → Asistencia →
+"Por día" o en Empleado → Asistencia (`CorrectDayDialog`). Se corrige la **entrada** del cálculo
+— las marcaciones — no el resultado del día (los días se rehacen en cada recálculo):
+
+- **Agregar una marcación que falta**: hora del día (o del día siguiente, para la salida de un
+  turno nocturno) y sede si la empresa tiene varias. No futura, dentro del contrato.
+- **Anular una marcación del equipo**: deja de contar; `attendance_logs` **no se toca**.
+- **Deshacer** cualquiera de las dos: queda quién y cuándo (`revoked_at` / `revoked_by`), no se borra.
+- **Motivo obligatorio** (al menos 5 caracteres) para agregar o anular. Cada cambio va a la
+  auditoría (`attendance.correction.add_mark` / `void_mark` / `revoke`) y recalcula el día
+  y los vecinos.
+
+Las aplica `companyAttendance` al leer (`lib/companyAttendance.ts`): la marcación agregada entra
+(id negativo, `manual`, equipo "Corrección manual") solo en la empresa de su contrato, y la
+anulada no sale. Por eso **la lista "Marcaciones", el export a nómina y el motor ven lo mismo**.
+Tabla `attendance_correction` (migración `20261019180000_attendance_mark_corrections`, que
+reemplazó la del modelo original — por campo de un día, nunca usada, vacía): CHECK de forma por
+tipo, motivo no vacío, y un índice único parcial para que una marcación se anule una sola vez.
+Lógica en `lib/attendance/corrections.ts`; pruebas en `__tests__/attendanceCorrections.test.ts`.
+
 ## Código
 
 - `lib/attendance/compute.ts` — el cálculo de un día, puro (sin base de datos). Pruebas en

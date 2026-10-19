@@ -8,7 +8,10 @@ import type { Page } from "@playwright/test";
  * por acá antes de seguir interactuando con la página.
  */
 export async function closeToastIfAny(page: Page): Promise<void> {
-  const closeBtn = page.getByRole("button", { name: "Cerrar" });
+  // El "Cerrar" del aviso (Toaster: un <dialog> con título Listo/Atención/Error), no
+  // el de un diálogo abierto debajo — con dos "Cerrar" a la vista no cerraba ninguno.
+  const toast = page.locator("dialog[open]").filter({ has: page.getByRole("heading", { name: /^(Listo|Atención|Error)$/ }) });
+  const closeBtn = toast.getByRole("button", { name: "Cerrar" });
   if (await closeBtn.isVisible().catch(() => false)) {
     await closeBtn.click();
   }

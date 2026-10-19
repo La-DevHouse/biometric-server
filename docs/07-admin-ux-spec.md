@@ -355,6 +355,9 @@ generador de reportes. Ver §7 (Fase 2 accede a esto por app y probablemente API
 
 ### 1.12 `attendance_correction` — corrección auditada
 
+> **Implementado distinto (2026-10-19, docs/16 → "Correcciones manuales"):** se corrigen
+> marcaciones (agregar / anular / deshacer), con motivo **obligatorio**, no campos de un día.
+
 **Entidad nueva.** Requisito: corrección manual "con registro auditable de quién
 ajustó y cuándo". ALCO (E19): la hace cualquiera de Grupo ALCO desde el panel;
 bueno tener un motivo.

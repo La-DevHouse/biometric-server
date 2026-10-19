@@ -7,6 +7,7 @@ import { formatMinutes } from "@/lib/shiftTime";
 import { DAY_STATUS_LABEL } from "@/lib/attendance/labels";
 import type { AttendanceDayRow } from "@/lib/attendance/queries";
 import type { DayStatus } from "@/lib/attendance/compute";
+import { CorrectDayDialog } from "./CorrectDayDialog";
 
 const WEEKDAY = ["dom", "lun", "mar", "mié", "jue", "vie", "sáb"];
 
@@ -54,7 +55,8 @@ export function DayStatusCell({ r }: { r: AttendanceDayRow }) {
 
 /**
  * Días calculados por el motor (docs/16). `show` elige la columna de identidad:
- * la persona (vista de empresa) o la empresa (ficha del empleado).
+ * la persona (vista de empresa) o la empresa (ficha del empleado). Cada día se
+ * puede corregir (agregar o anular marcaciones, docs/16 paso 4).
  */
 export function AttendanceDaysTable({
   rows,
@@ -92,6 +94,9 @@ export function AttendanceDaysTable({
               <Th>Horas</Th>
               <Th>Extra</Th>
               <Th>Estado</Th>
+              <Th>
+                <span className="sr-only">Corregir</span>
+              </Th>
             </tr>
           </thead>
           <tbody>
@@ -105,6 +110,9 @@ export function AttendanceDaysTable({
                 <Td className="whitespace-nowrap">{r.overtimeMinutes ? fmtMin(r.overtimeMinutes) : "—"}</Td>
                 <Td>
                   <DayStatusCell r={r} />
+                </Td>
+                <Td className="w-px">
+                  <CorrectDayDialog employmentId={r.employmentId} ymd={r.date} who={`${r.employeeName} · ${r.companyName}`} />
                 </Td>
               </Tr>
             ))}
@@ -123,6 +131,7 @@ export function AttendanceDaysTable({
               { label: "Extra", value: r.overtimeMinutes ? fmtMin(r.overtimeMinutes) : "—" },
               { label: "Estado", value: <DayStatusCell r={r} /> },
             ]}
+            actions={<CorrectDayDialog employmentId={r.employmentId} ymd={r.date} who={`${r.employeeName} · ${r.companyName}`} />}
           />
         ))}
       </MobileList>

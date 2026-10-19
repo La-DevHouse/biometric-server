@@ -367,6 +367,7 @@ model site {
 
   devices        devices[]
   device_history device_site_assignment[]
+  corrections    attendance_correction[]
 
   @@unique([company_id, code])
   @@index([company_id])
@@ -422,6 +423,7 @@ model employment {
 
   attendance_days  attendance_day[]
   schedule_history employment_schedule[]
+  corrections      attendance_correction[]
 
   @@index([employee_id])
   @@index([company_id, status])
@@ -658,29 +660,42 @@ model attendance_day {
   created_at       DateTime           @default(now()) @db.Timestamptz(6)
   updated_at       DateTime           @updatedAt @db.Timestamptz(6)
 
-  corrections attendance_correction[]
-
   @@unique([employment_id, date]) // un día por contrato (docs/16)
   @@index([employee_id, date])
   @@index([date])
 }
 
-/// Corrección manual auditada. Apunta a un attendance_day O a un attendance_log
-/// crudo (CHECK en la migración: exactamente uno).
-model attendance_correction {
-  id                Int             @id @default(autoincrement())
-  attendance_day_id Int?
-  attendance_day    attendance_day? @relation(fields: [attendance_day_id], references: [id], onDelete: Cascade)
-  attendance_log_id Int? // ref blanda a attendance_logs.id (sin FK, tabla de protocolo)
-  field             String
-  old_value         String?
-  new_value         String?
-  reason            String?
-  actor_app_user_id Int
-  actor             app_user        @relation(fields: [actor_app_user_id], references: [id], onDelete: Restrict)
-  created_at        DateTime        @default(now()) @db.Timestamptz(6)
+enum attendance_correction_kind {
+  add_mark
+  void_mark
+}
 
-  @@index([attendance_day_id])
+/// Corrección manual de marcaciones (docs/16, Hito 4 paso 4): agrega una que falta
+/// (add_mark: io_time = hora de pared de la sede, YYYYMMDDhhmmss) o anula una del
+/// equipo (void_mark: attendance_log_id, ref blanda). attendance_logs nunca se toca:
+/// companyAttendance las aplica al leer, así que la vista, el export y el motor
+/// coinciden. Motivo obligatorio; deshacer = revoked_at/revoked_by (no se borra).
+/// Forma por tipo, motivo no vacío y "una anulación vigente por marcación": CHECK e
+/// índice parcial en la migración 20261019180000.
+model attendance_correction {
+  id                     Int                        @id @default(autoincrement())
+  employment_id          Int
+  employment             employment                 @relation(fields: [employment_id], references: [id], onDelete: Cascade)
+  kind                   attendance_correction_kind
+  io_time                String?
+  site_id                Int?
+  site                   site?                      @relation(fields: [site_id], references: [id], onDelete: Restrict)
+  attendance_log_id      Int?
+  reason                 String
+  actor_app_user_id      Int
+  actor                  app_user                   @relation("correction_actor", fields: [actor_app_user_id], references: [id], onDelete: Restrict)
+  created_at             DateTime                   @default(now()) @db.Timestamptz(6)
+  revoked_at             DateTime?                  @db.Timestamptz(6)
+  revoked_by_app_user_id Int?
+  revoked_by             app_user?                  @relation("correction_revoker", fields: [revoked_by_app_user_id], references: [id], onDelete: Restrict)
+
+  @@index([employment_id])
+  @@index([site_id, io_time])
 }
 
 /// Usuario interno de Grupo ALCO. Fase 1: todos 'admin', sin matriz de permisos.
@@ -697,7 +712,8 @@ model app_user {
 
   sessions    app_session[]
   audit_logs  audit_log[]
-  corrections attendance_correction[]
+  corrections         attendance_correction[] @relation("correction_actor")
+  revoked_corrections attendance_correction[] @relation("correction_revoker")
   export_runs export_run[]
   import_runs import_run[]
 }

@@ -481,6 +481,9 @@ model attendance_day {
   @@index([date])
 }
 
+// REEMPLAZADO (2026-10-19, migración 20261019180000): ahora corrige marcaciones
+// (add_mark / void_mark) por contrato, con motivo obligatorio y deshacer auditado.
+// Ver docs/16 → "Correcciones manuales". Lo de abajo es el diseño original.
 model attendance_correction {
   id                Int             @id @default(autoincrement())
   attendance_day_id Int?
@@ -581,7 +584,7 @@ app_user ──< export_run
 | Empresa activa ⇒ ≥1 sede activa | `client_company`, `site` | Constraint triggers `DEFERRABLE INITIALLY DEFERRED` (`client_company_requires_active_site`, `site_keeps_company_active_site`, función `company_has_active_site`): se evalúan al COMMIT, así que empresa + sede en la misma transacción pasa. `20260926200000`. |
 | ~~Jerarquía de 2 niveles~~ / ~~RIF requerido en hojas~~ | `client_company` | **Eliminados en `20260926200000`** (el grupo es tabla propia; el RIF lo exige la app). |
 | Un enrolado activo por slot | `employee_device_enrollment` | `CREATE UNIQUE INDEX … (dev_id, device_user_id) WHERE status = 'active'` |
-| Corrección apunta a día **o** log, no ambos ni ninguno | `attendance_correction` | `CHECK ((attendance_day_id IS NULL) <> (attendance_log_id IS NULL))` |
+| ~~Corrección apunta a día **o** log~~ | `attendance_correction` | **Reemplazado en `20261019180000`**: CHECK de forma por tipo (`add_mark` = hora + sede; `void_mark` = log), motivo no vacío, una anulación vigente por log (docs/16). |
 | Rangos de fecha coherentes | `employment`, `shift` | `CHECK (end_date IS NULL OR end_date >= start_date)` / `effective_to` |
 | CHECKs de protocolo (`status`, `stage`, `direction`) | tablas de protocolo | ya previstos en `0001` (plan de Fase 2) |
 

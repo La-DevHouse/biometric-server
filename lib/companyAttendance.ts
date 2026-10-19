@@ -15,6 +15,10 @@ import { toDayBound } from "@/lib/ioTime";
  * Cada marcación cuenta para la sede donde estaba el equipo en ese momento
  * (historial device_site_assignment): mover un equipo de empresa no cambia a qué
  * empresa se imputan sus marcaciones viejas.
+ *
+ * Aplica las correcciones manuales vigentes (attendance_correction, docs/16): las
+ * marcaciones agregadas entran (id negativo, `manual`) y las anuladas no salen. La
+ * vista, el export y el motor de asistencia ven lo mismo; attendance_logs no se toca.
  */
 
 export interface CompanyAttendanceRow {
@@ -28,6 +32,8 @@ export interface CompanyAttendanceRow {
   site_id: number;
   site_name: string;
   device_name: string;
+  /** Marcación agregada a mano (attendance_correction add_mark); su id es el de la corrección, en negativo. */
+  manual: boolean;
 }
 
 export interface CompanyAttendanceFilters {
@@ -51,6 +57,9 @@ export interface CompanyAttendanceFilters {
    */
   withUnmatched?: boolean;
 }
+
+/** Etiqueta de equipo de una marcación agregada a mano. */
+export const MANUAL_MARK_DEVICE = "Corrección manual";
 
 /** Fila de la vista: de un empleado, o de un ID de equipo sin empleado (employee_id null). */
 export interface AttendanceViewRow extends Omit<CompanyAttendanceRow, "employee_id" | "first_name" | "last_name" | "national_id"> {
@@ -114,7 +123,7 @@ const SITE_AT_MARK = `JOIN device_site_assignment dsa ON dsa.dev_id = al.dev_id
           AND (dsa.started_at IS NULL OR ${MARK_INSTANT} >= dsa.started_at)
           AND (dsa.ended_at IS NULL OR ${MARK_INSTANT} < dsa.ended_at)`;
 
-/** Filtros comunes (alcance, sede, rango) sobre `al` (attendance_logs) y `s` (site). */
+/** Filtros comunes (alcance, sede, rango) sobre `al` (attendance_logs o attendance_correction) y `s` (site). */
 function scopeConditions(companyIds: number[], f: CompanyAttendanceFilters) {
   const conditions: string[] = [`s.company_id IN (${companyIds.map(() => "?").join(", ")})`];
   const args: unknown[] = [...companyIds];
@@ -146,6 +155,8 @@ async function attendanceQuery(companyId: number, f: CompanyAttendanceFilters) {
     assign.map((a) => a.user_id),
     assign.map((a) => a.employee_id),
     ...scope.args,
+    ...scope.args,
+    companyId,
     companyId,
     attendanceDedupSeconds(),
   ];
@@ -156,6 +167,9 @@ async function attendanceQuery(companyId: number, f: CompanyAttendanceFilters) {
   // El contrato se mira con fechas, no con status: una baja siempre deja end_date.
   // DISTINCT ON (m.id): el cruce por dígitos de cédula puede dar dos personas
   // (V-123 y E-123); una marcación sale una sola vez.
+  // Correcciones (docs/16): una anulación vigente saca la marcación del equipo; una
+  // marcación agregada entra con id = -id de la corrección, solo en la empresa de su
+  // contrato, en la sede elegida.
   const sql = `WITH asg AS (
        SELECT DISTINCT ON (t.dev_id, t.user_id) t.dev_id, t.user_id, t.employee_id
          FROM unnest(?::text[], ?::text[], ?::int[]) AS t(dev_id, user_id, employee_id)
@@ -163,7 +177,7 @@ async function attendanceQuery(companyId: number, f: CompanyAttendanceFilters) {
        SELECT al.id, al.io_time, al.user_id, al.dev_id,
               COALESCE(al.employee_id, a.employee_id, e.id) AS employee_id,
               s.id AS site_id, s.name AS site_name,
-              COALESCE(NULLIF(d.name, ''), d.dev_id) AS device_name
+              COALESCE(NULLIF(d.name, ''), d.dev_id) AS device_name, FALSE AS manual
          FROM attendance_logs al
          JOIN devices d ON d.dev_id = al.dev_id
          ${SITE_AT_MARK}
@@ -172,11 +186,23 @@ async function attendanceQuery(companyId: number, f: CompanyAttendanceFilters) {
          LEFT JOIN employee e
            ON al.employee_id IS NULL AND a.employee_id IS NULL AND regexp_replace(e.national_id, '\\D', '', 'g') = al.user_id
         WHERE al.io_time IS NOT NULL AND ${conditions.join(" AND ")}
+          AND NOT EXISTS (
+                SELECT 1 FROM attendance_correction v
+                 WHERE v.kind = 'void_mark' AND v.revoked_at IS NULL AND v.attendance_log_id = al.id)
+       UNION ALL
+       SELECT -al.id, al.io_time, regexp_replace(p.national_id, '\\D', '', 'g'), '', em.employee_id,
+              s.id, s.name, '${MANUAL_MARK_DEVICE}', TRUE
+         FROM attendance_correction al
+         JOIN employment em ON em.id = al.employment_id
+         JOIN employee p ON p.id = em.employee_id
+         JOIN site s ON s.id = al.site_id
+        WHERE al.kind = 'add_mark' AND al.revoked_at IS NULL AND ${conditions.join(" AND ")}
+          AND em.company_id = ?
      ), scoped AS (
       (SELECT DISTINCT ON (m.id)
               m.id, m.io_time, m.user_id, m.employee_id,
               p.first_name, p.last_name, p.national_id,
-              m.site_id, m.site_name, m.device_name, m.dev_id, NULL::text AS device_user_name
+              m.site_id, m.site_name, m.device_name, m.dev_id, NULL::text AS device_user_name, m.manual
          FROM marks m
          JOIN employee p ON p.id = m.employee_id
         WHERE EXISTS (
@@ -191,7 +217,7 @@ async function attendanceQuery(companyId: number, f: CompanyAttendanceFilters) {
          f.withUnmatched
            ? `UNION ALL
       (SELECT m.id, m.io_time, m.user_id, NULL::int, NULL::text, NULL::text, NULL::text,
-              m.site_id, m.site_name, m.device_name, m.dev_id, u.user_name
+              m.site_id, m.site_name, m.device_name, m.dev_id, u.user_name, m.manual
          FROM marks m
          LEFT JOIN users u ON u.dev_id = m.dev_id AND u.user_id = m.user_id
         WHERE m.employee_id IS NULL)`
@@ -219,7 +245,7 @@ async function attendanceRows<T>(companyId: number, f: CompanyAttendanceFilters)
   return allAsync<T>(
     `${q.sql}
      SELECT id, io_time, user_id, employee_id, first_name, last_name, national_id, site_id, site_name, device_name,
-            dev_id, device_user_name
+            dev_id, device_user_name, manual
        FROM flagged
       WHERE kept
       ORDER BY io_time ${order}, id ${order}
