@@ -64,6 +64,7 @@ model devices {
   fingerprint_slots    device_fingerprint_slot[]
   sync_runs            sync_run[]
   sync_holds           sync_hold[]
+  site_history         device_site_assignment[]
 
   @@index([site_id])
 }
@@ -360,7 +361,8 @@ model site {
   created_at DateTime       @default(now()) @db.Timestamptz(6)
   updated_at DateTime       @updatedAt @db.Timestamptz(6)
 
-  devices devices[]
+  devices        devices[]
+  device_history device_site_assignment[]
 
   @@unique([company_id, code])
   @@index([company_id])
@@ -782,4 +784,22 @@ model department_alias {
   created_at    DateTime   @default(now()) @db.Timestamptz(6)
 
   @@index([department_id])
+}
+
+/// Historial de sede de cada equipo (docs/11 O-UI6): una marcación cuenta para la
+/// sede donde estaba el equipo en ese momento. Lo mantiene el trigger
+/// `device_site_history` sobre devices.site_id (migración 20261019120000) — no se
+/// escribe desde la app. started_at NULL = "desde siempre"; ended_at NULL = vigente.
+model device_site_assignment {
+  id         Int       @id @default(autoincrement())
+  dev_id     String
+  device     devices   @relation(fields: [dev_id], references: [dev_id], onDelete: Cascade, onUpdate: Cascade)
+  site_id    Int
+  site       site      @relation(fields: [site_id], references: [id], onDelete: Cascade)
+  started_at DateTime? @db.Timestamptz(6)
+  ended_at   DateTime? @db.Timestamptz(6)
+  created_at DateTime  @default(now()) @db.Timestamptz(6)
+
+  @@index([dev_id])
+  @@index([site_id])
 }

@@ -108,7 +108,7 @@ Notas de implementación: el combobox quedó genérico (`components/ui/Combobox.
 
 Notas de implementación:
 - Equipo: `components/admin/DeviceTabs.tsx` (encabezado + pestañas, carga lo suyo). "Actualizar" = `updateDeviceAction`: `startReconcileDevice` y, si devuelve `null` (congelado), `startRefreshStatus`. Rutas `/admin/dispositivos/[devId]{,/usuarios,/marcaciones}`. "Releer usuarios" (lista completa, incluidos los sin huella) queda como ícono en Usuarios.
-- Empresa → Asistencia por contrato: `lib/companyAttendance.ts` (`companyAttendance`, `companyAttendanceSites`) — la misma consulta la va a usar el export (PR 6). El contrato se mira por **fechas** (una baja siempre deja `end_date`). Tests: `__tests__/companyAttendance.test.ts`. **Limitación:** el alcance usa la sede **actual** de cada equipo (no hay historial de asignaciones): mover un equipo de empresa cambia a quién se imputan sus marcaciones viejas.
+- Empresa → Asistencia por contrato: `lib/companyAttendance.ts` (`companyAttendance`, `companyAttendanceSites`) — la misma consulta la va a usar el export (PR 6). El contrato se mira por **fechas** (una baja siempre deja `end_date`). Tests: `__tests__/companyAttendance.test.ts`. **Alcance por historial (2026-10-19):** cada marcación cuenta para la sede donde estaba el equipo en ese momento (`device_site_assignment`, O-UI6).
 - Empresas: grupos colapsables (`CollapsibleGroup.tsx`), mezclados por nombre con las empresas sueltas; logos por `<img loading="lazy">` y la lista ya no trae el binario (antes `include` lo traía). "Contratos" pasa a "Contratos vigentes".
 - Empleado: `EmployeeTabs.tsx`; rutas `/admin/empleados/[id]{,/contratos,/equipos}`. "Editar contrato" = `updateEmploymentAction` (sin `company_id`; valida que el horario sea de la empresa del contrato); si el inicio pasa al futuro muestra el aviso de impacto de `end_contract`. Se quitaron `transferEmployeeAction` y el `ScopeChange` `"transfer"`.
 - Categorías: pestañas por `?tab=` (una sola pantalla).
@@ -159,7 +159,7 @@ nosotros respetamos el rango elegido.
 | O-UI3 | CSV limpio (R5), cuando lo pidan |
 | O-UI4 | Acciones en el buscador (S2), cuando lo pidan |
 | O-UI5 | Aviso de impacto al desactivar empresa/grupo (hereda `10` O12) |
-| O-UI6 | Historial de asignación equipo → sede: hoy el alcance de la asistencia usa la sede **actual** del equipo; mover un equipo de empresa re-imputa sus marcaciones viejas (y cambia exports ya hechos si se regeneran). Resolver antes de mover equipos entre empresas en producción |
+| O-UI6 | ~~Historial de asignación equipo → sede~~ **Resuelto (2026-10-19):** tabla `device_site_assignment` mantenida por un trigger sobre `devices.site_id`; cada marcación cuenta para la sede donde estaba el equipo en ese momento (hora de la marca en la zona de la sede). Primera sede de un equipo = "desde siempre" (lo marcado estando pendiente de asignar queda para la primera empresa); los equipos que ya tenían sede al migrar arrancan con un período "desde siempre". Equipo → Información muestra las sedes anteriores. |
 
 ---
 

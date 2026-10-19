@@ -44,7 +44,7 @@ async function getData(devId: string) {
   );
   if (!device) return null;
 
-  const [userCount, currentSite, lastRun, openHold] = await Promise.all([
+  const [userCount, currentSite, lastRun, openHold, history] = await Promise.all([
     getAsync<{ n: number }>(`SELECT COUNT(*) AS n FROM users WHERE dev_id = ?`, [devId]),
     device.site_id != null
       ? prisma.site.findUnique({
@@ -57,9 +57,21 @@ async function getData(devId: string) {
       orderBy: { started_at: "desc" },
     }),
     prisma.sync_hold.findFirst({ where: { dev_id: devId, resolved_at: null }, orderBy: { created_at: "desc" } }),
+    // Sedes anteriores (docs/11 O-UI6): sus marcaciones de esos períodos siguen
+    // contando para esas empresas.
+    prisma.device_site_assignment.findMany({
+      where: { dev_id: devId, ended_at: { not: null } },
+      orderBy: { ended_at: "desc" },
+      select: {
+        id: true,
+        started_at: true,
+        ended_at: true,
+        site: { select: { name: true, company: { select: { id: true, name: true } } } },
+      },
+    }),
   ]);
 
-  return { device, userCount: userCount?.n ?? 0, currentSite, lastRun, openHold };
+  return { device, userCount: userCount?.n ?? 0, currentSite, lastRun, openHold, history };
 }
 
 /** Equipo → Información (docs/11 E6): asignación, contadores, sincronización y bajas frenadas. */
@@ -69,7 +81,7 @@ export default async function DeviceDetailPage({ params }: { params: Promise<{ d
   const data = await getData(devId);
   if (!data) notFound();
 
-  const { device, userCount, currentSite, lastRun, openHold } = data;
+  const { device, userCount, currentSite, lastRun, openHold, history } = data;
   const runStats = (lastRun?.stats ?? {}) as {
     added?: number;
     completed?: number;
@@ -135,6 +147,27 @@ export default async function DeviceDetailPage({ params }: { params: Promise<{ d
             Sin sede activa el equipo está <strong>congelado</strong>: no se agrega ni se quita a nadie hasta que tenga
             una. Asignalo con el ícono de sede de arriba.
           </p>
+        )}
+        {history.length > 0 && (
+          <div className="mt-2 flex flex-col gap-1 border-t border-divider pt-2">
+            <span className="text-xs font-semibold uppercase tracking-wide text-text/70">Sedes anteriores</span>
+            <ul className="m-0 list-none p-0 text-sm">
+              {history.map((h) => (
+                <li key={h.id}>
+                  <Link href={`/admin/empresas/${h.site.company.id}`} className="text-accent no-underline hover:underline">
+                    {h.site.company.name}
+                  </Link>{" "}
+                  · {h.site.name} —{" "}
+                  <span className="text-text/70">
+                    {h.started_at ? `del ${fmtDateTime(h.started_at)} ` : "desde el inicio "}al {fmtDateTime(h.ended_at!)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+            <span className="text-xs text-text/70">
+              Las marcaciones hechas en esos períodos siguen contando para esas empresas.
+            </span>
+          </div>
         )}
       </section>
 

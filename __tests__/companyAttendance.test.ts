@@ -251,3 +251,39 @@ test("vista: incluye las marcaciones de IDs sin empleado (con su ID); el export 
   assert.deepEqual((await ca.companyAttendance(A.id)).map((r) => r.user_id), [gil], "el export solo lleva empleados");
   await db.runAsync(`DELETE FROM users WHERE dev_id = ?`, [dev]);
 });
+
+test("historial de sede: mover un equipo de empresa no se lleva sus marcaciones viejas", async () => {
+  const A = await company("HA");
+  const B = await company("HB");
+  const dev = P + "hist1";
+  // Sin sede al principio (como un equipo recién conectado): marca igual.
+  await prisma.devices.create({ data: { dev_id: dev } });
+  created.devices.push(dev);
+  const ines = ced(9);
+  const iId = await employee(ines);
+  await contract(iId, A.id, "2026-01-01"); // contrato con las dos empresas
+  await contract(iId, B.id, "2026-01-01");
+
+  await mark(dev, ines, "20260905080000"); // marcó mientras estaba "pendiente de asignar"
+  await prisma.devices.update({ where: { dev_id: dev }, data: { site_id: A.siteId } }); // primera sede: desde siempre
+  await mark(dev, ines, "20260910080000");
+
+  const a1 = await ca.companyAttendance(A.id, { order: "asc" });
+  assert.deepEqual(a1.map((r) => r.io_time), ["20260905080000", "20260910080000"], "la primera empresa se queda lo de antes");
+
+  // Se mueve a B "ahora": lo de antes queda en A, lo nuevo va a B.
+  await prisma.devices.update({ where: { dev_id: dev }, data: { site_id: B.siteId } });
+  await mark(dev, ines, "20300101080000"); // después del movimiento
+  assert.deepEqual((await ca.companyAttendance(A.id, { order: "asc" })).map((r) => r.io_time), ["20260905080000", "20260910080000"]);
+  assert.deepEqual((await ca.companyAttendance(B.id, { order: "asc" })).map((r) => r.io_time), ["20300101080000"]);
+  assert.equal((await ca.companyAttendance(B.id))[0].site_name, "HB Principal", "la sede es la de ese momento");
+
+  // Re-guardar la misma sede no abre otro período.
+  await prisma.devices.update({ where: { dev_id: dev }, data: { site_id: B.siteId } });
+  assert.equal(await prisma.device_site_assignment.count({ where: { dev_id: dev } }), 2);
+
+  // Sin sede: lo que marque no es de nadie.
+  await prisma.devices.update({ where: { dev_id: dev }, data: { site_id: null } });
+  await mark(dev, ines, "20310101080000");
+  assert.ok(!(await ca.companyAttendance(B.id)).some((r) => r.io_time === "20310101080000"));
+});

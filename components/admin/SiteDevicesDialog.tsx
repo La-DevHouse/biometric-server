@@ -98,8 +98,8 @@ export function SiteDevicesDialog({
 
           {picked?.where && (
             <p className="m-0 text-xs text-text">
-              Este equipo está hoy en <strong>{picked.where}</strong>: se mueve a {site.name}. Sus marcaciones viejas
-              pasan a contar para esta empresa.
+              Este equipo está hoy en <strong>{picked.where}</strong>: se mueve a {site.name}. Lo que marcó hasta
+              ahora sigue contando para la empresa anterior; desde este momento cuenta para esta.
             </p>
           )}
 

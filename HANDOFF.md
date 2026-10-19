@@ -161,9 +161,8 @@ Detalle en `docs/04` y `docs/05`. Modelos: huella `WS535BW1_BSCS_v1.5.31`; facia
   equipos apuntan ahí, así que **el doc probablemente está desactualizado** — confirmar con el
   usuario qué existe y actualizarlo. Verificar que el **worker** esté corriendo (sin él no hay
   sincronización cada 30 min ni carga diaria de marcaciones).
-- **O-UI6:** el alcance de la asistencia usa la sede **actual** del equipo; mover un equipo de
-  empresa re-imputa sus marcaciones viejas. Ahora que se puede mover equipos desde la sede
-  (`47f6fd3`), esto pesa más.
+- ~~**O-UI6**~~ **Resuelto (2026-10-19):** historial de sede por equipo (`device_site_assignment`,
+  trigger sobre `devices.site_id`); cada marcación cuenta para la sede de ese momento.
 - Control de acceso por perfil (hay `app_user.role`, verificar que restrinja algo), una pantalla
   para consultar `audit_log`, el plan de pruebas físicas `docs/13`, capacitación y entrega.
 

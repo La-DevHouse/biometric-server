@@ -12,8 +12,8 @@ import { toDayBound } from "@/lib/ioTime";
  * Es lo que se ve en Empresa → Asistencia y exactamente lo que se exporta a
  * nómina (R8) — una sola consulta para las dos cosas, para que no diverjan.
  *
- * Limitación conocida: el alcance se mide con la sede ACTUAL de cada equipo
- * (no hay historial de asignaciones); mover un equipo de empresa cambia a qué
+ * Cada marcación cuenta para la sede donde estaba el equipo en ese momento
+ * (historial device_site_assignment): mover un equipo de empresa no cambia a qué
  * empresa se imputan sus marcaciones viejas.
  */
 
@@ -99,6 +99,21 @@ export function attendanceDedupSeconds(): number {
 const IO_TS = (col: string) =>
   `CASE WHEN ${col} ~ '^[0-9]{14}$' THEN to_timestamp(${col}, 'YYYYMMDDHH24MISS') END`;
 
+/** Instante de la marcación: io_time es hora de pared de la sede (`s.timezone`). Uno raro → NULL. */
+const MARK_INSTANT = `(CASE WHEN al.io_time ~ '^[0-9]{14}$'
+    THEN to_timestamp(al.io_time, 'YYYYMMDDHH24MISS')::timestamp AT TIME ZONE s.timezone END)`;
+
+/**
+ * La sede (`s`) donde estaba el equipo CUANDO se hizo la marcación, según su
+ * historial (device_site_assignment, docs/11 O-UI6) — no la sede actual. Mover un
+ * equipo de empresa no se lleva sus marcaciones viejas. El historial lo mantiene un
+ * trigger sobre devices.site_id (migración 20261019120000).
+ */
+const SITE_AT_MARK = `JOIN device_site_assignment dsa ON dsa.dev_id = al.dev_id
+         JOIN site s ON s.id = dsa.site_id
+          AND (dsa.started_at IS NULL OR ${MARK_INSTANT} >= dsa.started_at)
+          AND (dsa.ended_at IS NULL OR ${MARK_INSTANT} < dsa.ended_at)`;
+
 /** Filtros comunes (alcance, sede, rango) sobre `al` (attendance_logs) y `s` (site). */
 function scopeConditions(companyIds: number[], f: CompanyAttendanceFilters) {
   const conditions: string[] = [`s.company_id IN (${companyIds.map(() => "?").join(", ")})`];
@@ -151,7 +166,7 @@ async function attendanceQuery(companyId: number, f: CompanyAttendanceFilters) {
               COALESCE(NULLIF(d.name, ''), d.dev_id) AS device_name
          FROM attendance_logs al
          JOIN devices d ON d.dev_id = al.dev_id
-         JOIN site s ON s.id = d.site_id
+         ${SITE_AT_MARK}
          LEFT JOIN asg a
            ON al.employee_id IS NULL AND a.dev_id = al.dev_id AND a.user_id = al.user_id
          LEFT JOIN employee e
@@ -262,7 +277,7 @@ export async function companyUnmatchedDeviceUsers(
             MIN(al.io_time) AS first_io_time, MAX(al.io_time) AS last_io_time
        FROM attendance_logs al
        JOIN devices d ON d.dev_id = al.dev_id
-       JOIN site s ON s.id = d.site_id
+       ${SITE_AT_MARK}
        LEFT JOIN users u ON u.dev_id = al.dev_id AND u.user_id = al.user_id
       WHERE al.io_time IS NOT NULL AND al.employee_id IS NULL AND ${conditions.join(" AND ")}
         AND NOT EXISTS (SELECT 1 FROM employee e WHERE regexp_replace(e.national_id, '\\D', '', 'g') = al.user_id)
