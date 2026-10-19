@@ -79,7 +79,7 @@ export default async function EmpleadoContratosPage({
       {employments.length === 0 ? (
         <EmptyState
           title="Sin contratos de trabajo"
-          description="Esta persona está en el pool de reclutamiento. Registrale un contrato para vincularla a una empresa."
+          description="Esta persona está en el pool de reclutamiento. Regístrele un contrato para vincularla a una empresa."
           action={<EmploymentFormDialog employeeId={id} lookups={lookups} mode="create" variant="button" />}
         />
       ) : (

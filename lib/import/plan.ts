@@ -229,7 +229,7 @@ function resolveCategories(texts: string[], cat: Catalog, choices: Record<string
     if (choice?.kind !== "same") continue;
     const target = ops.get(choice.key);
     if (!target || target.key === c.key || choices?.[target.key]?.kind === "same") {
-      throw new Error(`No se pudo unificar ${label} "${c.text}": el elegido no está en el archivo o también está unificado con otro. Recargá la vista previa.`);
+      throw new Error(`No se pudo unificar ${label} "${c.text}": el elegido no está en el archivo o también está unificado con otro. Recargue la vista previa.`);
     }
     c.resolution = { kind: "same", into: target.key, name: target.resolution.name };
   }
@@ -240,7 +240,7 @@ function resolveCategories(texts: string[], cat: Catalog, choices: Record<string
 function resolveOne(c: CategoryOp, cat: Catalog, choice: CategoryChoice | undefined, label: string): CategoryResolution {
   if (choice?.kind === "existing") {
     const name = cat.byId.get(choice.id);
-    if (!name) throw new Error(`Lo elegido para ${label} "${c.text}" ya no existe. Recargá la vista previa.`);
+    if (!name) throw new Error(`Lo elegido para ${label} "${c.text}" ya no existe. Recargue la vista previa.`);
     return { kind: "mapped", id: choice.id, name };
   }
   if (choice?.kind === "new") {
@@ -362,7 +362,7 @@ export function buildPlan(companyId: number, read: ReadResult, snap: Snapshot, o
     } else {
       const active = contracts.find((c) => c.status === "active");
       if (active) {
-        reject(r.row, "FECHA DE INGRESO", `Ya tiene un contrato vigente en esta empresa desde ${fmt(active.start_date)}. Si es la misma relación laboral, corregí la fecha en el archivo; si es un reingreso, primero dale de baja al contrato anterior en el panel.`);
+        reject(r.row, "FECHA DE INGRESO", `Ya tiene un contrato vigente en esta empresa desde ${fmt(active.start_date)}. Si es la misma relación laboral, corrija la fecha en el archivo; si es un reingreso, primero dé de baja el contrato anterior en el panel.`);
         continue;
       }
     }

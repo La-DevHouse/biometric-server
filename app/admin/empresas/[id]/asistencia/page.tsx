@@ -90,7 +90,7 @@ export default async function EmpresaAsistenciaPage({
       ) : (
         <DisabledBtn variant="icon">{Icon.export}</DisabledBtn>
       )}
-      <Tip label={canExport ? "Exportar a Excel (Galepso)" : "Elegí desde y hasta para exportar"} />
+      <Tip label={canExport ? "Exportar a Excel (Galepso)" : "Elija desde y hasta para exportar"} />
     </span>
   );
 
@@ -170,7 +170,7 @@ export default async function EmpresaAsistenciaPage({
       {logs.length === 0 ? (
         <EmptyState
           title="Sin marcaciones para estos filtros"
-          description="Probá con otro rango de fechas o sede. Aparecen las marcaciones de personas con contrato en esta empresa (dentro del período del contrato) y las de IDs de sus equipos que no son de ningún empleado."
+          description="Pruebe con otro rango de fechas o sede. Aparecen las marcaciones de personas con contrato en esta empresa (dentro del período del contrato) y las de IDs de sus equipos que no son de ningún empleado."
         />
       ) : (
         <>

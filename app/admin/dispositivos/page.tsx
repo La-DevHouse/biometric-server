@@ -103,7 +103,7 @@ export default async function DispositivosPage({ searchParams }: { searchParams:
       </p>
 
       {devices.length === 0 ? (
-        <EmptyState title="Ningún equipo coincide" description="Probá con otra búsqueda o quitá los filtros." />
+        <EmptyState title="Ningún equipo coincide" description="Pruebe con otra búsqueda o quite los filtros." />
       ) : (
         <>
           <div className="hidden md:block">

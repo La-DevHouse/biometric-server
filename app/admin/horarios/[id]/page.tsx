@@ -111,7 +111,7 @@ export default async function ScheduleDetailPage({
           <ShiftFormDialog scheduleGroupId={schedule.id} />
         </div>
         {schedule.shifts.length === 0 ? (
-          <EmptyState title="Sin turnos" description="Agregá al menos un turno con su horario y días de trabajo." />
+          <EmptyState title="Sin turnos" description="Agregue al menos un turno con su horario y días de trabajo." />
         ) : (
           <>
             <div className="hidden md:block">

@@ -457,7 +457,7 @@ async function advanceVerified(
       `El equipo respondió OK pero el ${noun} sigue siendo "${actual}" (se solicitó "${expected}"). ` +
         (field === "user_privilege"
           ? "Verificado contra hardware real: un privilegio elevado no se aplica mientras el usuario no " +
-            "tenga ninguna huella registrada — registrale la huella físicamente y reintentá."
+            "tenga ninguna huella registrada — regístrele la huella físicamente y reintente."
           : "")
     );
   }
@@ -526,7 +526,7 @@ async function advanceDeleteUser(op: OperationRow, input: AdvanceInput): Promise
       op.id,
       "mismatch",
       `El equipo pasó de ${before} a ${after} usuarios — no cuadra con un solo borrado (¿alguien agregó o ` +
-        "borró usuarios en el equipo al mismo tiempo?). Revisá la lista antes de dar esto por hecho."
+        "borró usuarios en el equipo al mismo tiempo?). Revise la lista antes de dar esto por hecho."
     );
     return;
   }
@@ -938,7 +938,7 @@ async function advanceAddEmployeeToDevice(op: OperationRow, input: AdvanceInput)
   const reason =
     plan.pushedFingerprints.length === 0
       ? "no se pudo aplicar todavía — este firmware solo acepta privilegios elevados una vez que el " +
-        'usuario tiene al menos una huella registrada. Volvé a intentar "Cambiar privilegio" después de ' +
+        'usuario tiene al menos una huella registrada. Vuelva a intentar "Cambiar privilegio" después de ' +
         "registrarle la huella."
       : `el equipo respondió OK pero el privilegio sigue siendo "${actualPrivilege ?? "desconocido"}".`;
   await finishOperation(op.id, "mismatch", `${fingerprintNote} Privilegio "${plan.privilege}" ${reason}`);
@@ -1116,13 +1116,13 @@ function probeListVerdict(input: AdvanceInput, candidateId: string): string | nu
   if (ids === null) {
     return (
       `No se pudo confirmar que el ID ${candidateId} esté libre (el equipo no devolvió su lista de usuarios). ` +
-      "No se crea para no pisar un usuario existente; reintentá en unos minutos."
+      "No se crea para no sobrescribir un usuario existente; reintente en unos minutos."
     );
   }
   if (ids.includes(candidateId)) {
     return (
       `El usuario ${candidateId} ya existe en el equipo con huellas registradas, aunque no respondió a la ` +
-      "consulta. No se crea encima: destruiría sus huellas. Reintentá en unos minutos para ver sus datos."
+      "consulta. No se crea encima: destruiría sus huellas. Reintente en unos minutos para ver sus datos."
     );
   }
   return null;
@@ -1255,7 +1255,7 @@ async function advanceCreateUser(op: OperationRow, input: AdvanceInput): Promise
     "mismatch",
     `Usuario ${op.user_id} creado, pero el privilegio "${plan.privilege}" no se pudo aplicar todavía — ` +
       "este firmware solo acepta privilegios elevados una vez que el usuario tiene al menos una huella " +
-      'registrada. Registrale la huella físicamente y volvé a intentar "Cambiar privilegio".'
+      'registrada. Regístrele la huella físicamente y vuelva a intentar "Cambiar privilegio".'
   );
 }
 

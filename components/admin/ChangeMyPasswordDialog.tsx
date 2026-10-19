@@ -30,7 +30,7 @@ export function ChangeMyPasswordDialog() {
       <Dialog open={open} onClose={() => setOpen(false)} title="Cambiar mi contraseña">
         <form onSubmit={onSubmit} className="flex flex-col gap-3">
           <p className="m-0 text-xs text-text/70">
-            Se cierran tus otras sesiones abiertas; esta se mantiene.
+            Se cierran sus otras sesiones abiertas; esta se mantiene.
           </p>
           <label className={LABEL}>
             Contraseña actual *

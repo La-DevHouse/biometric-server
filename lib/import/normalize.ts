@@ -106,7 +106,7 @@ export function parseDate(raw: unknown): { value: string } | { error: string } {
   if (m) return validYmd(`${m[3]}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`, text);
   m = text.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
   if (m) return validYmd(`${m[1]}-${m[2].padStart(2, "0")}-${m[3].padStart(2, "0")}`, text);
-  return { error: `"${text}" no es una fecha (usá DD/MM/AAAA).` };
+  return { error: `"${text}" no es una fecha (use DD/MM/AAAA).` };
 }
 
 function validYmd(ymd: string, original: string): { value: string } | { error: string } {

@@ -64,7 +64,7 @@ export default async function CuentasPage() {
               <Tr key={a.id}>
                 <Td className="font-medium">
                   {a.name}
-                  {a.id === me.id && <span className="text-text/60"> · vos</span>}
+                  {a.id === me.id && <span className="text-text/60"> · usted</span>}
                 </Td>
                 <Td className="font-mono text-xs">{a.email}</Td>
                 <Td>
@@ -98,7 +98,7 @@ export default async function CuentasPage() {
             title={
               <>
                 {a.name}
-                {a.id === me.id && <span className="text-text/60 font-normal"> · vos</span>}
+                {a.id === me.id && <span className="text-text/60 font-normal"> · usted</span>}
               </>
             }
             tags={
@@ -128,8 +128,8 @@ export default async function CuentasPage() {
       </MobileList>
 
       <p className="m-0 max-w-lg text-xs text-text/70">
-        Al resetear una contraseña o desactivar una cuenta se cierran sus sesiones abiertas. No podés
-        desactivar tu propia cuenta ni la última que quede activa.
+        Al resetear una contraseña o desactivar una cuenta se cierran sus sesiones abiertas. No puede
+        desactivar su propia cuenta ni la última que quede activa.
       </p>
     </div>
   );

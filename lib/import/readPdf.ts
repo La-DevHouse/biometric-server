@@ -40,7 +40,7 @@ export async function readGalepsoPdf(buf: Buffer | Uint8Array): Promise<ReadResu
     return out;
   }
   if (pages.every((p) => p.length === 0)) {
-    out.errors.push("El PDF no tiene texto (¿es un escaneo o una foto?). Sacá el reporte de Galepso con Imprimir → Microsoft Print to PDF.");
+    out.errors.push("El PDF no tiene texto (¿es un escaneo o una foto?). Genere el reporte de Galepso con Imprimir → Microsoft Print to PDF.");
     return out;
   }
 
@@ -82,9 +82,9 @@ export async function readGalepsoPdf(buf: Buffer | Uint8Array): Promise<ReadResu
   }
   if (skipped) out.warnings.push(`${skipped} trabajador(es) del reporte no están ACTIVO: no se importan.`);
   if (out.rows.length === 0) out.errors.push("El reporte no tiene trabajadores.");
-  if (out.rows.length > MAX_ROWS) out.errors.push(`Tiene ${out.rows.length} trabajadores; el máximo es ${MAX_ROWS}. Dividilo en varios archivos.`);
+  if (out.rows.length > MAX_ROWS) out.errors.push(`Tiene ${out.rows.length} trabajadores; el máximo es ${MAX_ROWS}. Divídalo en varios archivos.`);
   if (reportTotal === null) {
-    out.warnings.push("No se encontró el TOTALES GENERALES del reporte: revisá que estén todos los trabajadores.");
+    out.warnings.push("No se encontró el TOTALES GENERALES del reporte: revise que estén todos los trabajadores.");
   } else if (reportTotal !== out.rows.length + skipped) {
     out.errors.push(
       `El reporte dice ${reportTotal} trabajadores (TOTALES GENERALES) pero se leyeron ${out.rows.length + skipped}. No se importa nada para no dejar a nadie afuera.`

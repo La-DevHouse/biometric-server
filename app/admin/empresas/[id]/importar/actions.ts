@@ -15,9 +15,9 @@ export async function previewCompanyImportAction(
   const file = fd.get("file");
   if (!(file instanceof File) || file.size === 0) return { ok: false, error: "No se recibió ningún archivo." };
   if (!/\.(pdf|xlsx)$/i.test(file.name)) {
-    return { ok: false, error: "Subí el Roster de Personal de Galepso en PDF (o una planilla .xlsx). El .xls que exporta Galepso viene incompleto." };
+    return { ok: false, error: "Suba el Roster de Personal de Galepso en PDF (o una hoja de cálculo .xlsx). El .xls que exporta Galepso viene incompleto." };
   }
-  if (file.size > MAX_FILE_BYTES) return { ok: false, error: "El archivo supera los 5 MB. Dividilo en varios." };
+  if (file.size > MAX_FILE_BYTES) return { ok: false, error: "El archivo supera los 5 MB. Divídalo en varios." };
   try {
     return { ok: true, view: await previewCompanyImport(companyId, Buffer.from(await file.arrayBuffer()), file.name, user.id) };
   } catch (e) {

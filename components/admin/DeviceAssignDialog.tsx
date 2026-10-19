@@ -106,7 +106,7 @@ export function DeviceAssignDialog({
               required={companyId != null}
               onChange={(e) => setSiteId(e.target.value === "" ? null : Number(e.target.value))}
             >
-              <option value="">{companyId == null ? "— pendiente de asignar —" : "Elegí una sede…"}</option>
+              <option value="">{companyId == null ? "— pendiente de asignar —" : "Elija una sede…"}</option>
               {companySites.map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.name}

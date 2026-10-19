@@ -68,8 +68,8 @@ export function ChangePrivilegeDialog({
                 El equipo reporta un privilegio actual (
                 {PRIVILEGE_SCREEN_LABEL[currentPrivilege] ?? currentPrivilege}) que no está en esta
                 lista — se asignó físicamente en el equipo, y no hay forma de asignarlo de nuevo de
-                forma remota (verificado). Cambiarlo acá lo va a reemplazar por uno de estos dos; si
-                necesitás mantenerlo, hacelo desde el equipo directamente.
+                forma remota (verificado). Cambiarlo aquí lo va a reemplazar por uno de estos dos; si
+                necesita mantenerlo, hágalo desde el equipo directamente.
               </p>
             )}
             {startError && <p className="text-sm m-0 text-text">{startError}</p>}

@@ -44,7 +44,7 @@ export function DeleteUserDialog({
             {inScope && (
               <p className="text-sm m-0 border border-accent2 p-2">
                 ⚠ Es un empleado con contrato vigente en el alcance de este equipo: la próxima sincronización lo
-                vuelve a crear (con sus huellas). Para quitarle el acceso, terminá su contrato. Borrar a mano sirve para
+                vuelve a crear (con sus huellas). Para quitarle el acceso, termine su contrato. Borrar a mano sirve para
                 IDs viejos que no son una cédula.
               </p>
             )}

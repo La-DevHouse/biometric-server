@@ -34,6 +34,10 @@ Ver `docs/00-index.md` para el índice completo con descripción de cada documen
 
 - **Reestructura de dominio + reconciliador: `docs/10-reestructura-dominio-sync.md` (prevalece sobre 07/08/09).** Grupo = tabla `company_group`; empresa con ≥1 sede (trigger diferido); contrato sin sede; dispositivo → sede (sin sede = congelado). Las huellas las sincroniza el reconciliador (`RECONCILE_DEVICE`, `lib/sync/`) con registro de procedencia por slot (`device_fingerprint_slot`); el cron corre en un worker aparte (`npm run worker`, pg-boss). Hechos de hardware que lo sostienen (2026-09-26, `05`): la escritura por software **no** detecta duplicados, sobre un slot ocupado responde OK y **no** escribe, y un mismo dedo en dos user_id marca siempre al registro original. `GET_USER_INFO` a veces no responde aunque el usuario exista: nunca tomar ese silencio como "no existe".
 
+## Idioma de la interfaz
+
+Todo texto que ve el usuario va en **español venezolano profesional y neutro, tratando de "usted"** ("Elija", "Pruebe", "puede", "su cuenta", "aquí"). **Sin voseo** ("Elegí", "Probá", "podés") ni regionalismos argentinos ("acá", "planilla").
+
 ## Verificar antes de confiar
 
 - `AGENTS.md` instruye leer `node_modules/next/dist/docs/` porque "esta versión de Next.js tiene cambios que rompen el conocimiento previo del modelo". **Verificado (2026-08-29): la ruta existe y es legítima.** Next.js `16.2.12` distribuye la documentación completa dentro del paquete npm — `node_modules/next/dist/docs/` con ~425 archivos `.md` (`01-app/`, `02-pages/`, `03-architecture/`, `04-community/`, `index.md`). La instrucción de `AGENTS.md` es válida: consultar esos `.md` antes de escribir código de Next.

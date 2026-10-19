@@ -85,7 +85,7 @@ export default async function CategoriasPage({ searchParams }: { searchParams: P
             contrato.
           </p>
           {businessModels.length === 0 ? (
-            <EmptyState title="Sin modelos de negocio" description="Creá el primero." />
+            <EmptyState title="Sin modelos de negocio" description="Cree el primero." />
           ) : (
             <>
               <div className="hidden md:block">
@@ -170,7 +170,7 @@ export default async function CategoriasPage({ searchParams }: { searchParams: P
             <PositionFormDialog departments={deptOptions} businessModels={bmOptions} />
           </div>
           {positions.length === 0 ? (
-            <EmptyState title="Sin puestos" description="Creá el primero." />
+            <EmptyState title="Sin puestos" description="Cree el primero." />
           ) : (
             <>
               <div className="hidden md:block">
@@ -292,7 +292,7 @@ export default async function CategoriasPage({ searchParams }: { searchParams: P
             <DepartmentFormDialog />
           </div>
           {departments.length === 0 ? (
-            <EmptyState title="Sin departamentos" description="Creá el primero." />
+            <EmptyState title="Sin departamentos" description="Cree el primero." />
           ) : (
             <>
               <div className="hidden md:block">

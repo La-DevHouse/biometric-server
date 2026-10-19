@@ -107,10 +107,10 @@ export function AttendanceExportButton({
             En este rango hay <strong>{totalMarks}</strong> marcaci{totalMarks === 1 ? "ón" : "ones"} de{" "}
             {list.length === 1 ? "un ID" : <><strong>{list.length}</strong> IDs</>} que no{" "}
             {list.length === 1 ? "es la cédula" : "son la cédula"} de ningún empleado registrado.{" "}
-            <strong>Si no hacés nada, no se incluyen en el archivo.</strong>
+            <strong>Si no hace nada, no se incluyen en el archivo.</strong>
           </p>
           <p className="m-0 text-xs text-text/70">
-            Si sabés de quién son, elegí a la persona y se incluyen a su nombre — solo en este archivo, no se guarda
+            Si sabe de quién son, elija a la persona y se incluyen a su nombre — solo en este archivo, no se guarda
             nada. Si el ID es una cédula, es probablemente una persona que todavía no está registrada en el sistema.
           </p>
           <ul className="m-0 flex list-none flex-col gap-2 p-0">

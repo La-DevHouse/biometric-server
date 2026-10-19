@@ -38,7 +38,7 @@ export function StyleguideDialogDemo() {
             <input className={FIELD_INPUT} autoFocus />
           </Field>
           <p className="m-0 text-xs text-text/60">
-            El botón "Guardar" vive en el <code>footer</code> del Dialog, no acá adentro — queda fijo
+            El botón "Guardar" vive en el <code>footer</code> del Dialog, no aquí adentro — queda fijo
             aunque el form tenga más campos de los que caben en pantalla.
           </p>
         </form>

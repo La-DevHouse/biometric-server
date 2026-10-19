@@ -82,7 +82,7 @@ export default async function EmpresasPage({ searchParams }: { searchParams: Pro
       {companies.length === 0 && groups.length === 0 ? (
         <EmptyState
           title="Todavía no hay empresas"
-          description="Creá la primera empresa cliente para empezar. Si varias empresas comparten empleados, creá antes su grupo."
+          description="Cree la primera empresa cliente para empezar. Si varias empresas comparten empleados, cree antes su grupo."
         />
       ) : (
         <>

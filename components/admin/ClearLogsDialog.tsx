@@ -57,7 +57,7 @@ export function ClearLogsDialog({ devId }: { devId: string }) {
             Entiendo que las marcaciones no sincronizadas se perderán
           </label>
           <label className="flex flex-col gap-1 text-xs text-text/85">
-            Escribí el número de serie del equipo para confirmar: <span className="font-mono">{devId}</span>
+            Escriba el número de serie del equipo para confirmar: <span className="font-mono">{devId}</span>
             <input
               value={typed}
               onChange={(e) => setTyped(e.target.value)}

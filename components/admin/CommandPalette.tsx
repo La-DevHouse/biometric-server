@@ -231,7 +231,7 @@ export function CommandPalette() {
               {groups.length === 0 ? (
                 <p className="m-0 px-4 py-6 text-center text-sm text-text/60">
                   {showingRecents
-                    ? "Escribí al menos 2 letras. Lo que abras desde acá aparece como reciente."
+                    ? "Escriba al menos 2 letras. Lo que abra desde aquí aparece como reciente."
                     : loading
                       ? "Buscando…"
                       : "Sin resultados."}

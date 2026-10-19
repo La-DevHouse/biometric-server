@@ -127,7 +127,7 @@ export default async function DeviceMarcacionesPage({
       {logs.length === 0 ? (
         <EmptyState
           title="Sin marcaciones para estos filtros"
-          description="Probá con otro rango de fechas, o esperá a que el equipo reporte movimiento."
+          description="Pruebe con otro rango de fechas, o espere a que el equipo reporte movimiento."
         />
       ) : (
         <>

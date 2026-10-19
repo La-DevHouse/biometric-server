@@ -160,7 +160,7 @@ export async function createCompanyAction(
   const siteCode = str(fd, "site_code") || null;
   const siteTzRaw = str(fd, "site_timezone");
   const siteTimezone = isValidTimeZone(siteTzRaw) ? siteTzRaw : DEFAULT_TZ;
-  if (!siteName) return { status: "error", error: "La primera sede es obligatoria: poné su nombre." };
+  if (!siteName) return { status: "error", error: "La primera sede es obligatoria: ponga su nombre." };
 
   let logo: Uint8Array<ArrayBuffer> | null | undefined;
   let repPhoto: Uint8Array<ArrayBuffer> | undefined;
@@ -261,7 +261,7 @@ export async function setCompanyStatusAction(
   const before = await prisma.client_company.findUnique({ where: { id } });
   if (!before) return { ok: false, error: "La empresa no existe." };
   if (active && !(await hasOtherActiveSite(id, null)))
-    return { ok: false, error: "Para reactivar la empresa, primero reactivá (o creá) al menos una de sus sedes." };
+    return { ok: false, error: "Para reactivar la empresa, primero reactive (o cree) al menos una de sus sedes." };
 
   await prisma.client_company.update({
     where: { id },
@@ -360,7 +360,7 @@ export async function setSiteStatusAction(
   if (!active && before.company.status === "active" && !(await hasOtherActiveSite(before.company_id, id)))
     return {
       ok: false,
-      error: "Es la única sede activa de la empresa: una empresa activa necesita al menos una sede. Creá otra sede antes de desactivar esta.",
+      error: "Es la única sede activa de la empresa: una empresa activa necesita al menos una sede. Cree otra sede antes de desactivar esta.",
     };
 
   await prisma.site.update({

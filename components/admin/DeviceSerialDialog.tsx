@@ -35,14 +35,14 @@ export function DeviceSerialDialog({
           <input type="hidden" name="dev_id" value={devId} />
           <p className="m-0 text-sm">
             Este equipo facial se identifica por su nombre interno, que hoy es{" "}
-            <span className="font-mono font-semibold">{devId}</span>. Si no es el serial, escribí el que figura en la
+            <span className="font-mono font-semibold">{devId}</span>. Si no es el serial, escriba el que figura en la
             caja (o en el menú del equipo → Info del sistema).
           </p>
           {suspectShared && (
             <p className="m-0 border border-neutral-500 p-2 text-sm">
-              <strong>Ojo:</strong> parece que hay <strong>más de un equipo</strong> conectándose con el nombre{" "}
+              <strong>Atención:</strong> parece que hay <strong>más de un equipo</strong> conectándose con el nombre{" "}
               <span className="font-mono">{devId}</span>. El serial le llega al primero que consulte, que puede no
-              ser el de esta caja. Dejá conectado solo uno, o corregilo desde el menú del propio equipo.
+              ser el de esta caja. Deje conectado solo uno, o corríjalo desde el menú del propio equipo.
             </p>
           )}
           <label className={LABEL}>

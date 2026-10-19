@@ -143,7 +143,7 @@ export async function reopenCompanyImport(runId: number, companyId: number): Pro
   const run = await prisma.import_run.findUnique({ where: { id: runId } });
   if (!run || run.company_id !== companyId) throw new Error("Esa importación no existe en esta empresa.");
   if (run.status === "applied") throw new Error("Esa importación ya se aplicó.");
-  if (run.status !== "preview" || !run.file) throw new Error("Esa vista previa venció (el archivo se guarda 30 días). Volvé a subir el archivo.");
+  if (run.status !== "preview" || !run.file) throw new Error("Esa vista previa venció (el archivo se guarda 30 días). Vuelva a subir el archivo.");
   const plan = await computePlan(companyId, Buffer.from(run.file));
   const view = await buildView(run.id, run.file_name, plan);
   await prisma.import_run.update({ where: { id: run.id }, data: { plan_hash: planHash(plan), summary: summaryOf(view) } });
@@ -158,9 +158,9 @@ export async function confirmCompanyImport(runId: number, actorId: number | null
   const run = await prisma.import_run.findUnique({ where: { id: runId } });
   if (!run || run.company_id == null) throw new Error("Esa importación no existe.");
   if (run.status === "applied") throw new Error("Esa importación ya se aplicó.");
-  if (run.status !== "preview" || !run.file) throw new Error("La vista previa venció. Volvé a subir el archivo.");
+  if (run.status !== "preview" || !run.file) throw new Error("La vista previa venció. Vuelva a subir el archivo.");
   if ((run.summary as { ok?: boolean } | null)?.ok === false) {
-    throw new Error("El archivo tiene filas rechazadas: corregilas en el Excel y volvé a subirlo (no se aplicó nada).");
+    throw new Error("El archivo tiene filas rechazadas: corríjalas en el Excel y vuelva a subirlo (no se aplicó nada).");
   }
 
   // Tomarla de forma atómica: un doble clic o dos pestañas no la aplican dos veces.
@@ -174,10 +174,10 @@ export async function confirmCompanyImport(runId: number, actorId: number | null
     if (planHash(base) !== run.plan_hash || !base.ok) {
       const view = await buildView(run.id, run.file_name, base);
       await prisma.import_run.update({ where: { id: run.id }, data: { status: "preview", plan_hash: planHash(base), summary: summaryOf(view) } });
-      return { status: "changed", view, message: "Algo cambió en el sistema desde la vista previa. Revisá la vista previa actualizada y confirmá de nuevo." };
+      return { status: "changed", view, message: "Algo cambió en el sistema desde la vista previa. Revise la vista previa actualizada y confirme de nuevo." };
     }
     plan = await computePlan(run.company_id, file, overrides);
-    if (!plan.ok) throw new Error("Los ajustes de la vista previa dejaron filas inválidas. Volvé a subir el archivo.");
+    if (!plan.ok) throw new Error("Los ajustes de la vista previa dejaron filas inválidas. Vuelva a subir el archivo.");
   } catch (e) {
     await prisma.import_run.update({ where: { id: run.id }, data: { status: "preview" } });
     throw e;

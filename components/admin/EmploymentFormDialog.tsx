@@ -87,7 +87,7 @@ export function EmploymentFormDialog({
           )}
           {editing && (
             <p className="m-0 text-xs text-text/70">
-              La empresa no se cambia: para pasar a la persona a otra empresa, dale de baja este contrato y registrale uno
+              La empresa no se cambia: para pasar a la persona a otra empresa, dé de baja este contrato y regístrele uno
               nuevo — así queda el historial.
             </p>
           )}

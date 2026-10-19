@@ -98,7 +98,7 @@ export async function assignDeviceToSiteAction(
 ): Promise<AdminActionState> {
   const user = await requireUser();
   const dev_id = str(fd, "dev_id");
-  if (!dev_id) return { status: "error", error: "Elegí un equipo." };
+  if (!dev_id) return { status: "error", error: "Elija un equipo." };
   const site_id = Number(str(fd, "site_id"));
   if (!Number.isInteger(site_id)) return { status: "error", error: "Sede inválida." };
   return assignDeviceToSite(user.id, dev_id, site_id);

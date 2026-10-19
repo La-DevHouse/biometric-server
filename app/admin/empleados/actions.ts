@@ -225,7 +225,7 @@ async function resolvePositionId(
 ): Promise<{ id: number | null } | { error: string }> {
   if (str(fd, "position_id") !== "__new__") return { id: fallbackPositionId };
   const name = str(fd, "new_position_name");
-  if (!name) return { error: "Escribí el nombre del puesto nuevo." };
+  if (!name) return { error: "Escriba el nombre del puesto nuevo." };
 
   const company = await prisma.client_company.findUnique({
     where: { id: companyId },
@@ -261,7 +261,7 @@ export async function createEmploymentAction(
   const employee_id = Number(str(fd, "employee_id"));
   const d = employmentData(fd);
   if (!Number.isFinite(employee_id)) return { status: "error", error: "Persona inválida." };
-  if (!Number.isFinite(d.company_id)) return { status: "error", error: "Seleccioná una empresa." };
+  if (!Number.isFinite(d.company_id)) return { status: "error", error: "Seleccione una empresa." };
   if (!d.start_date) return { status: "error", error: "La fecha de inicio es obligatoria." };
 
   const pos = await resolvePositionId(fd, d.position_id, d.company_id, user.id);

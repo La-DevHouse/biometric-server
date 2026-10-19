@@ -24,7 +24,7 @@ const rawPoolTypes: CustomTypesConfig = {
 const DATABASE_URL = process.env.DATABASE_URL;
 if (!DATABASE_URL) {
   throw new Error(
-    "DATABASE_URL no está definida. Copiá .env.example a .env (ver prisma/README.md)."
+    "DATABASE_URL no está definida. Copie .env.example a .env (ver prisma/README.md)."
   );
 }
 

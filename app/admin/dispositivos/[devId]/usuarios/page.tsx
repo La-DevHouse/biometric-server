@@ -154,7 +154,7 @@ export default async function DeviceUsersPage({ params }: { params: Promise<{ de
             </Bucket>
             <Bucket
               title="IDs que no son la cédula de ningún empleado (no se tocan)"
-              hint="Si es alguien con un ID viejo (no su cédula): cuando su copia con cédula esté en el equipo, borrá el ID viejo desde esta lista y sus marcaciones pasan a la cédula (docs/10 §4.5)."
+              hint="Si es alguien con un ID viejo (no su cédula): cuando su copia con cédula esté en el equipo, borre el ID viejo desde esta lista y sus marcaciones pasan a la cédula (docs/10 §4.5)."
             >
               {p.unknownUsers.map((u) => `${u} — ${users.find((x) => x.user_id === u)?.user_name ?? "?"}`)}
             </Bucket>
@@ -165,7 +165,7 @@ export default async function DeviceUsersPage({ params }: { params: Promise<{ de
       {users.length === 0 ? (
         <EmptyState
           title="Sin usuarios leídos"
-          description="Todavía no hay lectura de este equipo. Usá “Actualizar” arriba o “Releer usuarios”."
+          description="Todavía no hay lectura de este equipo. Use “Actualizar” arriba o “Releer usuarios”."
         />
       ) : (
         <>

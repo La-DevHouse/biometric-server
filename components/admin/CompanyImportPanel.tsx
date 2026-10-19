@@ -177,7 +177,7 @@ export function CompanyImportPanel({ companyId, resumeRunId }: { companyId: numb
           {view.rejected.length > 0 && (
             <div className="flex flex-col gap-2">
               <p className="m-0 text-sm">
-                <b>{view.rejected.length} problema(s): no se va a aplicar nada</b> hasta que estén corregidos en el archivo. Corregilo y volvé a subirlo.
+                <b>{view.rejected.length} problema(s): no se va a aplicar nada</b> hasta que estén corregidos en el archivo. Corríjalo y vuelva a subirlo.
               </p>
               <Table>
                 <thead>
@@ -205,7 +205,7 @@ export function CompanyImportPanel({ companyId, resumeRunId }: { companyId: numb
               title="Departamentos"
               intro={
                 <>
-                  Unificá los que son el mismo (<b>Igual que…</b>), corregí el nombre de los que se crean, o asignalos a un departamento que ya
+                  Unifique los que son el mismo (<b>Igual que…</b>), corrija el nombre de los que se crean, o asígnelos a un departamento que ya
                   existe. Lo que decidas se recuerda para los próximos archivos.
                 </>
               }
@@ -223,8 +223,8 @@ export function CompanyImportPanel({ companyId, resumeRunId }: { companyId: numb
               title="Cargos → Puestos"
               intro={
                 <>
-                  Unificá los cargos que son el mismo puesto (<b>Igual que…</b>: un error de tipeo o la versión en femenino), corregí el nombre de
-                  los que se crean, o asignalos a un puesto que ya existe. Cada puesto queda en el departamento en el que está en el archivo. Lo
+                  Unifique los cargos que son el mismo puesto (<b>Igual que…</b>: un error de escritura o la versión en femenino), corrija el nombre de
+                  los que se crean, o asígnelos a un puesto que ya existe. Cada puesto queda en el departamento en el que está en el archivo. Lo
                   que decidas se recuerda para los próximos archivos.
                 </>
               }
@@ -243,7 +243,7 @@ export function CompanyImportPanel({ companyId, resumeRunId }: { companyId: numb
               <h3 className="m-0 font-mono text-label uppercase tracking-[0.12em] text-neutral-800">Personas</h3>
               {view.counts.ambiguous > 0 && (
                 <p className="m-0 text-sm">
-                  <b>{view.counts.ambiguous}</b> nombre(s) resaltado(s): no es seguro dónde terminan los nombres y empiezan los apellidos. Revisá el corte.
+                  <b>{view.counts.ambiguous}</b> nombre(s) resaltado(s): no es seguro dónde terminan los nombres y empiezan los apellidos. Revise el corte.
                 </p>
               )}
               <Table>
@@ -281,7 +281,7 @@ export function CompanyImportPanel({ companyId, resumeRunId }: { companyId: numb
           {view.absent.length > 0 && (
             <details className="border border-neutral-400 bg-surface">
               <summary className="cursor-pointer px-[14px] py-[11px] text-sm">
-                <b>{view.absent.length}</b> persona(s) con contrato vigente en esta empresa <b>no están en el archivo</b>. No se les da de baja; revisalo en el panel.
+                <b>{view.absent.length}</b> persona(s) con contrato vigente en esta empresa <b>no están en el archivo</b>. No se les da de baja; revíselo en el panel.
               </summary>
               <ul className="m-0 flex flex-col gap-0.5 px-[14px] pb-[11px] pl-8 text-sm">
                 {view.absent.map((a) => (

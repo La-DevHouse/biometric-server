@@ -117,7 +117,7 @@ export function FileDropzone({
             <span className="flex flex-col gap-[2px] min-w-0">
               <span className="text-sm font-semibold text-danger-700">{state.message}</span>
               <span className="text-xs text-danger-700">
-                Arrastrá otro archivo o <span className="border-b border-danger-600 font-semibold">buscá en el equipo</span>
+                Arrastre otro archivo o <span className="border-b border-danger-600 font-semibold">búsquelo en su computadora</span>
                 {state.hint ? ` · ${state.hint}` : ""}
               </span>
             </span>
@@ -155,7 +155,7 @@ export function FileDropzone({
           </span>
           <span className="flex flex-col gap-px min-w-0">
             <span className="text-sm font-semibold">
-              Arrastrá el archivo o <span className="text-accent-700 border-b border-accent">buscá en el equipo</span>
+              Arrastre el archivo o <span className="text-accent-700 border-b border-accent">búsquelo en su computadora</span>
             </span>
             <span className="font-mono text-2xs uppercase tracking-[0.08em] max-md:tracking-[0.06em] text-neutral-700">{hint}</span>
           </span>

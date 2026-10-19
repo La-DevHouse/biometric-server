@@ -64,7 +64,7 @@ export function OpButton({
       >
         <div className="flex flex-col gap-3">
           <p className="text-sm m-0">
-            {description ?? "Se envía al equipo en segundo plano: podés seguir usando el panel mientras se procesa."}
+            {description ?? "Se envía al equipo en segundo plano: puede seguir usando el panel mientras se procesa."}
           </p>
           <p className="text-xs text-text/70 m-0">El avance y el resultado aparecen en el panel “Procesando”.</p>
           <form id={formId} onSubmit={onSubmit}>

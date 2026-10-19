@@ -88,7 +88,7 @@ export function EmployeeFormDialog({ employee }: { employee?: EmployeeValues }) 
       (form.elements.namedItem("first_name") as HTMLInputElement).value = firstName;
       (form.elements.namedItem("last_name") as HTMLInputElement).value = lastName;
       if (birthDate) (form.elements.namedItem("birth_date") as HTMLInputElement).value = birthDate;
-      push("ok", "Cédula leída — revisá los datos antes de guardar.");
+      push("ok", "Cédula leída — revise los datos antes de guardar.");
     } catch (err) {
       // Ver comentario equivalente en CompanyFormDialog.handleRifFile: un 413
       // u otro rechazo de red llega como excepción, no como { ok: false }.
@@ -193,7 +193,7 @@ export function EmployeeFormDialog({ employee }: { employee?: EmployeeValues }) 
         onCapture={handleCedulaCapture}
         guide="id-card"
         title="Escanear cédula"
-        instructions="Alineá la cédula dentro del recuadro, bien iluminada, y capturá."
+        instructions="Alinee la cédula dentro del recuadro, bien iluminada, y capture."
       />
     </>
   );

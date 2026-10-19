@@ -135,7 +135,7 @@ export async function setAccountStatusAction(
   if (!before) return { ok: false, error: "La cuenta no existe." };
 
   if (!active) {
-    if (id === user.id) return { ok: false, error: "No podés desactivar tu propia cuenta." };
+    if (id === user.id) return { ok: false, error: "No puede desactivar su propia cuenta." };
     const activeCount = await prisma.app_user.count({ where: { status: "active" } });
     if (activeCount <= 1) return { ok: false, error: "Debe quedar al menos una cuenta activa." };
   }

@@ -100,7 +100,7 @@ export default async function DeviceDetailPage({ params }: { params: Promise<{ d
       {!online && (
         <Card>
           <CardMeta>
-            Este equipo está desconectado. Puedes encolar operaciones; se ejecutarán cuando vuelva a reportarse.
+            Este equipo está desconectado. Puede encolar operaciones; se ejecutarán cuando vuelva a reportarse.
           </CardMeta>
         </Card>
       )}
@@ -145,7 +145,7 @@ export default async function DeviceDetailPage({ params }: { params: Promise<{ d
         {frozen && (
           <p className="m-0 text-xs text-text/70">
             Sin sede activa el equipo está <strong>congelado</strong>: no se agrega ni se quita a nadie hasta que tenga
-            una. Asignalo con el ícono de sede de arriba.
+            una. Asígnelo con el ícono de sede de arriba.
           </p>
         )}
         {history.length > 0 && (
@@ -228,7 +228,7 @@ export default async function DeviceDetailPage({ params }: { params: Promise<{ d
       <p className="m-0 text-xs text-text/70">
         {device.stat_updated_at
           ? `Estado del equipo leído ${formatRelativeTime(device.stat_updated_at)}.`
-          : "El estado del equipo (huellas y marcaciones en memoria) aún no se leyó — no son 0, simplemente no se pidieron todavía. Usá “Actualizar”."}
+          : "El estado del equipo (huellas y marcaciones en memoria) aún no se leyó — no son 0, simplemente no se pidieron todavía. Use “Actualizar”."}
       </p>
 
       <p className="m-0 text-xs text-text/60">

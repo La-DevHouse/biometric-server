@@ -51,7 +51,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   const sp = req.nextUrl.searchParams;
   const from = sp.get("from") ?? "";
   const to = sp.get("to") ?? "";
-  if (!YMD.test(from) || !YMD.test(to)) return bad("Elegí el rango de fechas (desde y hasta) para exportar.");
+  if (!YMD.test(from) || !YMD.test(to)) return bad("Elija el rango de fechas (desde y hasta) para exportar.");
   const fromD = new Date(`${from}T00:00:00Z`);
   const toD = new Date(`${to}T00:00:00Z`);
   if (Number.isNaN(fromD.getTime()) || Number.isNaN(toD.getTime())) return bad("Fecha inválida.");

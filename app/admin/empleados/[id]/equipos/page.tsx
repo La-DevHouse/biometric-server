@@ -166,7 +166,7 @@ export default async function EmpleadoEquiposPage({
         {employee.fingerprints.length === 0 ? (
           <EmptyState
             title="Sin huellas"
-            description="Registrale un dedo físicamente en cualquier equipo de su alcance: se detecta solo y se copia a los demás."
+            description="Regístrele un dedo físicamente en cualquier equipo de su alcance: se detecta solo y se copia a los demás."
           />
         ) : (
           <Table>

@@ -132,7 +132,7 @@ export default async function EmpresaEmpleadosPage({ params }: { params: Promise
       {rows.length === 0 ? (
         <EmptyState
           title="Sin contratos vigentes"
-          description="Cuando alguien tenga un contrato con esta empresa, va a aparecer acá y se enrola solo en los equipos de su alcance."
+          description="Cuando alguien tenga un contrato con esta empresa, va a aparecer aquí y se enrola solo en los equipos de su alcance."
         />
       ) : (
         <>

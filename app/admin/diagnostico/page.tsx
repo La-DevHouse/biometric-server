@@ -105,8 +105,8 @@ export default async function DiagnosticoPage({
       </p>
       <p className="m-0 max-w-2xl border border-accent2 p-2.5 text-xs">
         ⚠ Los usuarios y huellas de los equipos los mantiene el reconciliador (docs/10): un alta, baja o huella
-        escrita a mano desde acá puede ser revertida en la próxima sincronización si no coincide con el alcance
-        (contratos, empresa, grupo, sede). Para cambiar quién está en un equipo, cambiá el contrato o la asignación.
+        escrita a mano desde aquí puede ser revertida en la próxima sincronización si no coincide con el alcance
+        (contratos, empresa, grupo, sede). Para cambiar quién está en un equipo, cambie el contrato o la asignación.
       </p>
       <p className="m-0 text-xs text-text/60">
         Las marcaciones están en Equipos → (equipo) → Marcaciones, y lo que se exporta a nómina en Empresas → (empresa)

@@ -71,7 +71,7 @@ export default async function StyleguidePage() {
       <div>
         <h1 className="font-heading m-0 text-2xl font-semibold tracking-tight">Design system</h1>
         <p className="m-0 mt-1 text-sm text-text/70">
-          Referencia viva — cada pieza de acá es el componente real, no una foto. Si algo se ve
+          Referencia viva — cada pieza de aquí es el componente real, no una foto. Si algo se ve
           distinto en una pantalla del panel, esa pantalla está desviada del sistema, no al revés.
           Fuente: <code className="text-xs">app/globals.css</code> (tokens),{" "}
           <code className="text-xs">components/ui/</code> (primitivas).
@@ -240,7 +240,7 @@ export default async function StyleguidePage() {
           />
         </MobileList>
         <p className="m-0 text-xs text-text/60">
-          (La fila de arriba se ve en tabla en desktop y en tarjeta en mobile — angostá la ventana
+          (La fila de arriba se ve en tabla en desktop y en tarjeta en mobile — reduzca el ancho de la ventana
           para verlo cambiar.)
         </p>
       </Section>

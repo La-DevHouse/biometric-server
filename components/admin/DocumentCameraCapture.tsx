@@ -72,7 +72,7 @@ export function DocumentCameraCapture({
 
     let cancelled = false;
     if (!navigator.mediaDevices?.getUserMedia) {
-      setError("Este navegador no da acceso a la cámara. Subí una foto en su lugar.");
+      setError("Este navegador no da acceso a la cámara. Suba una foto en su lugar.");
       return;
     }
     navigator.mediaDevices
@@ -87,7 +87,7 @@ export function DocumentCameraCapture({
           videoRef.current.srcObject = stream;
         }
       })
-      .catch(() => setError("No se pudo acceder a la cámara. Subí una foto en su lugar."));
+      .catch(() => setError("No se pudo acceder a la cámara. Suba una foto en su lugar."));
 
     return () => {
       cancelled = true;

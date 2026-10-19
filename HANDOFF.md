@@ -170,8 +170,11 @@ Detalle en `docs/04` y `docs/05`. Modelos: huella `WS535BW1_BSCS_v1.5.31`; facia
 
 ## 7. Cómo trabaja el usuario (convenciones)
 
-- **Idioma:** el usuario escribe en español; responder en español. La UI usa **voseo**
-  ("Elegí", "Probá") — mantenerlo. Código y mensajes de commit en inglés; comentarios y docs en español.
+- **Idioma:** el usuario escribe en español; responder en español. La UI está en **español
+  venezolano profesional, neutro, tratando de "usted"** ("Elija", "Pruebe", "Revise", "puede",
+  "su cuenta"; "aquí", no "acá"). **Nada de voseo** ("Elegí", "Probá", "podés") ni regionalismos
+  argentinos — se quitaron el 2026-10-19 a pedido del usuario. Código y mensajes de commit en
+  inglés; comentarios y docs en español.
 - **Push:** no pushear sin que lo pida ("pushealo", "súbelo a main"). A veces pushea él. Antes
   de pushear: `git fetch` y revisar que no haya nada nuevo en `origin/main`.
 - **Commits:** estilo convencional (`feat(scope): …`, `fix(scope): …`), cuerpo explicando el

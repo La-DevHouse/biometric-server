@@ -9,7 +9,7 @@
 export function describeActionError(err: unknown): string {
   const message = err instanceof Error ? err.message : String(err);
   if (message.includes("Body exceeded") || message.includes("413")) {
-    return "El archivo es muy pesado para subir. Probá con uno más liviano o sacá la foto de nuevo.";
+    return "El archivo es muy pesado para subir. Pruebe con uno más ligero o tome la foto de nuevo.";
   }
-  return "No se pudo procesar el archivo. Probá de nuevo.";
+  return "No se pudo procesar el archivo. Pruebe de nuevo.";
 }

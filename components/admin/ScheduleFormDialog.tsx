@@ -78,7 +78,7 @@ export function ScheduleFormDialog({
             ) : (
               <select name="company_id" required className={INPUT} defaultValue="">
                 <option value="" disabled>
-                  — elegí una empresa —
+                  — elija una empresa —
                 </option>
                 {companies.map((c) => (
                   <option key={c.id} value={c.id}>

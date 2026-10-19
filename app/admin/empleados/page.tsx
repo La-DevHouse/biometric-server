@@ -84,7 +84,7 @@ export default async function EmpleadosPage({ searchParams }: { searchParams: Se
       </div>
 
       {employees.length === 0 ? (
-        <EmptyState title="Sin resultados" description="Ajustá los filtros o registrá una persona nueva." />
+        <EmptyState title="Sin resultados" description="Ajuste los filtros o registre una persona nueva." />
       ) : (
         <>
           <div className="hidden md:block">

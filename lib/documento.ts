@@ -36,7 +36,7 @@ export function joinDoc(
   const max = opts.max ?? 10;
   const label = kind === "cedula" ? "La cédula" : "El RIF";
 
-  if (!prefix) return { error: `${label}: elegí el tipo de documento.` };
+  if (!prefix) return { error: `${label}: elija el tipo de documento.` };
   if (!docPrefixes(kind).includes(prefix))
     return { error: `${label}: tipo de documento inválido.` };
   if (!digits) return { error: `${label}: falta el número.` };

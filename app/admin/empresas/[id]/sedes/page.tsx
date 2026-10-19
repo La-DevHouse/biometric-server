@@ -60,7 +60,7 @@ export default async function EmpresaSedesPage({ params }: { params: Promise<{ i
       <CompanyTabs companyId={company.id} companyName={company.name} active="sedes" actions={<SiteFormDialog companyId={company.id} />} />
 
       {company.sites.length === 0 ? (
-        <EmptyState title="Sin sedes" description="Una empresa activa necesita al menos una sede. Agregá una para asignarle equipos." />
+        <EmptyState title="Sin sedes" description="Una empresa activa necesita al menos una sede. Agregue una para asignarle equipos." />
       ) : (
         <>
           <div className="hidden md:block">

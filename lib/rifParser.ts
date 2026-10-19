@@ -40,7 +40,7 @@ export function parseRifText(rawText: string): { fields: RifExtractedFields } | 
   if (!m) {
     return {
       error:
-        "No se reconoció el formato del RIF. Verificá que sea el comprobante digital del SENIAT en PDF (no una foto o escaneo).",
+        "No se reconoció el formato del RIF. Verifique que sea el comprobante digital del SENIAT en PDF (no una foto o escaneo).",
     };
   }
 

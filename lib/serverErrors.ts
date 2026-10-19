@@ -7,7 +7,7 @@
 // detalle técnico va al log del servidor, no a la pantalla.
 import { Prisma } from "@prisma/client";
 
-const GENERIC = "No se pudo guardar por un error interno. Probá de nuevo; si se repite, avisá (el detalle quedó en el log del servidor).";
+const GENERIC = "No se pudo guardar por un error interno. Pruebe de nuevo; si se repite, avise (el detalle quedó en el log del servidor).";
 
 /** Código y mensaje de Postgres dentro de un error de Prisma (adapter-pg los trae en el texto). */
 function postgresError(message: string): { code: string; message: string } | null {
@@ -35,7 +35,7 @@ export function userErrorMessage(e: unknown): string {
     console.error("[action] error de Prisma:", e);
     if (e.code === "P2002") return fromPostgres("23505", "");
     if (e.code === "P2003") return fromPostgres("23503", "");
-    if (e.code === "P2025") return "El registro ya no existe (puede que otra persona lo haya borrado). Recargá la página.";
+    if (e.code === "P2025") return "El registro ya no existe (puede que otra persona lo haya borrado). Recargue la página.";
     const pg = postgresError(e.message);
     return pg ? fromPostgres(pg.code, pg.message) : GENERIC;
   }

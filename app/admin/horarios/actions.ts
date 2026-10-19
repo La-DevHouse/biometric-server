@@ -49,7 +49,7 @@ export async function createScheduleAction(
 ): Promise<AdminActionState> {
   const user = await requireUser();
   const d = scheduleData(fd);
-  if (!Number.isFinite(d.company_id)) return { status: "error", error: "Seleccioná una empresa." };
+  if (!Number.isFinite(d.company_id)) return { status: "error", error: "Seleccione una empresa." };
   if (!d.name) return { status: "error", error: "El nombre es obligatorio." };
 
   try {

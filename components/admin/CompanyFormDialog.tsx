@@ -116,7 +116,7 @@ export function CompanyFormDialog({
       (form.elements.namedItem("legal_rep_ced_prefix") as HTMLSelectElement).value = prefix;
       (form.elements.namedItem("legal_rep_ced_number") as HTMLInputElement).value = number;
       (form.elements.namedItem("legal_rep_name") as HTMLInputElement).value = `${firstName} ${lastName}`.trim();
-      push("ok", "Cédula del representante leída — revisá los datos antes de guardar.");
+      push("ok", "Cédula del representante leída — revise los datos antes de guardar.");
     } catch (err) {
       push("error", describeActionError(err));
     } finally {
@@ -161,7 +161,7 @@ export function CompanyFormDialog({
         return;
       }
       applyRifFields(res.fields);
-      push("ok", "RIF leído — revisá los datos antes de guardar.");
+      push("ok", "RIF leído — revise los datos antes de guardar.");
     } catch (err) {
       // Un 413 (body-size-limit del Server Action) u otro rechazo de red
       // llega como excepción, no como { ok: false } — sin este catch queda
@@ -491,7 +491,7 @@ export function CompanyFormDialog({
         onCapture={handleRifFile}
         guide="document"
         title="Escanear RIF"
-        instructions="Alineá la hoja del RIF dentro del recuadro, bien iluminada, y capturá."
+        instructions="Alinee la hoja del RIF dentro del recuadro, bien iluminada, y capture."
       />
       <DocumentCameraCapture
         open={repCaptureOpen}
@@ -499,7 +499,7 @@ export function CompanyFormDialog({
         onCapture={handleRepCedula}
         guide="id-card"
         title="Escanear cédula del representante"
-        instructions="Alineá la cédula dentro del recuadro, bien iluminada, y capturá."
+        instructions="Alinee la cédula dentro del recuadro, bien iluminada, y capture."
       />
     </>
   );

@@ -92,5 +92,5 @@ function readRows(ws: ExcelJS.Worksheet, headerRow: number, cols: Map<ColumnKey,
     out.rows.push({ row: r, cells });
   }
   if (out.rows.length === 0) out.errors.push("El listado no tiene trabajadores debajo de los encabezados.");
-  if (out.rows.length > MAX_ROWS) out.errors.push(`Tiene ${out.rows.length} trabajadores; el máximo es ${MAX_ROWS}. Dividilo en varios archivos.`);
+  if (out.rows.length > MAX_ROWS) out.errors.push(`Tiene ${out.rows.length} trabajadores; el máximo es ${MAX_ROWS}. Divídalo en varios archivos.`);
 }

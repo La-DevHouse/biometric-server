@@ -69,12 +69,12 @@ export async function DeviceTabs({ devId, active }: { devId: string; active: Dev
             <Tag variant={online ? "accent" : "neutral"}>{online ? "En línea" : "Desconectado"}</Tag>
             {frozen && <Tag variant="neutral">Pendiente de asignar</Tag>}
             {serialFix === "not_serial" && (
-              <span title="Este facial se identifica por su nombre interno y no parece un serial. Corregilo con el ícono de la llave.">
+              <span title="Este facial se identifica por su nombre interno y no parece un serial. Corríjalo con el ícono de la llave.">
                 <Tag variant="neutral">Serial sin corregir</Tag>
               </span>
             )}
             {serialFix === "shared" && (
-              <span title="Más de un equipo está consultando con este mismo nombre. Corregí el serial del que no corresponda.">
+              <span title="Más de un equipo está consultando con este mismo nombre. Corrija el serial del que no corresponda.">
                 <Tag variant="neutral">Serial repetido</Tag>
               </span>
             )}

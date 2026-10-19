@@ -487,7 +487,7 @@ export async function startPushFingerprint(
   }
   if (fingerprint.template.length < MIN_TEMPLATE_BYTES) {
     throw new Error(
-      `La huella capturada mide ${fingerprint.template.length} bytes — se esperaban al menos ${MIN_TEMPLATE_BYTES}. Puede estar corrupta; volvé a capturarla.`
+      `La huella capturada mide ${fingerprint.template.length} bytes — se esperaban al menos ${MIN_TEMPLATE_BYTES}. Puede estar corrupta; vuelva a capturarla.`
     );
   }
 
