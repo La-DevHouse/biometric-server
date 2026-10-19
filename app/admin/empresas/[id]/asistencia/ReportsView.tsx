@@ -1,12 +1,12 @@
 import Link from "next/link";
 import { Suspense } from "react";
-import { cx } from "@/lib/cx";
 import { Table, Th, Td, Tr } from "@/components/ui/Table";
 import { MobileList, MobileRow } from "@/components/ui/MobileRow";
 import { Tag } from "@/components/ui/Tag";
 import { DownloadBtn } from "@/components/ui/Btn";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { UrlFilters } from "@/components/admin/UrlFilters";
+import { PeriodPresets } from "@/components/admin/PeriodPresets";
 import { formatMinutes } from "@/lib/shiftTime";
 import { withReturn } from "@/lib/returnTo";
 import { DEFAULT_TZ, dateKeyInTz } from "@/lib/time";
@@ -15,7 +15,6 @@ import {
   companyIncidents,
   companySummary,
   INCIDENT_LABEL,
-  periodPresets,
   type IncidentKind,
   type SummaryRow,
 } from "@/lib/attendance/reports";
@@ -58,8 +57,6 @@ function ReportHeader({
   info?: React.ReactNode;
 }) {
   const today = dateKeyInTz(new Date(), DEFAULT_TZ);
-  const href = (f: string, t: string) =>
-    `/admin/empresas/${companyId}/asistencia?${new URLSearchParams({ vista, from: f, to: t, ...extraParams }).toString()}`;
   const download = `/admin/empresas/${companyId}/asistencia/reporte?${new URLSearchParams({ tipo: vista, from, to }).toString()}`;
   return (
     <div className="flex flex-col gap-2">
@@ -87,22 +84,7 @@ function ReportHeader({
           </DownloadBtn>
         </div>
       </div>
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
-        <span className="text-text/70">Período:</span>
-        {periodPresets(today).map((p) => {
-          const on = p.from === from && p.to === to;
-          return (
-            <Link
-              key={p.label}
-              href={href(p.from, p.to)}
-              aria-current={on ? "true" : undefined}
-              className={cx("no-underline hover:underline", on ? "font-semibold text-text" : "text-accent")}
-            >
-              {p.label}
-            </Link>
-          );
-        })}
-      </div>
+      <PeriodPresets basePath={`/admin/empresas/${companyId}/asistencia`} from={from} to={to} keep={{ vista, ...extraParams }} />
     </div>
   );
 }

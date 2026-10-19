@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { cx } from "@/lib/cx";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { UrlFilters } from "@/components/admin/UrlFilters";
+import { PeriodPresets } from "@/components/admin/PeriodPresets";
 import { AttendanceDaysTable } from "@/components/admin/AttendanceDaysTable";
 import { companyAttendanceDays, companyAttendanceDayCounts } from "@/lib/attendance/queries";
 import { defaultComputeRange } from "@/lib/attendance/engine";
@@ -136,6 +137,12 @@ export async function AttendanceDaysView({
           />
         </Suspense>
       </div>
+      <PeriodPresets
+        basePath={`/admin/empresas/${companyId}/asistencia`}
+        from={from}
+        to={to}
+        keep={{ vista: "dias", estado: status }}
+      />
 
       {days.length === 0 ? (
         <EmptyState

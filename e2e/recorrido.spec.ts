@@ -126,6 +126,23 @@ test.describe.serial("Recorrido general", () => {
     expect(download.suggestedFilename()).toMatch(/Relación de Asistencia .*\.xlsx$/);
   });
 
+  test("Atajos de período en Marcaciones y Por día: cambian el rango y conservan la vista", async ({ page }) => {
+    const base = `/admin/empresas/${S.companyId}/asistencia`;
+    for (const [url, keep] of [
+      [`${base}?sede=0`, /sede=0/],
+      [`${base}?vista=dias&estado=late`, /vista=dias.*estado=late|estado=late.*vista=dias/],
+    ] as const) {
+      await page.goto(url);
+      const link = page.getByRole("link", { name: "Mes anterior" });
+      await expect(link).toBeVisible();
+      await link.click();
+      await expect(page).toHaveURL(/from=\d{4}-\d{2}-01&to=\d{4}-\d{2}-\d{2}/);
+      await expect(page).toHaveURL(keep);
+      await expect(page.getByRole("link", { name: "Mes anterior" })).toHaveAttribute("aria-current", "true");
+    }
+    await shot(page, "11-atajos-por-dia");
+  });
+
   test("Celular: Consolidado, Incidencias y Auditoría sin desbordar el ancho", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     for (const [url, name] of [

@@ -26,6 +26,7 @@ import { Icon } from "@/components/ui/icons";
 import { syncCompanyAttendanceAction } from "@/app/admin/actions";
 import { formatIoTime } from "@/lib/ioTime";
 import { UrlFilters } from "@/components/admin/UrlFilters";
+import { PeriodPresets } from "@/components/admin/PeriodPresets";
 import { filterSummary } from "@/lib/filterSummary";
 import { withReturn } from "@/lib/returnTo";
 
@@ -194,6 +195,12 @@ export default async function EmpresaAsistenciaPage({
           />
         </Suspense>
       </div>
+      <PeriodPresets
+        basePath={`/admin/empresas/${company.id}/asistencia`}
+        from={f.from}
+        to={f.to}
+        keep={{ sede: f.sede }}
+      />
 
       {logs.length === 0 ? (
         <EmptyState
