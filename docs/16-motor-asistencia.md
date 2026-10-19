@@ -111,6 +111,11 @@ Un día se corrige con el lápiz ("Corregir marcaciones") de su fila, en Empresa
 - **Agregar una marcación que falta**: hora del día (o del día siguiente, para la salida de un
   turno nocturno) y sede si la empresa tiene varias. No futura, dentro del contrato.
 - **Anular una marcación del equipo**: deja de contar; `attendance_logs` **no se toca**.
+- **Agregar asistencia** (botón "+" de "Por día" y de Empleado → Asistencia, `AddAttendanceDialog`,
+  `addMarks`): para un día en que la persona **no marcó nada** — persona (o contrato), fecha, entrada
+  y salida (la salida puede ser del día siguiente), sede y motivo. Crea las dos marcaciones juntas
+  (o ninguna si algo no valida; la salida tiene que ir después de la entrada). Sirve también para
+  quien no tiene horario: ese día no tenía fila, y queda con sus horas.
 - **Deshacer** cualquiera de las dos: queda quién y cuándo (`revoked_at` / `revoked_by`), no se borra.
 - **Motivo obligatorio** (al menos 5 caracteres) para agregar o anular. Cada cambio va a la
   auditoría (`attendance.correction.add_mark` / `void_mark` / `revoke`) y recalcula el día

@@ -178,9 +178,24 @@ export async function addMark(
   input: { employmentId: number; ymd: string; time: string; nextDay?: boolean; siteId: number; reason: string },
   actorId: number
 ): Promise<CorrectionResult> {
+  const { time, nextDay, ...rest } = input;
+  return addMarks({ ...rest, marks: [{ time, nextDay }] }, actorId);
+}
+
+/**
+ * Agrega una o más marcaciones del día `ymd` con un mismo motivo — p. ej. "Agregar
+ * asistencia": entrada y salida de un día en que la persona no marcó nada. Valida
+ * todas antes de guardar (o se guardan todas o ninguna) y, si son varias, que vayan
+ * en orden (la salida después de la entrada).
+ */
+export async function addMarks(
+  input: { employmentId: number; ymd: string; marks: { time: string; nextDay?: boolean }[]; siteId: number; reason: string },
+  actorId: number
+): Promise<CorrectionResult> {
   const bad = checkReason(input.reason);
   if (bad) return { ok: false, error: bad };
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(input.ymd) || !/^([01]\d|2[0-3]):[0-5]\d$/.test(input.time)) {
+  if (input.marks.length === 0) return { ok: false, error: "Indique al menos una hora." };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(input.ymd) || input.marks.some((m) => !/^([01]\d|2[0-3]):[0-5]\d$/.test(m.time))) {
     return { ok: false, error: "Indique una hora válida." };
   }
   const em = await prisma.employment.findUnique({
@@ -188,29 +203,43 @@ export async function addMark(
     select: { company_id: true, employee_id: true, start_date: true, end_date: true },
   });
   if (!em) return { ok: false, error: "El contrato no existe." };
-  const markYmd = input.nextDay ? addDays(input.ymd, 1) : input.ymd;
-  if (markYmd < ymdOf(em.start_date) || (em.end_date && markYmd > ymdOf(em.end_date))) {
-    return { ok: false, error: "Esa fecha está fuera del contrato." };
-  }
   const site = (await companyAttendanceSites(em.company_id)).find((s) => s.id === input.siteId);
   if (!site) return { ok: false, error: "Esa sede no es de la empresa." };
   const tz = (await prisma.site.findUnique({ where: { id: site.id }, select: { timezone: true } }))?.timezone ?? DEFAULT_TZ;
-  const io = `${markYmd.replace(/-/g, "")}${input.time.replace(":", "")}00`;
-  const instant = parseDeviceTime(io, tz);
-  if (!instant || instant.getTime() > Date.now()) return { ok: false, error: "La marcación no puede ser futura." };
 
-  const c = await prisma.attendance_correction.create({
-    data: {
-      employment_id: input.employmentId,
-      kind: "add_mark",
-      io_time: io,
-      site_id: site.id,
-      reason: input.reason.trim(),
-      actor_app_user_id: actorId,
-    },
-  });
-  await writeAudit({ actorId, action: "attendance.correction.add_mark", entityType: "attendance_correction", entityId: c.id, after: c });
-  await recomputeAround(em.company_id, markYmd);
+  const ios: string[] = [];
+  for (const m of input.marks) {
+    const markYmd = m.nextDay ? addDays(input.ymd, 1) : input.ymd;
+    if (markYmd < ymdOf(em.start_date) || (em.end_date && markYmd > ymdOf(em.end_date))) {
+      return { ok: false, error: "Esa fecha está fuera del contrato." };
+    }
+    const io = `${markYmd.replace(/-/g, "")}${m.time.replace(":", "")}00`;
+    const instant = parseDeviceTime(io, tz);
+    if (!instant || instant.getTime() > Date.now()) return { ok: false, error: "La marcación no puede ser futura." };
+    if (ios.length && io <= ios[ios.length - 1]) {
+      return { ok: false, error: "La salida tiene que ser después de la entrada (si termina pasada la medianoche, marque «del día siguiente»)." };
+    }
+    ios.push(io);
+  }
+
+  const created = await prisma.$transaction(
+    ios.map((io) =>
+      prisma.attendance_correction.create({
+        data: {
+          employment_id: input.employmentId,
+          kind: "add_mark",
+          io_time: io,
+          site_id: site.id,
+          reason: input.reason.trim(),
+          actor_app_user_id: actorId,
+        },
+      })
+    )
+  );
+  for (const c of created)
+    await writeAudit({ actorId, action: "attendance.correction.add_mark", entityType: "attendance_correction", entityId: c.id, after: c });
+  await recomputeAround(em.company_id, input.ymd);
+  if (input.marks.some((m) => m.nextDay)) await recomputeAround(em.company_id, addDays(input.ymd, 1));
   return { ok: true, companyId: em.company_id, employeeId: em.employee_id };
 }
 
@@ -270,4 +299,46 @@ export async function revokeCorrection(correctionId: number, actorId: number): P
   await writeAudit({ actorId, action: "attendance.correction.revoke", entityType: "attendance_correction", entityId: c.id, before: c, after });
   if (io && /^\d{14}$/.test(io)) await recomputeAround(c.employment.company_id, ioYmd(io));
   return { ok: true, companyId: c.employment.company_id, employeeId: c.employment.employee_id };
+}
+
+/**
+ * Opciones de "Agregar asistencia": contratos (vigentes, o terminados hace menos de
+ * un año) de la empresa o de la persona, dentro del alcance de la cuenta, y las
+ * sedes activas donde se puede cargar cada uno.
+ */
+export async function addAttendanceOptions(
+  of: { companyId: number } | { employeeId: number },
+  companyIds: number[] | null
+): Promise<{
+  people: { employmentId: number; label: string; companyId: number }[];
+  sitesByCompany: Record<number, { id: number; name: string }[]>;
+}> {
+  const yearAgo = new Date(Date.now() - 366 * 86_400_000);
+  const rows = await prisma.employment.findMany({
+    where: {
+      ...("companyId" in of ? { company_id: of.companyId } : { employee_id: of.employeeId }),
+      ...(companyIds === null ? {} : { company_id: { in: companyIds } }),
+      ...("companyId" in of && companyIds !== null && !companyIds.includes(of.companyId) ? { id: -1 } : {}),
+      OR: [{ end_date: null }, { end_date: { gte: yearAgo } }],
+    },
+    select: {
+      id: true,
+      company_id: true,
+      company: { select: { name: true } },
+      employee: { select: { first_name: true, last_name: true } },
+    },
+    orderBy: [{ employee: { last_name: "asc" } }, { employee: { first_name: "asc" } }],
+  });
+  const people = rows.map((r) => ({
+    employmentId: r.id,
+    label: "companyId" in of ? `${r.employee.last_name}, ${r.employee.first_name}` : r.company.name,
+    companyId: r.company_id,
+  }));
+  const sitesByCompany: Record<number, { id: number; name: string }[]> = {};
+  for (const c of new Set(rows.map((r) => r.company_id))) {
+    sitesByCompany[c] = (await companyAttendanceSites(c))
+      .filter((s) => s.status === "active")
+      .map((s) => ({ id: s.id, name: s.company_id === c ? s.name : `${s.name} (${s.company.name})` }));
+  }
+  return { people, sitesByCompany };
 }

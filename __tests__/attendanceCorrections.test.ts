@@ -153,3 +153,39 @@ test("agregar, anular y deshacer: el día se recalcula y attendance_logs no se t
     "attendance.correction.revoke",
   ]);
 });
+
+test("agregar asistencia: entrada y salida de un día sin ninguna marcación", async () => {
+  const actor = await prisma.app_user.create({ data: { email: `${P}add@test`, name: "Supervisor", password_hash: "x" } });
+  created.users.push(actor.id);
+  const company = await prisma.client_company.create({
+    data: { name: P + "AddCo", tax_id: "J-00000000-0", sites: { create: { name: "Principal" } } },
+    include: { sites: true },
+  });
+  created.companies.push(company.id);
+  const siteId = company.sites[0].id;
+  const e = await prisma.employee.create({ data: { national_id: `V-7${SEED}`, first_name: "T", last_name: P + "Add" } });
+  created.employees.push(e.id);
+  // Sin horario: un día sin marcas no tiene fila; tras agregar asistencia, sí (con sus horas).
+  const em = await prisma.employment.create({ data: { employee_id: e.id, company_id: company.id, start_date: new Date("2026-09-01T00:00:00Z") } });
+  const base = { employmentId: em.id, ymd: "2026-10-07", siteId, reason: "Olvidó marcar todo el día" };
+
+  // La salida antes de la entrada: no guarda nada.
+  const bad = await corrections.addMarks({ ...base, marks: [{ time: "17:00" }, { time: "08:00" }] }, actor.id);
+  assert.equal(bad.ok, false);
+  assert.equal(await prisma.attendance_correction.count({ where: { employment_id: em.id } }), 0);
+
+  const r = await corrections.addMarks({ ...base, marks: [{ time: "08:00" }, { time: "17:30" }] }, actor.id);
+  assert.equal(r.ok, true);
+  assert.equal(await prisma.attendance_correction.count({ where: { employment_id: em.id, kind: "add_mark" } }), 2);
+  const d = await prisma.attendance_day.findUniqueOrThrow({
+    where: { employment_id_date: { employment_id: em.id, date: new Date("2026-10-07T00:00:00Z") } },
+    select: { status: true, worked_minutes: true, mark_count: true },
+  });
+  assert.deepEqual(d, { status: "no_schedule", worked_minutes: 9 * 60 + 30, mark_count: 2 });
+
+  // Turno nocturno: salida del día siguiente.
+  const night = await corrections.addMarks({ ...base, ymd: "2026-10-08", marks: [{ time: "22:00" }, { time: "06:00", nextDay: true }] }, actor.id);
+  assert.equal(night.ok, true);
+  const io = (await prisma.attendance_correction.findMany({ where: { employment_id: em.id }, orderBy: { io_time: "asc" } })).map((c) => c.io_time);
+  assert.deepEqual(io.slice(2), ["20261008220000", "20261009060000"]);
+});

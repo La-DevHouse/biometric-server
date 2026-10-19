@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { allow } from "@/lib/access";
 import { prisma } from "@/lib/db";
 import { userErrorMessage } from "@/lib/serverErrors";
-import { addMark, dayMarks, revokeCorrection, voidMark, type CorrectionResult, type DayMarks } from "@/lib/attendance/corrections";
+import { addMark, addMarks, dayMarks, revokeCorrection, voidMark, type CorrectionResult, type DayMarks } from "@/lib/attendance/corrections";
 
 // Correcciones manuales de marcaciones (docs/16 paso 4). Se usan desde "Por día"
 // de la empresa y desde Empleado → Asistencia; la lógica está en lib/attendance/corrections.
@@ -56,4 +56,26 @@ export async function revokeCorrectionAction(correctionId: number): Promise<Acti
   const g = await allow({ edit: true, employment: c?.employment_id ?? null });
   if (!g.ok) return g;
   return guarded(() => revokeCorrection(correctionId, g.access.user.id));
+}
+
+/**
+ * "Agregar asistencia": un día en que la persona no marcó nada en el equipo —
+ * entrada y, si se sabe, salida (la salida puede caer al día siguiente). Quedan
+ * como marcaciones agregadas a mano, con su motivo (docs/16).
+ */
+export async function addAttendanceAction(input: {
+  employmentId: number;
+  ymd: string;
+  entry: string;
+  exit: string | null;
+  exitNextDay: boolean;
+  siteId: number;
+  reason: string;
+}): Promise<ActionResult> {
+  const g = await allow({ edit: true, employment: input.employmentId });
+  if (!g.ok) return g;
+  const marks = [{ time: input.entry }, ...(input.exit ? [{ time: input.exit, nextDay: input.exitNextDay }] : [])];
+  return guarded(() =>
+    addMarks({ employmentId: input.employmentId, ymd: input.ymd, marks, siteId: input.siteId, reason: input.reason }, g.access.user.id)
+  );
 }

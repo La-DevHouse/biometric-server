@@ -5,6 +5,10 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { EmployeeTabs } from "@/components/admin/EmployeeTabs";
 import { UrlFilters } from "@/components/admin/UrlFilters";
 import { AttendanceDaysTable } from "@/components/admin/AttendanceDaysTable";
+import { AddAttendanceDialog } from "@/components/admin/AddAttendanceDialog";
+import { addAttendanceOptions } from "@/lib/attendance/corrections";
+import { addDays } from "@/lib/attendance/compute";
+import { DEFAULT_TZ, dateKeyInTz } from "@/lib/time";
 import { employeeAttendanceDays } from "@/lib/attendance/queries";
 import { defaultComputeRange } from "@/lib/attendance/engine";
 import { DAY_STATUS_LABEL, statusCount } from "@/lib/attendance/labels";
@@ -34,7 +38,11 @@ export default async function EmpleadoAsistenciaPage({
   const def = defaultComputeRange();
   const from = sp.from && YMD.test(sp.from) ? sp.from : def.from;
   const to = sp.to && YMD.test(sp.to) ? sp.to : def.to;
-  const days = await employeeAttendanceDays(id, { from, to }, access.companyIds);
+  const today = dateKeyInTz(new Date(), DEFAULT_TZ);
+  const [days, addOptions] = await Promise.all([
+    employeeAttendanceDays(id, { from, to }, access.companyIds),
+    access.canEdit ? addAttendanceOptions({ employeeId: id }, access.companyIds) : null,
+  ]);
 
   const counts = new Map<DayStatus, number>();
   for (const d of days) if (d.status) counts.set(d.status, (counts.get(d.status) ?? 0) + 1);
@@ -53,6 +61,16 @@ export default async function EmpleadoAsistenciaPage({
           {days.length > 0 &&
             ` · ${summary.join(", ")} · ${Math.floor(worked / 60)} h trabajadas${overtime ? `, ${Math.floor(overtime / 60)} h ${overtime % 60} min extra` : ""}`}
         </p>
+        <div className="flex items-start gap-2">
+        {addOptions && addOptions.people.length > 0 && (
+          <AddAttendanceDialog
+            people={addOptions.people}
+            sitesByCompany={addOptions.sitesByCompany}
+            defaultDate={addDays(today, -1)}
+            maxDate={today}
+            personLabel="Contrato con"
+          />
+        )}
         <Suspense fallback={<div className="h-(--control-h) w-(--control-h)" />}>
           <UrlFilters
             fields={[
@@ -61,6 +79,7 @@ export default async function EmpleadoAsistenciaPage({
             ]}
           />
         </Suspense>
+        </div>
       </div>
 
       {days.length === 0 ? (

@@ -5,6 +5,10 @@ import { cx } from "@/lib/cx";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { UrlFilters } from "@/components/admin/UrlFilters";
 import { PeriodPresets } from "@/components/admin/PeriodPresets";
+import { AddAttendanceDialog } from "@/components/admin/AddAttendanceDialog";
+import { addAttendanceOptions } from "@/lib/attendance/corrections";
+import { addDays } from "@/lib/attendance/compute";
+import { DEFAULT_TZ, dateKeyInTz } from "@/lib/time";
 import { AttendanceDaysTable } from "@/components/admin/AttendanceDaysTable";
 import { companyAttendanceDays, companyAttendanceDayCounts } from "@/lib/attendance/queries";
 import { defaultComputeRange } from "@/lib/attendance/engine";
@@ -84,10 +88,12 @@ export async function AttendanceDaysView({
   const to = toRaw && YMD.test(toRaw) ? toRaw : def.to;
   const status = STATUSES.includes(estado as DayStatus) ? (estado as DayStatus) : null;
 
-  const [rows, counts, withoutSchedule] = await Promise.all([
+  const today = dateKeyInTz(new Date(), DEFAULT_TZ);
+  const [rows, counts, withoutSchedule, addOptions] = await Promise.all([
     companyAttendanceDays(companyId, { from, to, status, limit: LIMIT + 1 }),
     companyAttendanceDayCounts(companyId, from, to),
     prisma.employment.count({ where: { company_id: companyId, end_date: null, schedule_group_id: null } }),
+    canEdit ? addAttendanceOptions({ companyId }, null) : null,
   ]);
   const truncated = rows.length > LIMIT;
   const days = rows.slice(0, LIMIT);
@@ -121,6 +127,15 @@ export async function AttendanceDaysView({
             </span>
           )}
         </div>
+        <div className="flex items-start gap-2">
+        {addOptions && (
+          <AddAttendanceDialog
+            people={addOptions.people}
+            sitesByCompany={addOptions.sitesByCompany}
+            defaultDate={addDays(today, -1)}
+            maxDate={today}
+          />
+        )}
         <Suspense fallback={<div className="h-(--control-h) w-(--control-h)" />}>
           <UrlFilters
             fields={[
@@ -136,6 +151,7 @@ export async function AttendanceDaysView({
             ]}
           />
         </Suspense>
+        </div>
       </div>
       <PeriodPresets
         basePath={`/admin/empresas/${companyId}/asistencia`}

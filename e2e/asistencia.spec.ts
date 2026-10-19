@@ -194,4 +194,29 @@ test.describe.serial("Asistencia por día (motor de asistencia)", () => {
     const [download] = await Promise.all([page.waitForEvent("download"), page.getByRole("link", { name: "Descargar .xlsx" }).click()]);
     expect(download.suggestedFilename()).toMatch(/ Incidencias \d{8}_\d{8}\.xlsx$/);
   });
+
+  test("Agregar asistencia: un día sin ninguna marcación (entrada y salida a mano)", async ({ page }) => {
+    await page.goto(daysUrl());
+    // Martes de la semana sembrada: Beto no marcó nada → Ausente.
+    const [y, m, d] = seed.from.split("-").map(Number);
+    const tue = new Date(Date.UTC(y, m - 1, d + 1)).toISOString().slice(0, 10);
+    const tueLabel = `${tue.slice(8, 10)}/${tue.slice(5, 7)}/${tue.slice(0, 4)}`;
+    const betoTue = rowsOf(page, seed.beto.name).filter({ hasText: tueLabel });
+    await expect(betoTue).toContainText("Ausente");
+
+    await page.getByRole("button", { name: "Agregar asistencia" }).click();
+    const dialog = page.getByRole("dialog");
+    await dialog.getByLabel("Persona *").selectOption({ label: seed.beto.name });
+    await dialog.getByLabel("Fecha *").fill(tue);
+    await dialog.getByLabel("Entrada *").fill("08:00");
+    await dialog.getByLabel("Salida", { exact: true }).fill("17:00");
+    await dialog.getByLabel("Motivo *").fill("Olvidó marcar entrada y salida (QA E2E)");
+    await shot(page, "12-agregar-asistencia");
+    await dialog.getByRole("button", { name: "Agregar", exact: true }).click();
+    await expect(page.getByText("Asistencia agregada (entrada y salida).")).toBeVisible({ timeout: 30_000 });
+    await closeToastIfAny(page);
+    await expect(betoTue).toContainText("Presente");
+    await expect(betoTue).toContainText("08:00");
+    await shot(page, "13-asistencia-agregada");
+  });
 });
