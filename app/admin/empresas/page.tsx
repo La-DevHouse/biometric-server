@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { prisma } from "@/lib/db";
-import { requireUser } from "@/lib/auth";
+import { requireAccess } from "@/lib/access";
 import { Table, Th, Td, Tr, RowLink } from "@/components/ui/Table";
 import { MobileList } from "@/components/ui/MobileRow";
 import { Tag } from "@/components/ui/Tag";
@@ -17,9 +17,10 @@ export const dynamic = "force-dynamic";
 
 // Nunca el binario del logo en la lista (hasta 512 KB c/u, docs/11 C2): solo
 // si tiene, y la imagen se pide aparte con carga diferida.
-async function getCompanies() {
+async function getCompanies(companyIds: number[] | null) {
   const [rows, withLogo] = await Promise.all([
     prisma.client_company.findMany({
+      where: companyIds === null ? {} : { id: { in: companyIds } },
       orderBy: { name: "asc" },
       select: {
         id: true,
@@ -44,10 +45,10 @@ type GroupData = Awaited<ReturnType<typeof getGroups>>[number];
 
 /** Empresas (docs/11 C1): grupos colapsables como una fila más; las empresas sin grupo, filas normales. */
 export default async function EmpresasPage({ searchParams }: { searchParams: Promise<{ grupo?: string }> }) {
-  await requireUser();
+  const access = await requireAccess();
   const openGroup = Number((await searchParams).grupo) || null;
-  const [companies, groups, businessModels] = await Promise.all([
-    getCompanies(),
+  const [companies, allGroups, businessModels] = await Promise.all([
+    getCompanies(access.companyIds),
     getGroups(),
     prisma.business_model.findMany({
       where: { status: "active" },
@@ -56,6 +57,8 @@ export default async function EmpresasPage({ searchParams }: { searchParams: Pro
     }),
   ]);
 
+  // Una cuenta limitada (docs/18) solo ve los grupos de sus empresas, sin editarlos.
+  const groups = access.companyIds === null ? allGroups : allGroups.filter((g) => companies.some((c) => c.group_id === g.id));
   const groupOptions = groups.filter((g) => g.status === "active").map((g) => ({ id: g.id, name: g.name }));
   const inGroup = (id: number) => companies.filter((c) => c.group_id === id);
   const ungrouped = companies.filter((c) => c.group_id === null);
@@ -73,10 +76,12 @@ export default async function EmpresasPage({ searchParams }: { searchParams: Pro
           {companies.length} {companies.length === 1 ? "empresa" : "empresas"} · {groups.length}{" "}
           {groups.length === 1 ? "grupo" : "grupos"}
         </p>
-        <span className="flex items-center gap-2">
-          <GroupFormDialog />
-          <CompanyFormDialog groupOptions={groupOptions} businessModels={businessModels} />
-        </span>
+        {access.isAdmin && (
+          <span className="flex items-center gap-2">
+            <GroupFormDialog />
+            <CompanyFormDialog groupOptions={groupOptions} businessModels={businessModels} />
+          </span>
+        )}
       </div>
 
       {companies.length === 0 && groups.length === 0 ? (
@@ -108,7 +113,7 @@ export default async function EmpresasPage({ searchParams }: { searchParams: Pro
                       name={e.g.name}
                       meta={groupMeta(e.g, inGroup(e.g.id).length)}
                       status={<StatusTag active={e.g.status === "active"} fem={false} />}
-                      actions={<GroupActions g={e.g} />}
+                      actions={access.isAdmin ? <GroupActions g={e.g} /> : null}
                     >
                       {inGroup(e.g.id).map((c) => (
                         <CompanyRow key={c.id} c={c} nested />
@@ -130,7 +135,7 @@ export default async function EmpresasPage({ searchParams }: { searchParams: Pro
                   name={e.g.name}
                   meta={groupMeta(e.g, inGroup(e.g.id).length)}
                   status={e.g.status === "active" ? null : <StatusTag active={false} fem={false} />}
-                  actions={<GroupActions g={e.g} />}
+                  actions={access.isAdmin ? <GroupActions g={e.g} /> : null}
                 >
                   {inGroup(e.g.id).map((c) => (
                     <CompanyCard key={c.id} c={c} />

@@ -26,7 +26,17 @@ export interface EmployeeValues {
   has_cedula_photo?: boolean;
 }
 
-export function EmployeeFormDialog({ employee }: { employee?: EmployeeValues }) {
+/**
+ * `contractCompanies`: cuenta limitada a ciertas empresas (docs/18). Al crear, la
+ * persona entra con su primer contrato en una de ellas (si no, no la vería después).
+ */
+export function EmployeeFormDialog({
+  employee,
+  contractCompanies,
+}: {
+  employee?: EmployeeValues;
+  contractCompanies?: { id: number; name: string }[];
+}) {
   const editing = !!employee;
   const [open, setOpen] = useState(false);
   const [captureOpen, setCaptureOpen] = useState(false);
@@ -184,6 +194,27 @@ export function EmployeeFormDialog({ employee }: { employee?: EmployeeValues }) 
               <input name="birth_date" type="date" defaultValue={employee?.birth_date ?? ""} className={INPUT} />
             </label>
           </div>
+          {!editing && contractCompanies && (
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <label className={LABEL}>
+                Empresa del contrato *
+                <select name="company_id" required defaultValue={contractCompanies.length === 1 ? contractCompanies[0].id : ""} className={INPUT}>
+                  <option value="" disabled>
+                    Elija la empresa…
+                  </option>
+                  {contractCompanies.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className={LABEL}>
+                Inicio del contrato *
+                <input name="start_date" type="date" required className={INPUT} />
+              </label>
+            </div>
+          )}
         </form>
       </Dialog>
 

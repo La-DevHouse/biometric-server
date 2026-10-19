@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { requireUser } from "@/lib/auth";
+import { requirePage } from "@/lib/access";
 import { getAsync, initDb, prisma } from "@/lib/db";
 import { isDeviceOnline } from "@/lib/deviceStatus";
 import { formatRelativeTime } from "@/lib/formatRelativeTime";
@@ -76,8 +76,8 @@ async function getData(devId: string) {
 
 /** Equipo → Información (docs/11 E6): asignación, contadores, sincronización y bajas frenadas. */
 export default async function DeviceDetailPage({ params }: { params: Promise<{ devId: string }> }) {
-  await requireUser();
   const { devId } = await params;
+  const access = await requirePage({ device: devId });
   const data = await getData(devId);
   if (!data) notFound();
 
@@ -209,7 +209,7 @@ export default async function DeviceDetailPage({ params }: { params: Promise<{ d
                 {(openHold.planned_removals as Array<{ user_id: string }>).map((r) => r.user_id).join(", ")}
               </span>
             </p>
-            <SyncHoldActions holdId={openHold.id} />
+            {access.isAdmin && <SyncHoldActions holdId={openHold.id} />}
           </div>
         )}
       </section>

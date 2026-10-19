@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Suspense } from "react";
-import { requireUser } from "@/lib/auth";
+import { requirePage } from "@/lib/access";
 import { allAsync, initDb } from "@/lib/db";
 import { Table, Th, Td, Tr } from "@/components/ui/Table";
 import { MobileList, MobileRow } from "@/components/ui/MobileRow";
@@ -39,9 +39,9 @@ export default async function DeviceMarcacionesPage({
   params: Promise<{ devId: string }>;
   searchParams: Promise<{ from?: string; to?: string; q?: string }>;
 }) {
-  await requireUser();
   await initDb();
   const { devId } = await params;
+  const access = await requirePage({ device: devId });
   const f = await searchParams;
 
   const conditions = ["al.dev_id = ?"];
@@ -112,6 +112,7 @@ export default async function DeviceMarcacionesPage({
               ]}
             />
           </Suspense>
+          {access.canEdit && (
           <OpButton
             action={syncLogsAction}
             hidden={{ dev_id: devId }}
@@ -121,6 +122,7 @@ export default async function DeviceMarcacionesPage({
           >
             {Icon.sync}
           </OpButton>
+          )}
         </div>
       </div>
 

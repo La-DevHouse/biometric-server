@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
-import { requireUser } from "@/lib/auth";
+import { companyIdWhere, requirePage } from "@/lib/access";
 import { loadEmploymentLookups } from "@/lib/lookups";
 import { Table, Th, Td, Tr } from "@/components/ui/Table";
 import { MobileList, MobileRow } from "@/components/ui/MobileRow";
@@ -28,13 +28,13 @@ export default async function EmpleadoContratosPage({
   params: Promise<{ id: string }>;
   searchParams: Promise<{ volver?: string }>;
 }) {
-  await requireUser();
   const id = Number((await params).id);
   if (!Number.isFinite(id)) notFound();
+  const access = await requirePage({ employee: id });
 
   const [employments, lookups] = await Promise.all([
     prisma.employment.findMany({
-      where: { employee_id: id },
+      where: { employee_id: id, company_id: companyIdWhere(access) },
       orderBy: [{ start_date: "desc" }],
       include: {
         company: { select: { name: true } },
@@ -43,7 +43,7 @@ export default async function EmpleadoContratosPage({
         department: { select: { name: true } },
       },
     }),
-    loadEmploymentLookups(),
+    loadEmploymentLookups(access.companyIds),
   ]);
 
   type Em = (typeof employments)[number];
@@ -59,7 +59,7 @@ export default async function EmpleadoContratosPage({
     start_date: fmtDate(em.start_date),
   });
   const actions = (em: Em) =>
-    em.status === "active" ? (
+    em.status === "active" && access.canEdit ? (
       <span className="inline-flex items-center gap-1">
         <EmploymentFormDialog employeeId={id} lookups={lookups} mode="edit" employment={editable(em)} />
         <EndEmploymentDialog employmentId={em.id} companyName={em.company.name} />
@@ -80,13 +80,13 @@ export default async function EmpleadoContratosPage({
         <EmptyState
           title="Sin contratos de trabajo"
           description="Esta persona está en el pool de reclutamiento. Regístrele un contrato para vincularla a una empresa."
-          action={<EmploymentFormDialog employeeId={id} lookups={lookups} mode="create" variant="button" />}
+          action={access.canEdit ? <EmploymentFormDialog employeeId={id} lookups={lookups} mode="create" variant="button" /> : undefined}
         />
       ) : (
         <>
           <div className="flex items-center justify-between gap-2">
             <p className="m-0 text-sm text-text/75">{employments.length} contrato(s)</p>
-            <EmploymentFormDialog employeeId={id} lookups={lookups} mode="create" />
+            {access.canEdit && <EmploymentFormDialog employeeId={id} lookups={lookups} mode="create" />}
           </div>
           <div className="hidden md:block">
             <Table>

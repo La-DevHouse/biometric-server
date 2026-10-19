@@ -79,3 +79,67 @@ test("la base no admite un administrador limitado ni un socio con todas las empr
     prisma.app_user.create({ data: { email: `${P}bad2@test`, name: "x", password_hash: "x", role: "operator", all_companies: true } })
   );
 });
+
+test("la guardia: cada tipo de objeto se juzga por su empresa", async () => {
+  const a = await company(3);
+  const b = await company(4);
+  const siteA = (await prisma.site.findFirstOrThrow({ where: { company_id: a } })).id;
+  const siteB = (await prisma.site.findFirstOrThrow({ where: { company_id: b } })).id;
+  const devA = `${P}devA`;
+  const devB = `${P}devB`;
+  const devFree = `${P}devFree`;
+  await prisma.devices.createMany({ data: [{ dev_id: devA, site_id: siteA }, { dev_id: devB, site_id: siteB }, { dev_id: devFree }] });
+  const e = await prisma.employee.create({ data: { national_id: `V-9${Date.now() % 10_000_000}`, first_name: "T", last_name: P } });
+  const emA = await prisma.employment.create({ data: { employee_id: e.id, company_id: a, start_date: new Date("2026-01-01T00:00:00Z") } });
+  const emB = await prisma.employment.create({ data: { employee_id: e.id, company_id: b, start_date: new Date("2026-01-01T00:00:00Z") } });
+  const lonely = await prisma.employee.create({ data: { national_id: `V-8${Date.now() % 10_000_000}`, first_name: "T", last_name: P } });
+  const schedB = await prisma.schedule_group.create({ data: { company_id: b, name: `${P}H` } });
+  try {
+    const partner = await account("operator", false, [a]);
+    const reader = await account("viewer", true);
+    const admin = await account("admin", true);
+    const ok = async (acc: typeof partner, need: Parameters<typeof access.checkAccess>[1]) => (await access.checkAccess(acc, need)).ok;
+
+    // Socio: lo de su empresa sí, lo ajeno no.
+    assert.equal(await ok(partner, { edit: true, site: siteA }), true);
+    assert.equal(await ok(partner, { edit: true, site: siteB }), false);
+    assert.equal(await ok(partner, { edit: true, device: devA }), true);
+    assert.equal(await ok(partner, { edit: true, device: devB }), false);
+    assert.equal(await ok(partner, { edit: true, device: devFree }), false, "un equipo sin sede es de administradores");
+    assert.equal(await ok(partner, { edit: true, employment: emA.id }), true);
+    assert.equal(await ok(partner, { edit: true, employment: emB.id }), false, "el contrato con la otra empresa no");
+    assert.equal(await ok(partner, { employee: e.id }), true, "la persona sí: tiene contrato con su empresa");
+    assert.equal(await ok(partner, { employee: lonely.id }), false);
+    assert.equal(await ok(partner, { edit: true, schedule: schedB.id }), false);
+    assert.equal(await ok(partner, { edit: true, device: devA, site: siteB }), false, "mover su equipo a una sede ajena");
+    assert.equal(await ok(partner, { edit: true, company: 999_999_999 }), false, "lo que no existe tampoco");
+    assert.equal(await ok(partner, { fingerprints: true, device: devA }), false, "huellas: solo administradores");
+    assert.equal(await ok(partner, { admin: true }), false);
+
+    // Solo lectura: ve todo, no cambia nada.
+    assert.equal(await ok(reader, { device: devB }), true);
+    assert.equal(await ok(reader, { edit: true, device: devB }), false);
+
+    // Administrador: todo.
+    assert.equal(await ok(admin, { fingerprints: true, admin: true, device: devFree }), true);
+
+    // Equipos visibles: los de sus sedes.
+    assert.deepEqual(await access.scopedDevIds(partner), [devA]);
+    assert.equal(await access.scopedDevIds(reader), null);
+
+    // Buscador global: solo lo suyo.
+    const { globalSearch } = require("../lib/search") as typeof import("../lib/search");
+    const hits = await globalSearch(P, [a]);
+    const kinds = (k: string) => hits.filter((h) => h.kind === k).map((h) => h.id);
+    assert.deepEqual(kinds("empresa"), [String(a)]);
+    assert.deepEqual(kinds("equipo"), [devA]);
+    assert.deepEqual(kinds("empleado"), [String(e.id)]);
+    assert.equal(hits.some((h) => h.subtitle?.includes(`${P}Co4`)), false, "no muestra la empresa ajena de la persona");
+    assert.ok((await globalSearch(P, null)).some((h) => h.id === devFree));
+  } finally {
+    await prisma.employment.deleteMany({ where: { employee_id: { in: [e.id, lonely.id] } } });
+    await prisma.employee.deleteMany({ where: { id: { in: [e.id, lonely.id] } } });
+    await prisma.devices.deleteMany({ where: { dev_id: { in: [devA, devB, devFree] } } });
+    await prisma.schedule_group.deleteMany({ where: { id: schedB.id } });
+  }
+});

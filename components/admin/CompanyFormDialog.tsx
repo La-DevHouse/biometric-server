@@ -49,10 +49,13 @@ export function CompanyFormDialog({
   company,
   groupOptions,
   businessModels,
+  canChangeGroup = true,
 }: {
   company?: CompanyFormValues;
   groupOptions: { id: number; name: string }[];
   businessModels: { id: number; name: string }[];
+  /** Cambiar de grupo cambia el alcance de las huellas: solo administradores (docs/18). */
+  canChangeGroup?: boolean;
 }) {
   const editing = !!company;
   const [open, setOpen] = useState(false);
@@ -298,6 +301,7 @@ export function CompanyFormDialog({
               value={groupId ?? ""}
               onChange={(e) => setGroupId(e.target.value === "" ? null : Number(e.target.value))}
               className={INPUT}
+              disabled={!canChangeGroup}
             >
               <option value="">— sin grupo —</option>
               {groupOptions.map((g) => (
@@ -306,7 +310,12 @@ export function CompanyFormDialog({
                 </option>
               ))}
             </select>
-            <span className={FIELD_HINT}>Si el grupo comparte empleados, sus sedes se comparten.</span>
+            {!canChangeGroup && <input type="hidden" name="group_id" value={groupId ?? ""} />}
+            <span className={FIELD_HINT}>
+              {canChangeGroup
+                ? "Si el grupo comparte empleados, sus sedes se comparten."
+                : "El grupo lo cambia un administrador."}
+            </span>
           </label>
           {editing && open && groupId !== company.group_id && (
             <ImpactPreview change={{ kind: "company_group", companyId: company.id, groupId }} />

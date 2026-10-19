@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
-import { requireUser } from "@/lib/auth";
+import { requirePage } from "@/lib/access";
 import { Table, Th, Td, Tr } from "@/components/ui/Table";
 import { MobileList, MobileRow } from "@/components/ui/MobileRow";
 import { Tag } from "@/components/ui/Tag";
@@ -28,9 +28,9 @@ export default async function ScheduleDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  await requireUser();
   const id = Number((await params).id);
   if (!Number.isFinite(id)) notFound();
+  const access = await requirePage({ schedule: id });
 
   const schedule = await prisma.schedule_group.findUnique({
     where: { id },
@@ -43,7 +43,7 @@ export default async function ScheduleDetailPage({
   if (!schedule) notFound();
 
   const companies = await prisma.client_company.findMany({
-    where: { status: "active" },
+    where: { status: "active", ...(access.companyIds === null ? {} : { id: { in: access.companyIds } }) },
     select: { id: true, name: true },
     orderBy: { name: "asc" },
   });
@@ -100,15 +100,17 @@ export default async function ScheduleDetailPage({
           <span>{schedule.absence_rule ?? schedule.company.absence_rule ?? "—"}</span>
         </div>
         <div className="mt-1 flex gap-2">
-          <ScheduleFormDialog schedule={scheduleForm} companies={companies} />
-          <RecordStatusButton id={schedule.id} active={schedule.status === "active"} label="horario" action={setScheduleStatusAction} />
+          {access.canEdit && <ScheduleFormDialog schedule={scheduleForm} companies={companies} />}
+          {access.canEdit && (
+            <RecordStatusButton id={schedule.id} active={schedule.status === "active"} label="horario" action={setScheduleStatusAction} />
+          )}
         </div>
       </section>
 
       <section>
         <div className="mb-2 flex items-center justify-between">
           <h3 className="m-0 text-sm font-semibold uppercase tracking-wide text-text/75">Turnos</h3>
-          <ShiftFormDialog scheduleGroupId={schedule.id} />
+          {access.canEdit && <ShiftFormDialog scheduleGroupId={schedule.id} />}
         </div>
         {schedule.shifts.length === 0 ? (
           <EmptyState title="Sin turnos" description="Agregue al menos un turno con su horario y días de trabajo." />
@@ -155,8 +157,8 @@ export default async function ScheduleDetailPage({
                         </Td>
                         <Td actions>
                           <span className="inline-flex items-center gap-1">
-                            <ShiftFormDialog scheduleGroupId={schedule.id} shift={shiftForm} />
-                            <DeleteButton id={s.id} label="turno" action={deleteShiftAction} />
+                            {access.canEdit && <ShiftFormDialog scheduleGroupId={schedule.id} shift={shiftForm} />}
+                            {access.canEdit && <DeleteButton id={s.id} label="turno" action={deleteShiftAction} />}
                           </span>
                         </Td>
                       </Tr>
@@ -188,8 +190,8 @@ export default async function ScheduleDetailPage({
                   ]}
                   actions={
                     <>
-                      <ShiftFormDialog scheduleGroupId={schedule.id} shift={shiftFormValues(s)} />
-                      <DeleteButton id={s.id} label="turno" action={deleteShiftAction} />
+                      {access.canEdit && <ShiftFormDialog scheduleGroupId={schedule.id} shift={shiftFormValues(s)} />}
+                      {access.canEdit && <DeleteButton id={s.id} label="turno" action={deleteShiftAction} />}
                     </>
                   }
                 />

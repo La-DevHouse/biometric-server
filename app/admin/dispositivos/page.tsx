@@ -1,6 +1,6 @@
 import { Suspense } from "react";
 import { allAsync, initDb, prisma } from "@/lib/db";
-import { requireUser } from "@/lib/auth";
+import { requireAccess } from "@/lib/access";
 import { isDeviceOnline } from "@/lib/deviceStatus";
 import { formatRelativeTime } from "@/lib/formatRelativeTime";
 import { Table, Th, Td, Tr, RowLink } from "@/components/ui/Table";
@@ -51,16 +51,20 @@ type SearchParams = Promise<{ q?: string; empresa?: string; estado?: string }>;
 
 /** Lista de Equipos (docs/11 E1): empresa y sede, búsqueda y filtros. */
 export default async function DispositivosPage({ searchParams }: { searchParams: SearchParams }) {
-  await requireUser();
+  const access = await requireAccess();
+  const ids = access.companyIds;
   const sp = await searchParams;
-  const [all, companies] = await Promise.all([
+  const [everything, companies] = await Promise.all([
     getData(),
     prisma.client_company.findMany({
-      where: { status: "active" },
+      where: { status: "active", ...(ids === null ? {} : { id: { in: ids } }) },
       select: { id: true, name: true, tax_id: true },
       orderBy: { name: "asc" },
     }),
   ]);
+
+  // Cuenta limitada (docs/18): solo los equipos de las sedes de sus empresas (los sin sede, no).
+  const all = ids === null ? everything : everything.filter((d) => d.company_id != null && ids.includes(d.company_id));
 
   if (all.length === 0) {
     return (
@@ -96,7 +100,7 @@ export default async function DispositivosPage({ searchParams }: { searchParams:
         <Suspense fallback={<div className="h-(--control-h) flex-1" />}>
           <DeviceFilters companies={companies} />
         </Suspense>
-        <SyncAllButton />
+        {access.isAdmin && <SyncAllButton />}
       </div>
       <p className="m-0 text-sm text-text/75">
         {devices.length === all.length ? `${all.length} equipo(s)` : `${devices.length} de ${all.length} equipo(s)`}

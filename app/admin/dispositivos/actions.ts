@@ -2,10 +2,10 @@
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
-import { requireUser } from "@/lib/auth";
 import { writeAudit } from "@/lib/audit";
 import type { AdminActionState } from "@/lib/adminActionState";
 import { startReconcileDevice } from "@/lib/sync/reconcile";
+import { allow } from "@/lib/access";
 
 function str(fd: FormData, k: string) {
   return String(fd.get(k) ?? "").trim();
@@ -83,11 +83,13 @@ export async function assignDeviceAction(
   _prev: AdminActionState,
   fd: FormData
 ): Promise<AdminActionState> {
-  const user = await requireUser();
   const dev_id = str(fd, "dev_id");
   if (!dev_id) return { status: "error", error: "Equipo inválido." };
   const siteRaw = str(fd, "site_id");
   const site_id = siteRaw === "" ? null : Number(siteRaw);
+  const g = await allow({ edit: true, device: dev_id, site: site_id, admin: site_id === null });
+  if (!g.ok) return { status: "error", error: g.error };
+  const user = g.access.user;
   return assignDeviceToSite(user.id, dev_id, site_id, str(fd, "device_admin_note") || null);
 }
 
@@ -96,11 +98,13 @@ export async function assignDeviceToSiteAction(
   _prev: AdminActionState,
   fd: FormData
 ): Promise<AdminActionState> {
-  const user = await requireUser();
   const dev_id = str(fd, "dev_id");
   if (!dev_id) return { status: "error", error: "Elija un equipo." };
   const site_id = Number(str(fd, "site_id"));
   if (!Number.isInteger(site_id)) return { status: "error", error: "Sede inválida." };
+  const g = await allow({ edit: true, device: dev_id, site: site_id });
+  if (!g.ok) return { status: "error", error: g.error };
+  const user = g.access.user;
   return assignDeviceToSite(user.id, dev_id, site_id);
 }
 
@@ -114,9 +118,11 @@ export async function renameDeviceAction(
   _prev: AdminActionState,
   fd: FormData
 ): Promise<AdminActionState> {
-  const user = await requireUser();
   const dev_id = str(fd, "dev_id");
   if (!dev_id) return { status: "error", error: "Equipo inválido." };
+  const g = await allow({ edit: true, device: dev_id });
+  if (!g.ok) return { status: "error", error: g.error };
+  const user = g.access.user;
   const name = str(fd, "name") || null;
   if (name && name.length > 120) return { status: "error", error: "El nombre es demasiado largo." };
 

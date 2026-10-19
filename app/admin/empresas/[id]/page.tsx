@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
-import { requireUser } from "@/lib/auth";
+import { requirePage } from "@/lib/access";
 import { Tag } from "@/components/ui/Tag";
 import { CompanyFormDialog, type CompanyFormValues } from "@/components/admin/CompanyFormDialog";
 import { RecordStatusButton } from "@/components/admin/RecordStatusButton";
@@ -16,9 +16,9 @@ export default async function EmpresaDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  await requireUser();
   const id = Number((await params).id);
   if (!Number.isFinite(id)) notFound();
+  const access = await requirePage({ company: id });
 
   const company = await prisma.client_company.findUnique({
     where: { id },
@@ -90,9 +90,18 @@ export default async function EmpresaDetailPage({
         }
         actions={
           <>
-            <CompanyFormDialog company={formValues} groupOptions={groupOptions} businessModels={businessModels} />
-            <ResyncEnrollmentsButton companyId={company.id} />
-            <RecordStatusButton id={company.id} active={company.status === "active"} label="empresa" action={setCompanyStatusAction} />
+            {access.canEdit && (
+              <CompanyFormDialog
+                company={formValues}
+                groupOptions={groupOptions}
+                businessModels={businessModels}
+                canChangeGroup={access.isAdmin}
+              />
+            )}
+            {access.canEdit && <ResyncEnrollmentsButton companyId={company.id} />}
+            {access.isAdmin && (
+              <RecordStatusButton id={company.id} active={company.status === "active"} label="empresa" action={setCompanyStatusAction} />
+            )}
           </>
         }
       />

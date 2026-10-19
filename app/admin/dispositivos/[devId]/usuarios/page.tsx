@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { requireUser } from "@/lib/auth";
+import { requirePage } from "@/lib/access";
 import { allAsync, initDb, prisma } from "@/lib/db";
 import { Table, Th, Td, Tr } from "@/components/ui/Table";
 import { MobileList, MobileRow } from "@/components/ui/MobileRow";
@@ -40,9 +40,9 @@ function PrivilegeTag({ privilege }: { privilege: string | null }) {
  * mostraba la vieja "Enrolamiento" (qué falta, qué sobra, qué no se toca).
  */
 export default async function DeviceUsersPage({ params }: { params: Promise<{ devId: string }> }) {
-  await requireUser();
   await initDb();
   const { devId } = await params;
+  const access = await requirePage({ device: devId });
 
   const [users, slots, state] = await Promise.all([
     allAsync<UserRow>(
@@ -96,10 +96,13 @@ export default async function DeviceUsersPage({ params }: { params: Promise<{ de
 
   const actions = (u: UserRow) => (
     <>
-      <RenameUserDialog devId={devId} userId={u.user_id} currentName={u.user_name || ""} />
-      <ChangePrivilegeDialog devId={devId} userId={u.user_id} currentPrivilege={u.user_privilege} />
+      {access.canEdit && <RenameUserDialog devId={devId} userId={u.user_id} currentName={u.user_name || ""} />}
+      {access.canEdit && <ChangePrivilegeDialog devId={devId} userId={u.user_id} currentPrivilege={u.user_privilege} />}
       <ViewBiometricsDialog devId={devId} userId={u.user_id} />
-      <DeleteUserDialog inScope={inScope.has(u.user_id)} devId={devId} userId={u.user_id} userName={u.user_name || ""} />
+      {/* Borrar un usuario del equipo borra sus huellas: solo administradores (docs/18). */}
+      {access.canEditFingerprints && (
+        <DeleteUserDialog inScope={inScope.has(u.user_id)} devId={devId} userId={u.user_id} userName={u.user_name || ""} />
+      )}
     </>
   );
   const employeeCell = (userId: string) => {
@@ -121,6 +124,7 @@ export default async function DeviceUsersPage({ params }: { params: Promise<{ de
         <p className="m-0 text-sm text-text/75">
           {users.length} usuario(s) según la última lectura. Las altas y bajas las hace el reconciliador por cédula.
         </p>
+        {access.canEdit && (
         <OpButton
           action={syncUsersAction}
           hidden={{ dev_id: devId }}
@@ -130,6 +134,7 @@ export default async function DeviceUsersPage({ params }: { params: Promise<{ de
         >
           {Icon.sync}
         </OpButton>
+        )}
       </div>
 
       {state.frozen ? (

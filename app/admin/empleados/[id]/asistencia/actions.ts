@@ -1,7 +1,8 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireUser } from "@/lib/auth";
+import { allow } from "@/lib/access";
+import { prisma } from "@/lib/db";
 import { userErrorMessage } from "@/lib/serverErrors";
 import { addMark, dayMarks, revokeCorrection, voidMark, type CorrectionResult, type DayMarks } from "@/lib/attendance/corrections";
 
@@ -26,7 +27,7 @@ async function guarded(fn: () => Promise<CorrectionResult>): Promise<ActionResul
 }
 
 export async function dayMarksAction(employmentId: number, ymd: string): Promise<DayMarks | null> {
-  await requireUser();
+  if (!(await allow({ employment: employmentId })).ok) return null;
   if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return null;
   return dayMarks(employmentId, ymd);
 }
@@ -39,16 +40,20 @@ export async function addMarkAction(input: {
   siteId: number;
   reason: string;
 }): Promise<ActionResult> {
-  const user = await requireUser();
-  return guarded(() => addMark(input, user.id));
+  const g = await allow({ edit: true, employment: input.employmentId });
+  if (!g.ok) return g;
+  return guarded(() => addMark(input, g.access.user.id));
 }
 
 export async function voidMarkAction(input: { employmentId: number; logId: number; reason: string }): Promise<ActionResult> {
-  const user = await requireUser();
-  return guarded(() => voidMark(input, user.id));
+  const g = await allow({ edit: true, employment: input.employmentId });
+  if (!g.ok) return g;
+  return guarded(() => voidMark(input, g.access.user.id));
 }
 
 export async function revokeCorrectionAction(correctionId: number): Promise<ActionResult> {
-  const user = await requireUser();
-  return guarded(() => revokeCorrection(correctionId, user.id));
+  const c = await prisma.attendance_correction.findUnique({ where: { id: correctionId }, select: { employment_id: true } });
+  const g = await allow({ edit: true, employment: c?.employment_id ?? null });
+  if (!g.ok) return g;
+  return guarded(() => revokeCorrection(correctionId, g.access.user.id));
 }

@@ -1,14 +1,14 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { requireUser } from "@/lib/auth";
+import { allow } from "@/lib/access";
 import { sniffImageMime } from "@/lib/imageSniff";
 
 export async function GET(
   _req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  await requireUser();
   const id = Number((await params).id);
+  if (!Number.isFinite(id) || !(await allow({ company: id })).ok) return new NextResponse("No encontrado.", { status: 404 });
   if (!Number.isFinite(id)) return new NextResponse(null, { status: 400 });
 
   const row = await prisma.client_company.findUnique({

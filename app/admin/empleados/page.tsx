@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/db";
-import { requireUser } from "@/lib/auth";
+import { requireAccess } from "@/lib/access";
 import { Table, Th, Td, Tr, RowLink } from "@/components/ui/Table";
 import { MobileList, MobileRow } from "@/components/ui/MobileRow";
 import { Tag } from "@/components/ui/Tag";
@@ -17,8 +17,12 @@ type SearchParams = Promise<{
 }>;
 
 export default async function EmpleadosPage({ searchParams }: { searchParams: SearchParams }) {
-  await requireUser();
+  const access = await requireAccess();
   const sp = await searchParams;
+  // Cuenta limitada (docs/18): solo personas con contrato (vigente o no) en sus empresas,
+  // y de cada una solo esos contratos.
+  const ids = access.companyIds;
+  const inScope = ids === null ? {} : { company_id: { in: ids } };
   const q = (sp.q ?? "").trim();
   const grupoId = sp.grupo ? Number(sp.grupo) : null;
   const empresaId = sp.empresa ? Number(sp.empresa) : null;
@@ -35,8 +39,9 @@ export default async function EmpleadosPage({ searchParams }: { searchParams: Se
       ],
     });
   }
-  if (estado === "pool") and.push({ employments: { none: { status: "active" } } });
-  if (estado === "activo") and.push({ employments: { some: { status: "active" } } });
+  if (ids !== null) and.push({ employments: { some: inScope } });
+  if (estado === "pool") and.push({ employments: { none: { status: "active", ...inScope } } });
+  if (estado === "activo") and.push({ employments: { some: { status: "active", ...inScope } } });
   // Grupo: contrato activo en cualquier empresa del grupo (docs/09 §3.12).
   // Sin filtro por sede: el contrato no la tiene (docs/10 R4, conflicto O7).
   if (grupoId)
@@ -50,7 +55,7 @@ export default async function EmpleadosPage({ searchParams }: { searchParams: Se
       where,
       include: {
         employments: {
-          where: { status: "active" },
+          where: { status: "active", ...inScope },
           include: { company: { select: { name: true } } },
         },
         _count: { select: { fingerprints: true } },
@@ -59,12 +64,12 @@ export default async function EmpleadosPage({ searchParams }: { searchParams: Se
       take: 300,
     }),
     prisma.client_company.findMany({
-      where: { status: "active" },
+      where: { status: "active", ...(ids === null ? {} : { id: { in: ids } }) },
       select: { id: true, name: true, tax_id: true },
       orderBy: { name: "asc" },
     }),
     prisma.company_group.findMany({
-      where: { status: "active" },
+      where: { status: "active", ...(ids === null ? {} : { companies: { some: { id: { in: ids } } } }) },
       select: { id: true, name: true },
       orderBy: { name: "asc" },
     }),
@@ -79,7 +84,7 @@ export default async function EmpleadosPage({ searchParams }: { searchParams: Se
         </p>
         <div className="flex items-center gap-2">
           <EmployeeFiltersDialog groups={groups} companies={companies} />
-          <EmployeeFormDialog />
+          {access.canEdit && <EmployeeFormDialog contractCompanies={ids === null ? undefined : companies} />}
         </div>
       </div>
 

@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { getSessionUser } from "@/lib/auth";
+import { getAccess, scopedDevIds } from "@/lib/access";
 import { listTrackedOperations } from "@/lib/operations";
 
 /**
@@ -9,7 +9,8 @@ import { listTrackedOperations } from "@/lib/operations";
  * una con sus pasos. Ver lib/operations → listTrackedOperations.
  */
 export async function GET(request: NextRequest) {
-  if (!(await getSessionUser())) {
+  const access = await getAccess();
+  if (!access) {
     return NextResponse.json({ error: "no autenticado" }, { status: 401 });
   }
   const ids = (request.nextUrl.searchParams.get("ids") ?? "")
@@ -17,6 +18,8 @@ export async function GET(request: NextRequest) {
     .map(Number)
     .filter((n) => Number.isInteger(n) && n > 0)
     .slice(0, 100);
-  const ops = await listTrackedOperations(ids);
+  const devIds = await scopedDevIds(access);
+  // Cuenta limitada (docs/18): solo las operaciones de sus equipos.
+  const ops = (await listTrackedOperations(ids)).filter((o) => devIds === null || devIds.includes(o.dev_id));
   return NextResponse.json({ ops });
 }

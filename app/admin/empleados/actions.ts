@@ -4,7 +4,6 @@ import { userErrorMessage } from "@/lib/serverErrors";
 import { revalidatePath } from "next/cache";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
-import { requireUser } from "@/lib/auth";
 import { writeAudit } from "@/lib/audit";
 import type { AdminActionState } from "@/lib/adminActionState";
 import { joinDoc } from "@/lib/documento";
@@ -21,6 +20,7 @@ async function syncNote(employeeId: number): Promise<string> {
   }
 }
 import { extractCedula, type CedulaExtractedFields } from "@/lib/documentVision";
+import { allow, canSeeCompany } from "@/lib/access";
 
 function str(fd: FormData, k: string) {
   return String(fd.get(k) ?? "").trim();
@@ -104,7 +104,8 @@ function auditView<T extends { cedula_photo?: Uint8Array<ArrayBufferLike> | null
 export async function extractCedulaAction(
   fd: FormData
 ): Promise<{ ok: true; fields: CedulaExtractedFields } | { ok: false; error: string }> {
-  await requireUser();
+  const g = await allow({ edit: true });
+  if (!g.ok) return { ok: false, error: g.error };
 
   const file = fd.get("photo");
   if (!(file instanceof File)) return { ok: false, error: "No se recibió la foto." };
@@ -124,12 +125,26 @@ export async function createEmployeeAction(
   _prev: AdminActionState,
   fd: FormData
 ): Promise<AdminActionState> {
-  const user = await requireUser();
+  const g = await allow({ edit: true });
+  if (!g.ok) return { status: "error", error: g.error };
+  const user = g.access.user;
   const parsed = personData(fd);
   if ("error" in parsed) return { status: "error", error: parsed.error };
   const d = parsed.data;
   if (!d.first_name || !d.last_name)
     return { status: "error", error: "Nombre y apellido son obligatorios." };
+
+  // Cuenta limitada a ciertas empresas (docs/18): la persona entra con su primer
+  // contrato en una de ellas; sin contrato no la vería después.
+  let first: { company_id: number; start_date: Date } | null = null;
+  if (g.access.companyIds !== null) {
+    const company_id = Number(str(fd, "company_id"));
+    const start_date = optDate(str(fd, "start_date"));
+    if (!Number.isInteger(company_id) || !canSeeCompany(g.access, company_id))
+      return { status: "error", error: "Elija la empresa del contrato." };
+    if (!start_date) return { status: "error", error: "La fecha de inicio del contrato es obligatoria." };
+    first = { company_id, start_date };
+  }
 
   let cedulaPhoto: Uint8Array<ArrayBuffer> | undefined;
   try {
@@ -139,13 +154,39 @@ export async function createEmployeeAction(
   }
 
   try {
-    const created = await prisma.employee.create({ data: { ...d, cedula_photo: cedulaPhoto ?? null } });
+    const created = await prisma.employee.create({
+      data: {
+        ...d,
+        cedula_photo: cedulaPhoto ?? null,
+        ...(first ? { employments: { create: { company_id: first.company_id, start_date: first.start_date } } } : {}),
+      },
+      include: { employments: true },
+    });
     await writeAudit({ actorId: user.id, action: "employee.create", entityType: "employee", entityId: created.id, after: auditView(created) });
+    for (const em of created.employments)
+      await writeAudit({ actorId: user.id, action: "employment.create", entityType: "employment", entityId: em.id, after: em });
     revalidatePath("/admin/empleados");
-    return { status: "ok", message: `${d.first_name} ${d.last_name} registrado/a.` };
+    return { status: "ok", message: `${d.first_name} ${d.last_name} registrado/a.` + (first ? await syncNote(created.id) : "") };
   } catch (e) {
-    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002")
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+      // Ya existe (quizás con contrato en una empresa ajena): a una cuenta limitada no
+      // se le muestran sus datos; solo se le agrega el contrato con su empresa.
+      if (first) {
+        const existing = await prisma.employee.findUnique({ where: { national_id: d.national_id }, select: { id: true } });
+        if (existing) {
+          const em = await prisma.employment.create({
+            data: { employee_id: existing.id, company_id: first.company_id, start_date: first.start_date },
+          });
+          await writeAudit({ actorId: user.id, action: "employment.create", entityType: "employment", entityId: em.id, after: em });
+          revalidatePath("/admin/empleados");
+          return {
+            status: "ok",
+            message: `La persona con el documento ${d.national_id} ya estaba registrada: se le agregó el contrato.` + (await syncNote(existing.id)),
+          };
+        }
+      }
       return { status: "error", error: `Ya existe una persona con el documento ${d.national_id}.` };
+    }
     return { status: "error", error: userErrorMessage(e) };
   }
 }
@@ -154,9 +195,11 @@ export async function updateEmployeeAction(
   _prev: AdminActionState,
   fd: FormData
 ): Promise<AdminActionState> {
-  const user = await requireUser();
   const id = Number(str(fd, "id"));
   if (!Number.isFinite(id)) return { status: "error", error: "ID inválido." };
+  const g = await allow({ edit: true, employee: id });
+  if (!g.ok) return { status: "error", error: g.error };
+  const user = g.access.user;
   const before = await prisma.employee.findUnique({ where: { id } });
   if (!before) return { status: "error", error: "La persona no existe." };
 
@@ -257,12 +300,14 @@ export async function createEmploymentAction(
   _prev: AdminActionState,
   fd: FormData
 ): Promise<AdminActionState> {
-  const user = await requireUser();
   const employee_id = Number(str(fd, "employee_id"));
   const d = employmentData(fd);
   if (!Number.isFinite(employee_id)) return { status: "error", error: "Persona inválida." };
   if (!Number.isFinite(d.company_id)) return { status: "error", error: "Seleccione una empresa." };
   if (!d.start_date) return { status: "error", error: "La fecha de inicio es obligatoria." };
+  const g = await allow({ edit: true, employee: employee_id, company: d.company_id });
+  if (!g.ok) return { status: "error", error: g.error };
+  const user = g.access.user;
 
   const pos = await resolvePositionId(fd, d.position_id, d.company_id, user.id);
   if ("error" in pos) return { status: "error", error: pos.error };
@@ -289,8 +334,10 @@ export async function endEmploymentAction(
   _prev: AdminActionState,
   fd: FormData
 ): Promise<AdminActionState> {
-  const user = await requireUser();
   const id = Number(str(fd, "id"));
+  const g = await allow({ edit: true, employment: id });
+  if (!g.ok) return { status: "error", error: g.error };
+  const user = g.access.user;
   const endDate = optDate(str(fd, "end_date"));
   if (!Number.isFinite(id)) return { status: "error", error: "ID inválido." };
   if (!endDate) return { status: "error", error: "La fecha de baja es obligatoria." };
@@ -327,8 +374,10 @@ export async function updateEmploymentAction(
   _prev: AdminActionState,
   fd: FormData
 ): Promise<AdminActionState> {
-  const user = await requireUser();
   const id = Number(str(fd, "id"));
+  const g = await allow({ edit: true, employment: id });
+  if (!g.ok) return { status: "error", error: g.error };
+  const user = g.access.user;
   if (!Number.isFinite(id)) return { status: "error", error: "Contrato inválido." };
 
   const before = await prisma.employment.findUnique({ where: { id } });

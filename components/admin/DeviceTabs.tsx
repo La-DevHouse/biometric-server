@@ -11,6 +11,7 @@ import { DeviceAssignDialog } from "./DeviceAssignDialog";
 import { DeviceSerialDialog } from "./DeviceSerialDialog";
 import { serialCorrectionReason } from "@/lib/deviceRekey";
 import { syncClockAction, updateDeviceAction } from "@/app/admin/actions";
+import { requireAccess } from "@/lib/access";
 
 export type DeviceTab = "info" | "usuarios" | "marcaciones";
 
@@ -22,6 +23,7 @@ export type DeviceTab = "info" | "usuarios" | "marcaciones";
  */
 export async function DeviceTabs({ devId, active }: { devId: string; active: DeviceTab }) {
   await initDb();
+  const access = await requireAccess();
   const device = await prisma.devices.findUnique({
     where: { dev_id: devId },
     select: {
@@ -36,8 +38,13 @@ export async function DeviceTabs({ devId, active }: { devId: string; active: Dev
   });
   if (!device) notFound();
 
+  // Cuenta limitada (docs/18): solo puede mover el equipo entre las sedes de sus empresas.
   const sitesRaw = await prisma.site.findMany({
-    where: { status: "active", company: { status: "active" } },
+    where: {
+      status: "active",
+      company: { status: "active" },
+      ...(access.companyIds === null ? {} : { company_id: { in: access.companyIds } }),
+    },
     select: { id: true, name: true, company_id: true, company: { select: { name: true, tax_id: true } } },
     orderBy: [{ company: { name: "asc" } }, { name: "asc" }],
   });
@@ -94,8 +101,9 @@ export async function DeviceTabs({ devId, active }: { devId: string; active: Dev
         }
         actions={
           <>
-            <RenameDeviceDialog devId={device.dev_id} currentName={device.name} />
-            {serialFix && <DeviceSerialDialog devId={device.dev_id} suspectShared={serialFix === "shared"} />}
+            {access.canEdit && <RenameDeviceDialog devId={device.dev_id} currentName={device.name} />}
+            {serialFix && access.isAdmin && <DeviceSerialDialog devId={device.dev_id} suspectShared={serialFix === "shared"} />}
+            {access.canEdit && (
             <OpButton
               action={syncClockAction}
               hidden={{ dev_id: device.dev_id }}
@@ -105,6 +113,8 @@ export async function DeviceTabs({ devId, active }: { devId: string; active: Dev
             >
               {Icon.clock}
             </OpButton>
+            )}
+            {access.canEdit && (
             <OpButton
               action={updateDeviceAction}
               hidden={{ dev_id: device.dev_id }}
@@ -118,11 +128,14 @@ export async function DeviceTabs({ devId, active }: { devId: string; active: Dev
             >
               {Icon.refresh}
             </OpButton>
-            <DeviceAssignDialog
-              devId={device.dev_id}
-              sites={sites}
-              current={{ site_id: device.site_id, note: device.device_admin_note }}
-            />
+            )}
+            {access.canEdit && (
+              <DeviceAssignDialog
+                devId={device.dev_id}
+                sites={sites}
+                current={{ site_id: device.site_id, note: device.device_admin_note }}
+              />
+            )}
           </>
         }
       />

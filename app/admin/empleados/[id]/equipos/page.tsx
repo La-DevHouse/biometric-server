@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
-import { requireUser } from "@/lib/auth";
+import { requirePage, scopedDevIds } from "@/lib/access";
 import { applicableDevices } from "@/lib/scope";
 import { MAX_FINGERPRINTS, cedulaDigits } from "@/lib/fingerprints";
 import { Table, Th, Td, Tr, RowLink } from "@/components/ui/Table";
@@ -27,9 +27,9 @@ export default async function EmpleadoEquiposPage({
   params: Promise<{ id: string }>;
   searchParams: Promise<{ volver?: string }>;
 }) {
-  await requireUser();
   const id = Number((await params).id);
   if (!Number.isFinite(id)) notFound();
+  const access = await requirePage({ employee: id });
 
   const [employee, scopeDevices] = await Promise.all([
     prisma.employee.findUnique({
@@ -56,7 +56,9 @@ export default async function EmpleadoEquiposPage({
   const cedula = cedulaDigits(employee.national_id);
   const inScope = new Set(scopeDevices);
   const linkedBy = new Map(employee.enrollments.map((en) => [en.dev_id, en.device_user_id]));
-  const deviceIds = [...new Set([...scopeDevices, ...linkedBy.keys()])];
+  // Cuenta limitada (docs/18): solo los equipos de las sedes de sus empresas.
+  const visible = await scopedDevIds(access);
+  const deviceIds = [...new Set([...scopeDevices, ...linkedBy.keys()])].filter((d) => visible === null || visible.includes(d));
   const desired = employee.fingerprints.slice(0, MAX_FINGERPRINTS).map((f) => f.id);
   const [deviceRows, mySlots] = await Promise.all([
     prisma.devices.findMany({

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
-import { requireUser } from "@/lib/auth";
+import { requirePage } from "@/lib/access";
 import { CompanyTabs } from "@/components/admin/CompanyTabs";
 import { CompanyImportPanel } from "@/components/admin/CompanyImportPanel";
 import { DeleteButton } from "@/components/admin/DeleteButton";
@@ -32,9 +32,10 @@ export default async function EmpresaImportarPage({
   params: Promise<{ id: string }>;
   searchParams: Promise<{ run?: string }>;
 }) {
-  await requireUser();
   const id = Number((await params).id);
   if (!Number.isFinite(id)) notFound();
+  // Importar escribe: Solo lectura no entra (docs/18).
+  await requirePage({ company: id, edit: true });
   const company = await prisma.client_company.findUnique({ where: { id }, select: { id: true, name: true } });
   if (!company) notFound();
   const runParam = Number((await searchParams).run);

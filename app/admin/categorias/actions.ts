@@ -3,9 +3,9 @@
 import { userErrorMessage } from "@/lib/serverErrors";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
-import { requireUser } from "@/lib/auth";
 import { writeAudit } from "@/lib/audit";
 import type { AdminActionState } from "@/lib/adminActionState";
+import { allow } from "@/lib/access";
 
 const PATH = "/admin/categorias";
 
@@ -21,7 +21,9 @@ export async function createDepartmentAction(
   _prev: AdminActionState,
   fd: FormData
 ): Promise<AdminActionState> {
-  const user = await requireUser();
+  const g = await allow({ admin: true });
+  if (!g.ok) return { status: "error", error: g.error };
+  const user = g.access.user;
   const name = str(fd, "name");
   if (!name) return { status: "error", error: "El nombre es obligatorio." };
   const data = { name, code: str(fd, "code") || null, description: str(fd, "description") || null };
@@ -40,7 +42,9 @@ export async function updateDepartmentAction(
   _prev: AdminActionState,
   fd: FormData
 ): Promise<AdminActionState> {
-  const user = await requireUser();
+  const g = await allow({ admin: true });
+  if (!g.ok) return { status: "error", error: g.error };
+  const user = g.access.user;
   const id = Number(str(fd, "id"));
   const name = str(fd, "name");
   if (!Number.isFinite(id)) return { status: "error", error: "ID inválido." };
@@ -64,7 +68,9 @@ export async function setDepartmentStatusAction(
   id: number,
   active: boolean
 ): Promise<{ ok: boolean; error?: string }> {
-  const user = await requireUser();
+  const g = await allow({ admin: true });
+  if (!g.ok) return { ok: false, error: g.error };
+  const user = g.access.user;
   const before = await prisma.department.findUnique({ where: { id } });
   if (!before) return { ok: false, error: "El departamento no existe." };
   await prisma.department.update({ where: { id }, data: { status: active ? "active" : "inactive" } });
@@ -106,7 +112,9 @@ export async function createPositionAction(
   _prev: AdminActionState,
   fd: FormData
 ): Promise<AdminActionState> {
-  const user = await requireUser();
+  const g = await allow({ admin: true });
+  if (!g.ok) return { status: "error", error: g.error };
+  const user = g.access.user;
   const d = positionData(fd);
   const bmIds = businessModelIds(fd);
   if (!d.name) return { status: "error", error: "El nombre es obligatorio." };
@@ -127,7 +135,9 @@ export async function updatePositionAction(
   _prev: AdminActionState,
   fd: FormData
 ): Promise<AdminActionState> {
-  const user = await requireUser();
+  const g = await allow({ admin: true });
+  if (!g.ok) return { status: "error", error: g.error };
+  const user = g.access.user;
   const id = Number(str(fd, "id"));
   const d = positionData(fd);
   const bmIds = businessModelIds(fd);
@@ -160,7 +170,9 @@ export async function setPositionStatusAction(
   id: number,
   active: boolean
 ): Promise<{ ok: boolean; error?: string }> {
-  const user = await requireUser();
+  const g = await allow({ admin: true });
+  if (!g.ok) return { ok: false, error: g.error };
+  const user = g.access.user;
   const before = await prisma.position.findUnique({ where: { id } });
   if (!before) return { ok: false, error: "El puesto no existe." };
   await prisma.position.update({ where: { id }, data: { status: active ? "active" : "inactive" } });
@@ -188,7 +200,9 @@ export async function createBusinessModelAction(
   _prev: AdminActionState,
   fd: FormData
 ): Promise<AdminActionState> {
-  const user = await requireUser();
+  const g = await allow({ admin: true });
+  if (!g.ok) return { status: "error", error: g.error };
+  const user = g.access.user;
   const d = businessModelData(fd);
   if (!d.name) return { status: "error", error: "El nombre es obligatorio." };
 
@@ -206,7 +220,9 @@ export async function updateBusinessModelAction(
   _prev: AdminActionState,
   fd: FormData
 ): Promise<AdminActionState> {
-  const user = await requireUser();
+  const g = await allow({ admin: true });
+  if (!g.ok) return { status: "error", error: g.error };
+  const user = g.access.user;
   const id = Number(str(fd, "id"));
   const d = businessModelData(fd);
   if (!Number.isFinite(id)) return { status: "error", error: "ID inválido." };
@@ -229,7 +245,9 @@ export async function setBusinessModelStatusAction(
   id: number,
   active: boolean
 ): Promise<{ ok: boolean; error?: string }> {
-  const user = await requireUser();
+  const g = await allow({ admin: true });
+  if (!g.ok) return { ok: false, error: g.error };
+  const user = g.access.user;
   const before = await prisma.business_model.findUnique({ where: { id } });
   if (!before) return { ok: false, error: "El modelo de negocio no existe." };
   await prisma.business_model.update({ where: { id }, data: { status: active ? "active" : "inactive" } });

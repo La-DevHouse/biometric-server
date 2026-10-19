@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
-import { getSessionUser } from "@/lib/auth";
+import { getAccess, scopedDevIds } from "@/lib/access";
 import { getOperation } from "@/lib/operations";
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
-  if (!(await getSessionUser())) {
+  const access = await getAccess();
+  if (!access) {
     return NextResponse.json({ error: "no autenticado" }, { status: 401 });
   }
   const { id } = await params;
@@ -12,6 +13,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     return NextResponse.json({ error: "id inválido" }, { status: 400 });
   }
   const op = await getOperation(opId);
-  if (!op) return NextResponse.json({ error: "no encontrada" }, { status: 404 });
+  const devIds = op ? await scopedDevIds(access) : null;
+  if (!op || (devIds !== null && !devIds.includes(op.dev_id)))
+    return NextResponse.json({ error: "no encontrada" }, { status: 404 });
   return NextResponse.json(op);
 }

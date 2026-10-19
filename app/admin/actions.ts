@@ -20,11 +20,11 @@ import {
   type Privilege,
 } from "@/lib/operations";
 import type { OpActionState, MultiOpActionState } from "@/lib/opActionState";
-import { requireUser } from "@/lib/auth";
 import { writeAudit } from "@/lib/audit";
 import { startReconcileDevice, reconcileAll, resolveSyncHold, triggerReconcile, devicesAffectedByEmployee } from "@/lib/sync/reconcile";
 import { previewImpact, type ScopeChange, type ImpactResult } from "@/lib/sync/impact";
 import { attendancePullDevices } from "@/lib/sync/attendance";
+import { allow, type Need } from "@/lib/access";
 
 export type QueueCommandState =
   | { status: "idle" }
@@ -40,7 +40,8 @@ export async function queueCommandAction(
   _prev: QueueCommandState,
   formData: FormData
 ): Promise<QueueCommandState> {
-  await requireUser();
+  const g = await allow({ admin: true });
+  if (!g.ok) return { status: "error", message: g.error };
   const devId = String(formData.get("dev_id") || "");
   const cmdCode = String(formData.get("cmd_code") || "");
 
@@ -87,8 +88,9 @@ async function afterStart(): Promise<void> {
 }
 
 export async function syncClockAction(_prev: OpActionState, formData: FormData): Promise<OpActionState> {
-  await requireUser();
   const devId = String(formData.get("dev_id") || "");
+  const g = await allow({ edit: true, device: devId });
+  if (!g.ok) return { status: "error", message: g.error };
   try {
     const { id, warning } = await startSyncClock(devId);
     await afterStart();
@@ -102,8 +104,9 @@ export async function refreshStatusAction(
   _prev: OpActionState,
   formData: FormData
 ): Promise<OpActionState> {
-  await requireUser();
   const devId = String(formData.get("dev_id") || "");
+  const g = await allow({ edit: true, device: devId });
+  if (!g.ok) return { status: "error", message: g.error };
   try {
     const { id, warning } = await startRefreshStatus(devId);
     await afterStart();
@@ -114,8 +117,9 @@ export async function refreshStatusAction(
 }
 
 export async function syncUsersAction(_prev: OpActionState, formData: FormData): Promise<OpActionState> {
-  await requireUser();
   const devId = String(formData.get("dev_id") || "");
+  const g = await allow({ edit: true, device: devId });
+  if (!g.ok) return { status: "error", message: g.error };
   try {
     const { id, warning } = await startSyncUsers(devId);
     await afterStart();
@@ -126,8 +130,9 @@ export async function syncUsersAction(_prev: OpActionState, formData: FormData):
 }
 
 export async function renameUserAction(_prev: OpActionState, formData: FormData): Promise<OpActionState> {
-  await requireUser();
   const devId = String(formData.get("dev_id") || "");
+  const g = await allow({ edit: true, device: devId });
+  if (!g.ok) return { status: "error", message: g.error };
   const userId = String(formData.get("user_id") || "");
   const userName = String(formData.get("user_name") || "");
   try {
@@ -143,8 +148,9 @@ export async function changePrivilegeAction(
   _prev: OpActionState,
   formData: FormData
 ): Promise<OpActionState> {
-  await requireUser();
   const devId = String(formData.get("dev_id") || "");
+  const g = await allow({ edit: true, device: devId });
+  if (!g.ok) return { status: "error", message: g.error };
   const userId = String(formData.get("user_id") || "");
   const privilege = String(formData.get("user_privilege") || "") as Privilege;
   try {
@@ -158,8 +164,9 @@ export async function changePrivilegeAction(
 
 
 export async function deleteUserAction(_prev: OpActionState, formData: FormData): Promise<OpActionState> {
-  await requireUser();
   const devId = String(formData.get("dev_id") || "");
+  const g = await allow({ fingerprints: true, device: devId });
+  if (!g.ok) return { status: "error", message: g.error };
   const userId = String(formData.get("user_id") || "");
   try {
     const { id, warning } = await startDeleteUser(devId, userId);
@@ -174,8 +181,9 @@ export async function viewBiometricsAction(
   _prev: OpActionState,
   formData: FormData
 ): Promise<OpActionState> {
-  await requireUser();
   const devId = String(formData.get("dev_id") || "");
+  const g = await allow({ device: devId });
+  if (!g.ok) return { status: "error", message: g.error };
   const userId = String(formData.get("user_id") || "");
   try {
     const { id, warning } = await startViewBiometrics(devId, userId);
@@ -187,8 +195,9 @@ export async function viewBiometricsAction(
 }
 
 export async function syncLogsAction(_prev: OpActionState, formData: FormData): Promise<OpActionState> {
-  await requireUser();
   const devId = String(formData.get("dev_id") || "");
+  const g = await allow({ edit: true, device: devId });
+  if (!g.ok) return { status: "error", message: g.error };
   try {
     const { id, warning } = await startSyncLogs(devId);
     await afterStart();
@@ -199,8 +208,9 @@ export async function syncLogsAction(_prev: OpActionState, formData: FormData): 
 }
 
 export async function clearLogsAction(_prev: OpActionState, formData: FormData): Promise<OpActionState> {
-  await requireUser();
   const devId = String(formData.get("dev_id") || "");
+  const g = await allow({ admin: true });
+  if (!g.ok) return { status: "error", message: g.error };
   try {
     const { id, warning } = await startClearLogs(devId);
     await afterStart();
@@ -211,8 +221,9 @@ export async function clearLogsAction(_prev: OpActionState, formData: FormData):
 }
 
 export async function clearEnrollAction(_prev: OpActionState, formData: FormData): Promise<OpActionState> {
-  await requireUser();
   const devId = String(formData.get("dev_id") || "");
+  const g = await allow({ fingerprints: true, admin: true });
+  if (!g.ok) return { status: "error", message: g.error };
   try {
     const { id, warning } = await startClearEnrollData(devId);
     await afterStart();
@@ -225,7 +236,8 @@ export async function clearEnrollAction(_prev: OpActionState, formData: FormData
 
 
 export async function cancelOperationAction(id: number): Promise<{ ok: boolean; reason?: string }> {
-  await requireUser();
+  const g = await allow({ edit: true, operation: id });
+  if (!g.ok) return { ok: false, reason: g.error };
   const result = await cancelOperation(id);
   revalidatePath("/admin", "layout");
   return result;
@@ -240,8 +252,10 @@ export async function cancelOperationAction(id: number): Promise<{ ok: boolean; 
  * en vez del serial: se le escribe el de la caja (startSetDeviceSerial).
  */
 export async function setDeviceSerialAction(_prev: OpActionState, formData: FormData): Promise<OpActionState> {
-  const user = await requireUser();
   const devId = String(formData.get("dev_id") || "");
+  const g = await allow({ admin: true });
+  if (!g.ok) return { status: "error", message: g.error };
+  const user = g.access.user;
   const serial = String(formData.get("serial") || "").trim();
   try {
     const { id, warning } = await startSetDeviceSerial(devId, serial);
@@ -262,8 +276,10 @@ export async function setDeviceSerialAction(_prev: OpActionState, formData: Form
 
 /** "Sincronizar ahora" de un equipo: corrida forzada (relee el equipo aunque los contadores no cambien). */
 export async function syncDeviceNowAction(_prev: OpActionState, formData: FormData): Promise<OpActionState> {
-  const user = await requireUser();
   const devId = String(formData.get("dev_id") || "");
+  const g = await allow({ edit: true, device: devId });
+  if (!g.ok) return { status: "error", message: g.error };
+  const user = g.access.user;
   try {
     const id = await startReconcileDevice(devId, { trigger: "manual", force: true, actorId: user.id });
     if (id === null) {
@@ -282,8 +298,10 @@ export async function syncDeviceNowAction(_prev: OpActionState, formData: FormDa
  * (congelado) solo lee el estado — no agrega ni quita a nadie.
  */
 export async function updateDeviceAction(_prev: OpActionState, formData: FormData): Promise<OpActionState> {
-  const user = await requireUser();
   const devId = String(formData.get("dev_id") || "");
+  const g = await allow({ edit: true, device: devId });
+  if (!g.ok) return { status: "error", message: g.error };
+  const user = g.access.user;
   try {
     const id = await startReconcileDevice(devId, { trigger: "manual", force: true, actorId: user.id });
     if (id !== null) {
@@ -300,7 +318,9 @@ export async function updateDeviceAction(_prev: OpActionState, formData: FormDat
 
 /** "Sincronizar todos": una corrida por cada equipo asignado a una sede. */
 export async function syncAllDevicesAction(_prev: MultiOpActionState, _formData: FormData): Promise<MultiOpActionState> {
-  const user = await requireUser();
+  const g = await allow({ admin: true });
+  if (!g.ok) return { status: "error", message: g.error };
+  const user = g.access.user;
   try {
     const ids = await reconcileAll("manual", user.id);
     if (ids.length === 0) return { status: "error", message: "No hay equipos asignados a sedes activas." };
@@ -316,7 +336,9 @@ export async function resolveSyncHoldAction(
   holdId: number,
   approve: boolean
 ): Promise<{ ok: boolean; message?: string; error?: string }> {
-  const user = await requireUser();
+  const g = await allow({ admin: true });
+  if (!g.ok) return { ok: false, error: g.error };
+  const user = g.access.user;
   try {
     const { started } = await resolveSyncHold(holdId, approve, user.id);
     revalidatePath("/admin/dispositivos", "layout");
@@ -329,9 +351,25 @@ export async function resolveSyncHoldAction(
   }
 }
 
+/** Lo que exige ver el impacto de un cambio: lo mismo que hacerlo (docs/18). */
+function impactNeed(change: ScopeChange): Need {
+  switch (change.kind) {
+    case "end_contract":
+      return { edit: true, employment: change.employmentId };
+    case "device_site":
+      return { edit: true, device: change.devId, site: change.siteId };
+    case "company_group":
+    case "company_status":
+    case "group_shared":
+    case "group_status":
+      return { admin: true };
+  }
+}
+
 /** Vista previa "X pierde acceso a Y" antes de guardar un cambio de alcance (docs/10 R8). Solo lectura. */
 export async function previewImpactAction(change: ScopeChange): Promise<ImpactResult | { error: string }> {
-  await requireUser();
+  const g = await allow(impactNeed(change));
+  if (!g.ok) return { error: g.error };
   try {
     return await previewImpact(change);
   } catch (err) {
@@ -341,9 +379,11 @@ export async function previewImpactAction(change: ScopeChange): Promise<ImpactRe
 
 /** "Sincronizar ahora" para una persona: corre el reconciliador en los equipos de su alcance y donde está vinculada. */
 export async function syncEmployeeNowAction(_prev: MultiOpActionState, formData: FormData): Promise<MultiOpActionState> {
-  const user = await requireUser();
   const employeeId = Number(formData.get("employee_id"));
   if (!Number.isInteger(employeeId)) return { status: "error", message: "Persona inválida." };
+  const g = await allow({ edit: true, employee: employeeId });
+  if (!g.ok) return { status: "error", message: g.error };
+  const user = g.access.user;
   try {
     const ids = await triggerReconcile(await devicesAffectedByEmployee(employeeId), "manual", user.id);
     if (ids.length === 0) {
@@ -358,9 +398,10 @@ export async function syncEmployeeNowAction(_prev: MultiOpActionState, formData:
 
 /** "Sincronizar asistencia" de una empresa: pull de marcaciones de los equipos de sus sedes (docs/10 R11/R12). */
 export async function syncCompanyAttendanceAction(_prev: MultiOpActionState, formData: FormData): Promise<MultiOpActionState> {
-  await requireUser();
   const companyId = Number(formData.get("company_id"));
   if (!Number.isInteger(companyId)) return { status: "error", message: "Empresa inválida." };
+  const g = await allow({ edit: true, company: companyId });
+  if (!g.ok) return { status: "error", message: g.error };
   try {
     const devices = await prisma.devices.findMany({ where: { site: { company_id: companyId } }, select: { dev_id: true } });
     const ids = await attendancePullDevices(devices.map((d) => d.dev_id), "manual");

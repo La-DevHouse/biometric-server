@@ -466,6 +466,9 @@ suman las de dominio.
 
 ## 4. Permisos
 
+> **Cambió (2026-10-19): hay perfiles** — Administrador, Solo lectura y Socio (ciertas empresas).
+> Ver `docs/18-perfiles-acceso.md`. Lo que sigue es la decisión original.
+
 **Fase 1: plano.** Todos los usuarios de Grupo ALCO tienen el mismo acceso
 completo (ALCO G27–G28). No hay matriz de permisos. Toda acción sensible queda
 igualmente registrada en `audit_log` con el usuario que la ejecutó.

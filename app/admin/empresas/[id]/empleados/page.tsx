@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
-import { requireUser } from "@/lib/auth";
+import { requirePage } from "@/lib/access";
 import { Table, Th, Td, Tr } from "@/components/ui/Table";
 import { MobileList, MobileRow } from "@/components/ui/MobileRow";
 import { Tag } from "@/components/ui/Tag";
@@ -34,9 +34,9 @@ interface Row {
  * comparte empleados). El estado de cada equipo lo mantiene el reconciliador.
  */
 export default async function EmpresaEmpleadosPage({ params }: { params: Promise<{ id: string }> }) {
-  await requireUser();
   const id = Number((await params).id);
   if (!Number.isFinite(id)) notFound();
+  const access = await requirePage({ company: id });
 
   const company = await prisma.client_company.findUnique({ where: { id }, select: { id: true, name: true, status: true } });
   if (!company) notFound();
@@ -136,6 +136,7 @@ export default async function EmpresaEmpleadosPage({ params }: { params: Promise
         companyName={company.name}
         active="empleados"
         actions={
+          access.canEdit ? (
           <>
             <ImportEmployeesButton companyId={company.id} />
             {schedulePeople.length > 0 && (
@@ -148,6 +149,7 @@ export default async function EmpresaEmpleadosPage({ params }: { params: Promise
             )}
             <ResyncEnrollmentsButton companyId={company.id} />
           </>
+          ) : undefined
         }
       />
 

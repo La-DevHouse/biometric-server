@@ -70,11 +70,13 @@ export async function AttendanceDaysView({
   from: fromRaw,
   to: toRaw,
   estado,
+  canEdit,
 }: {
   companyId: number;
   from?: string;
   to?: string;
   estado?: string;
+  canEdit: boolean;
 }) {
   const def = defaultComputeRange();
   const from = fromRaw && YMD.test(fromRaw) ? fromRaw : def.from;
@@ -149,6 +151,7 @@ export async function AttendanceDaysView({
           <AttendanceDaysTable
             rows={days}
             show="person"
+            canCorrect={canEdit}
             personHref={(r) => withReturn(`/admin/empleados/${r.employeeId}/asistencia`, backHere)}
           />
           {truncated && (

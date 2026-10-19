@@ -34,6 +34,10 @@ Ver `docs/00-index.md` para el índice completo con descripción de cada documen
 
 - **Reestructura de dominio + reconciliador: `docs/10-reestructura-dominio-sync.md` (prevalece sobre 07/08/09).** Grupo = tabla `company_group`; empresa con ≥1 sede (trigger diferido); contrato sin sede; dispositivo → sede (sin sede = congelado). Las huellas las sincroniza el reconciliador (`RECONCILE_DEVICE`, `lib/sync/`) con registro de procedencia por slot (`device_fingerprint_slot`); el cron corre en un worker aparte (`npm run worker`, pg-boss). Hechos de hardware que lo sostienen (2026-09-26, `05`): la escritura por software **no** detecta duplicados, sobre un slot ocupado responde OK y **no** escribe, y un mismo dedo en dos user_id marca siempre al registro original. `GET_USER_INFO` a veces no responde aunque el usuario exista: nunca tomar ese silencio como "no existe".
 
+## Perfiles de acceso
+
+Hay tres perfiles (`docs/18`): **Administrador** (todo), **Solo lectura** y **Socio** (solo ciertas empresas, sin crear empresas ni editar huellas). Toda server action nueva valida con `allow({...})` de `lib/access.ts` (si no, falla `__tests__/accessGuards.test.ts`); toda página de detalle con `requirePage({...})` o `requireAdminPage()`; y toda lista o búsqueda filtra por `access.companyIds`. Ocultar un botón no alcanza.
+
 ## Idioma de la interfaz
 
 Todo texto que ve el usuario va en **español venezolano profesional y neutro, tratando de "usted"** ("Elija", "Pruebe", "puede", "su cuenta", "aquí"). **Sin voseo** ("Elegí", "Probá", "podés") ni regionalismos argentinos ("acá", "planilla").

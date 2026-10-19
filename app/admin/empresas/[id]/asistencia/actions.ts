@@ -1,7 +1,6 @@
 "use server";
 
 import { prisma } from "@/lib/db";
-import { requireUser } from "@/lib/auth";
 import { userErrorMessage } from "@/lib/serverErrors";
 import { companyUnmatchedDeviceUsers, type UnmatchedDeviceUser } from "@/lib/companyAttendance";
 import { revalidatePath } from "next/cache";
@@ -9,6 +8,7 @@ import { writeAudit } from "@/lib/audit";
 import { computeCompanyAttendance, defaultComputeRange } from "@/lib/attendance/engine";
 import { statusCount } from "@/lib/attendance/labels";
 import type { DayStatus } from "@/lib/attendance/compute";
+import { allow } from "@/lib/access";
 
 export interface ExportFilters {
   from: string;
@@ -31,7 +31,8 @@ export async function exportPreflightAction(
   companyId: number,
   f: ExportFilters
 ): Promise<{ ok: true; unmatched: UnmatchedDeviceUser[]; employees: EmployeeOption[] } | { ok: false; error: string }> {
-  await requireUser();
+  const g = await allow({ company: companyId });
+  if (!g.ok) return { ok: false, error: g.error };
   try {
     const unmatched = await companyUnmatchedDeviceUsers(companyId, { from: f.from, to: f.to, siteId: f.sede });
     if (unmatched.length === 0) return { ok: true, unmatched, employees: [] };
@@ -59,7 +60,9 @@ export async function recomputeAttendanceAction(
   companyId: number,
   range: { from?: string; to?: string }
 ): Promise<{ ok: true; message: string } | { ok: false; error: string }> {
-  const user = await requireUser();
+  const g = await allow({ edit: true, company: companyId });
+  if (!g.ok) return { ok: false, error: g.error };
+  const user = g.access.user;
   const def = defaultComputeRange();
   const from = range.from && YMD.test(range.from) ? range.from : def.from;
   const to = range.to && YMD.test(range.to) ? range.to : def.to;

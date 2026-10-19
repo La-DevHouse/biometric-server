@@ -89,8 +89,9 @@ export function companyAttendanceDays(companyId: number, f: DaysFilter) {
 }
 
 /** Días de una persona, en todas sus empresas (Empleado → Asistencia). */
-export function employeeAttendanceDays(employeeId: number, f: DaysFilter) {
-  return readDays({ employee_id: employeeId }, f);
+/** `companyIds`: solo los contratos con esas empresas (cuenta limitada, docs/18). */
+export function employeeAttendanceDays(employeeId: number, f: DaysFilter, companyIds: number[] | null = null) {
+  return readDays({ employee_id: employeeId, ...(companyIds === null ? {} : { employment: { company_id: { in: companyIds } } }) }, f);
 }
 
 /** Cuántos días hay en cada estado, para el resumen de arriba de la tabla. */

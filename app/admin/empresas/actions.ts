@@ -3,7 +3,6 @@
 import { userErrorMessage } from "@/lib/serverErrors";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
-import { requireUser } from "@/lib/auth";
 import { writeAudit } from "@/lib/audit";
 import type { AdminActionState } from "@/lib/adminActionState";
 import { joinDoc } from "@/lib/documento";
@@ -21,6 +20,7 @@ async function resync(devIds: Iterable<string>): Promise<void> {
 import { extractPdfText } from "@/lib/pdfText";
 import { parseRifText, type RifExtractedFields } from "@/lib/rifParser";
 import { extractRifPhoto } from "@/lib/documentVision";
+import { allow } from "@/lib/access";
 
 const ABSENCE_RULES = ["no_check_in", "no_marks", "under_hours"] as const;
 type AbsenceRule = (typeof ABSENCE_RULES)[number];
@@ -145,7 +145,9 @@ export async function createCompanyAction(
   _prev: AdminActionState,
   fd: FormData
 ): Promise<AdminActionState> {
-  const user = await requireUser();
+  const g = await allow({ admin: true });
+  if (!g.ok) return { status: "error", error: g.error };
+  const user = g.access.user;
   const parsed = fieldsFromForm(fd);
   if ("error" in parsed) return { status: "error", error: parsed.error };
   const f = parsed.fields;
@@ -200,9 +202,11 @@ export async function updateCompanyAction(
   _prev: AdminActionState,
   fd: FormData
 ): Promise<AdminActionState> {
-  const user = await requireUser();
   const id = Number(str(fd, "id"));
   if (!Number.isFinite(id)) return { status: "error", error: "ID inválido." };
+  const g = await allow({ edit: true, company: id });
+  if (!g.ok) return { status: "error", error: g.error };
+  const user = g.access.user;
 
   const before = await prisma.client_company.findUnique({ where: { id } });
   if (!before) return { status: "error", error: "La empresa no existe." };
@@ -212,6 +216,8 @@ export async function updateCompanyAction(
   const f = parsed.fields;
   if (!f.name) return { status: "error", error: "El nombre es obligatorio." };
   if (!f.tax_id) return { status: "error", error: "El RIF es obligatorio." };
+  // Cambiar de grupo cambia el alcance de las huellas de toda la empresa: solo un administrador.
+  if (!g.access.isAdmin) f.group_id = before.group_id;
   const groupErr = await checkGroup(f.group_id);
   if (groupErr) return { status: "error", error: groupErr };
 
@@ -257,7 +263,9 @@ export async function setCompanyStatusAction(
   id: number,
   active: boolean
 ): Promise<{ ok: boolean; error?: string }> {
-  const user = await requireUser();
+  const g = await allow({ admin: true });
+  if (!g.ok) return { ok: false, error: g.error };
+  const user = g.access.user;
   const before = await prisma.client_company.findUnique({ where: { id } });
   if (!before) return { ok: false, error: "La empresa no existe." };
   if (active && !(await hasOtherActiveSite(id, null)))
@@ -289,13 +297,15 @@ export async function createSiteAction(
   _prev: AdminActionState,
   fd: FormData
 ): Promise<AdminActionState> {
-  const user = await requireUser();
   const company_id = Number(str(fd, "company_id"));
   const name = str(fd, "name");
   const code = str(fd, "code") || null;
   const tzRaw = str(fd, "timezone");
   const timezone = isValidTimeZone(tzRaw) ? tzRaw : DEFAULT_TZ;
   if (!Number.isFinite(company_id)) return { status: "error", error: "Empresa inválida." };
+  const g = await allow({ edit: true, company: company_id });
+  if (!g.ok) return { status: "error", error: g.error };
+  const user = g.access.user;
   if (!name) return { status: "error", error: "El nombre de la sede es obligatorio." };
 
   try {
@@ -318,13 +328,15 @@ export async function updateSiteAction(
   _prev: AdminActionState,
   fd: FormData
 ): Promise<AdminActionState> {
-  const user = await requireUser();
   const id = Number(str(fd, "id"));
   const name = str(fd, "name");
   const code = str(fd, "code") || null;
   const tzRaw = str(fd, "timezone");
   const timezone = isValidTimeZone(tzRaw) ? tzRaw : DEFAULT_TZ;
   if (!Number.isFinite(id)) return { status: "error", error: "ID inválido." };
+  const g = await allow({ edit: true, site: id });
+  if (!g.ok) return { status: "error", error: g.error };
+  const user = g.access.user;
   if (!name) return { status: "error", error: "El nombre de la sede es obligatorio." };
 
   const before = await prisma.site.findUnique({ where: { id } });
@@ -351,7 +363,9 @@ export async function setSiteStatusAction(
   id: number,
   active: boolean
 ): Promise<{ ok: boolean; error?: string }> {
-  const user = await requireUser();
+  const g = await allow({ edit: true, site: id });
+  if (!g.ok) return { ok: false, error: g.error };
+  const user = g.access.user;
   const before = await prisma.site.findUnique({
     where: { id },
     include: { company: { select: { status: true } } },
@@ -393,7 +407,9 @@ export async function createGroupAction(
   _prev: AdminActionState,
   fd: FormData
 ): Promise<AdminActionState> {
-  const user = await requireUser();
+  const g = await allow({ admin: true });
+  if (!g.ok) return { status: "error", error: g.error };
+  const user = g.access.user;
   const f = groupFields(fd);
   if (!f.name) return { status: "error", error: "El nombre del grupo es obligatorio." };
   try {
@@ -410,7 +426,9 @@ export async function updateGroupAction(
   _prev: AdminActionState,
   fd: FormData
 ): Promise<AdminActionState> {
-  const user = await requireUser();
+  const g = await allow({ admin: true });
+  if (!g.ok) return { status: "error", error: g.error };
+  const user = g.access.user;
   const id = Number(str(fd, "id"));
   if (!Number.isFinite(id)) return { status: "error", error: "ID inválido." };
   const f = groupFields(fd);
@@ -432,7 +450,9 @@ export async function setGroupStatusAction(
   id: number,
   active: boolean
 ): Promise<{ ok: boolean; error?: string }> {
-  const user = await requireUser();
+  const g = await allow({ admin: true });
+  if (!g.ok) return { ok: false, error: g.error };
+  const user = g.access.user;
   const before = await prisma.company_group.findUnique({ where: { id } });
   if (!before) return { ok: false, error: "El grupo no existe." };
   await prisma.company_group.update({ where: { id }, data: { status: active ? "active" : "inactive" } });
@@ -462,7 +482,9 @@ export async function setGroupStatusAction(
 export async function resyncCompanyEnrollmentsAction(
   companyId: number
 ): Promise<{ ok: boolean; message?: string; error?: string }> {
-  const user = await requireUser();
+  const g = await allow({ edit: true, company: companyId });
+  if (!g.ok) return { ok: false, error: g.error };
+  const user = g.access.user;
   const devices = await devicesAffectedByCompany(companyId);
   if (devices.length === 0) return { ok: false, error: "No hay equipos asignados a sedes de esta empresa (ni de su grupo)." };
   const started = (await triggerReconcile(devices, "manual", user.id)).length;
@@ -493,7 +515,8 @@ export async function resyncCompanyEnrollmentsAction(
 export async function parseRifPdfAction(
   fd: FormData
 ): Promise<{ ok: true; fields: RifExtractedFields } | { ok: false; error: string }> {
-  await requireUser();
+  const g = await allow({ edit: true });
+  if (!g.ok) return { ok: false, error: g.error };
 
   const file = fd.get("rif_pdf");
   if (!(file instanceof File)) return { ok: false, error: "No se recibió el archivo." };
@@ -531,7 +554,8 @@ export async function parseRifPdfAction(
 export async function extractRifPhotoAction(
   fd: FormData
 ): Promise<{ ok: true; fields: RifExtractedFields } | { ok: false; error: string }> {
-  await requireUser();
+  const g = await allow({ edit: true });
+  if (!g.ok) return { ok: false, error: g.error };
 
   const file = fd.get("photo");
   if (!(file instanceof File)) return { ok: false, error: "No se recibió la foto." };

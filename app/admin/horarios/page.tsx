@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/db";
-import { requireUser } from "@/lib/auth";
+import { requireAccess } from "@/lib/access";
 import { Table, Th, Td, Tr, RowLink } from "@/components/ui/Table";
 import { MobileList, MobileRow } from "@/components/ui/MobileRow";
 import { Tag } from "@/components/ui/Tag";
@@ -9,9 +9,11 @@ import { ScheduleFormDialog } from "@/components/admin/ScheduleFormDialog";
 export const dynamic = "force-dynamic";
 
 export default async function HorariosPage() {
-  await requireUser();
+  const access = await requireAccess();
+  const ids = access.companyIds;
   const [schedules, companies] = await Promise.all([
     prisma.schedule_group.findMany({
+      where: ids === null ? {} : { company_id: { in: ids } },
       orderBy: [{ company: { name: "asc" } }, { name: "asc" }],
       include: {
         company: { select: { name: true } },
@@ -19,7 +21,7 @@ export default async function HorariosPage() {
       },
     }),
     prisma.client_company.findMany({
-      where: { status: "active" },
+      where: { status: "active", ...(ids === null ? {} : { id: { in: ids } }) },
       select: { id: true, name: true },
       orderBy: { name: "asc" },
     }),
@@ -31,7 +33,7 @@ export default async function HorariosPage() {
         <p className="m-0 text-sm text-text/75">
           {schedules.length} {schedules.length === 1 ? "horario" : "horarios"}
         </p>
-        <ScheduleFormDialog companies={companies} />
+        {access.canEdit && <ScheduleFormDialog companies={companies} />}
       </div>
 
       {schedules.length === 0 ? (

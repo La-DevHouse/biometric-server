@@ -2,12 +2,12 @@
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
-import { requireUser } from "@/lib/auth";
 import { writeAudit } from "@/lib/audit";
 import { userErrorMessage } from "@/lib/serverErrors";
 import { activeEmploymentWhere } from "@/lib/scope";
 import { computeCompanyAttendance, defaultComputeRange } from "@/lib/attendance/engine";
 import { DEFAULT_TZ, dateKeyInTz } from "@/lib/time";
+import { allow } from "@/lib/access";
 
 /** Lo más atrás que se puede fechar un cambio de horario (y recalcular). */
 const MAX_BACKDATE_DAYS = 366;
@@ -25,7 +25,9 @@ export async function assignScheduleAction(
   employmentIds: number[],
   startsOn: string
 ): Promise<{ ok: true; message: string } | { ok: false; error: string }> {
-  const user = await requireUser();
+  const g = await allow({ edit: true, company: companyId });
+  if (!g.ok) return { ok: false, error: g.error };
+  const user = g.access.user;
   if (employmentIds.length === 0) return { ok: false, error: "Seleccione al menos una persona." };
   const today = dateKeyInTz(new Date(), DEFAULT_TZ);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(startsOn) || Number.isNaN(Date.parse(`${startsOn}T00:00:00Z`))) {

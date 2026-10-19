@@ -62,10 +62,13 @@ export function AttendanceDaysTable({
   rows,
   show,
   personHref,
+  canCorrect,
 }: {
   rows: AttendanceDayRow[];
   show: "person" | "company";
   personHref?: (r: AttendanceDayRow) => string;
+  /** Mostrar "Corregir marcaciones" (Solo lectura no corrige, docs/18). */
+  canCorrect: boolean;
 }) {
   const who = (r: AttendanceDayRow) =>
     show === "person" ? (
@@ -94,9 +97,11 @@ export function AttendanceDaysTable({
               <Th>Horas</Th>
               <Th>Extra</Th>
               <Th>Estado</Th>
-              <Th>
-                <span className="sr-only">Corregir</span>
-              </Th>
+              {canCorrect && (
+                <Th>
+                  <span className="sr-only">Corregir</span>
+                </Th>
+              )}
             </tr>
           </thead>
           <tbody>
@@ -111,9 +116,11 @@ export function AttendanceDaysTable({
                 <Td>
                   <DayStatusCell r={r} />
                 </Td>
-                <Td className="w-px">
-                  <CorrectDayDialog employmentId={r.employmentId} ymd={r.date} who={`${r.employeeName} · ${r.companyName}`} />
-                </Td>
+                {canCorrect && (
+                  <Td className="w-px">
+                    <CorrectDayDialog employmentId={r.employmentId} ymd={r.date} who={`${r.employeeName} · ${r.companyName}`} />
+                  </Td>
+                )}
               </Tr>
             ))}
           </tbody>
@@ -131,7 +138,9 @@ export function AttendanceDaysTable({
               { label: "Extra", value: r.overtimeMinutes ? fmtMin(r.overtimeMinutes) : "—" },
               { label: "Estado", value: <DayStatusCell r={r} /> },
             ]}
-            actions={<CorrectDayDialog employmentId={r.employmentId} ymd={r.date} who={`${r.employeeName} · ${r.companyName}`} />}
+            actions={
+              canCorrect ? <CorrectDayDialog employmentId={r.employmentId} ymd={r.date} who={`${r.employeeName} · ${r.companyName}`} /> : undefined
+            }
           />
         ))}
       </MobileList>

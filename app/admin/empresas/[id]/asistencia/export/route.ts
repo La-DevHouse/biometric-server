@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/db";
-import { requireUser } from "@/lib/auth";
+import { allow } from "@/lib/access";
 import { writeAudit } from "@/lib/audit";
 import { companyAttendance, companyAttendanceSites, type DeviceUserAssignment } from "@/lib/companyAttendance";
 import { buildGalepsoXlsx, galepsoFileName } from "@/lib/export/galepso";
@@ -44,9 +44,11 @@ function parseAssign(raw: string | null): DeviceUserAssignment[] | null {
  * Rango obligatorio. Cada descarga queda en `export_run` (R7).
  */
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const user = await requireUser();
   const id = Number((await params).id);
   if (!Number.isFinite(id)) return bad("Empresa inválida.");
+  const g = await allow({ company: id });
+  if (!g.ok) return bad("No encontrado.", 404);
+  const user = g.access.user;
 
   const sp = req.nextUrl.searchParams;
   const from = sp.get("from") ?? "";

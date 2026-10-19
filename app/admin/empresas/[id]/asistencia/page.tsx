@@ -10,7 +10,7 @@ import {
   type AttendanceViewRow,
 } from "@/lib/companyAttendance";
 import { Tag } from "@/components/ui/Tag";
-import { requireUser } from "@/lib/auth";
+import { requirePage } from "@/lib/access";
 import { Table, Th, Td, Tr } from "@/components/ui/Table";
 import { MobileList, MobileRow } from "@/components/ui/MobileRow";
 import { DisabledBtn } from "@/components/ui/Btn";
@@ -48,10 +48,10 @@ export default async function EmpresaAsistenciaPage({
   params: Promise<{ id: string }>;
   searchParams: Promise<{ from?: string; to?: string; sede?: string; vista?: string; estado?: string; tipo?: string }>;
 }) {
-  await requireUser();
   await initDb();
   const id = Number((await params).id);
   if (!Number.isFinite(id)) notFound();
+  const access = await requirePage({ company: id });
   const f = await searchParams;
 
   const company = await prisma.client_company.findUnique({
@@ -71,10 +71,10 @@ export default async function EmpresaAsistenciaPage({
           companyId={company.id}
           companyName={company.name}
           active="asistencia"
-          actions={<RecomputeAttendanceButton companyId={company.id} from={f.from} to={f.to} />}
+          actions={access.canEdit ? <RecomputeAttendanceButton companyId={company.id} from={f.from} to={f.to} /> : undefined}
         />
         {switcher}
-        {vista === "dias" && <AttendanceDaysView companyId={company.id} from={f.from} to={f.to} estado={f.estado} />}
+        {vista === "dias" && <AttendanceDaysView companyId={company.id} from={f.from} to={f.to} estado={f.estado} canEdit={access.canEdit} />}
         {vista === "consolidado" && <AttendanceSummaryView companyId={company.id} from={f.from} to={f.to} />}
         {vista === "incidencias" && <AttendanceIncidentsView companyId={company.id} from={f.from} to={f.to} tipo={f.tipo} />}
       </div>
@@ -145,7 +145,8 @@ export default async function EmpresaAsistenciaPage({
         actions={
           <>
             {exportAction}
-            <RecomputeAttendanceButton companyId={company.id} from={f.from} to={f.to} />
+            {access.canEdit && <RecomputeAttendanceButton companyId={company.id} from={f.from} to={f.to} />}
+            {access.canEdit && (
             <MultiOpButton
               action={syncCompanyAttendanceAction}
               hidden={{ company_id: String(company.id) }}
@@ -155,6 +156,7 @@ export default async function EmpresaAsistenciaPage({
             >
               {Icon.sync}
             </MultiOpButton>
+            )}
           </>
         }
       />

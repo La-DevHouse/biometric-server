@@ -1,4 +1,4 @@
-import { requireUser } from "@/lib/auth";
+import { requireAdminPage } from "@/lib/access";
 import { cx } from "@/lib/cx";
 import { Btn, LinkBtn, DisabledBtn } from "@/components/ui/Btn";
 import { IconBtn } from "@/components/ui/IconBtn";
@@ -64,7 +64,7 @@ function Section({ title, note, children }: { title: string; note?: string; chil
 }
 
 export default async function StyleguidePage() {
-  await requireUser();
+  await requireAdminPage();
 
   return (
     <div className="flex max-w-3xl flex-col gap-8 pb-16">

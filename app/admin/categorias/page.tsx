@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/db";
-import { requireUser } from "@/lib/auth";
+import { requireAdminPage } from "@/lib/access";
 import { Tabs } from "@/components/ui/Tabs";
 import { Table, Th, Td, Tr } from "@/components/ui/Table";
 import { MobileList, MobileRow } from "@/components/ui/MobileRow";
@@ -25,7 +25,7 @@ type Tab = "modelos" | "puestos" | "departamentos";
  * Fase 1, docs/09 DC5). La pestaña va en `?tab=` — es una sola pantalla.
  */
 export default async function CategoriasPage({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
-  await requireUser();
+  await requireAdminPage();
   const sp = await searchParams;
   const tab: Tab = sp.tab === "puestos" || sp.tab === "departamentos" ? sp.tab : "modelos";
   const [departments, positions, businessModels] = await Promise.all([

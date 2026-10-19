@@ -4,10 +4,10 @@ import { userErrorMessage } from "@/lib/serverErrors";
 import { revalidatePath } from "next/cache";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
-import { requireUser } from "@/lib/auth";
 import { writeAudit } from "@/lib/audit";
 import type { AdminActionState } from "@/lib/adminActionState";
 import { computeShiftTimes, normalizeTime } from "@/lib/shiftTime";
+import { allow } from "@/lib/access";
 
 const ABSENCE_RULES = ["no_check_in", "no_marks", "under_hours"] as const;
 
@@ -47,9 +47,11 @@ export async function createScheduleAction(
   _prev: AdminActionState,
   fd: FormData
 ): Promise<AdminActionState> {
-  const user = await requireUser();
   const d = scheduleData(fd);
   if (!Number.isFinite(d.company_id)) return { status: "error", error: "Seleccione una empresa." };
+  const g = await allow({ edit: true, company: d.company_id });
+  if (!g.ok) return { status: "error", error: g.error };
+  const user = g.access.user;
   if (!d.name) return { status: "error", error: "El nombre es obligatorio." };
 
   try {
@@ -66,9 +68,11 @@ export async function updateScheduleAction(
   _prev: AdminActionState,
   fd: FormData
 ): Promise<AdminActionState> {
-  const user = await requireUser();
   const id = Number(str(fd, "id"));
   if (!Number.isFinite(id)) return { status: "error", error: "ID inválido." };
+  const g = await allow({ edit: true, schedule: id });
+  if (!g.ok) return { status: "error", error: g.error };
+  const user = g.access.user;
   const before = await prisma.schedule_group.findUnique({ where: { id } });
   if (!before) return { status: "error", error: "El horario no existe." };
 
@@ -92,7 +96,9 @@ export async function setScheduleStatusAction(
   id: number,
   active: boolean
 ): Promise<{ ok: boolean; error?: string }> {
-  const user = await requireUser();
+  const g = await allow({ edit: true, schedule: id });
+  if (!g.ok) return { ok: false, error: g.error };
+  const user = g.access.user;
   const before = await prisma.schedule_group.findUnique({ where: { id } });
   if (!before) return { ok: false, error: "El horario no existe." };
   await prisma.schedule_group.update({ where: { id }, data: { status: active ? "active" : "inactive" } });
@@ -164,9 +170,11 @@ export async function createShiftAction(
   _prev: AdminActionState,
   fd: FormData
 ): Promise<AdminActionState> {
-  const user = await requireUser();
   const schedule_group_id = Number(str(fd, "schedule_group_id"));
   if (!Number.isFinite(schedule_group_id)) return { status: "error", error: "Horario inválido." };
+  const g = await allow({ edit: true, schedule: schedule_group_id });
+  if (!g.ok) return { status: "error", error: g.error };
+  const user = g.access.user;
   const parsed = shiftData(fd);
   if (parsed.error) return { status: "error", error: parsed.error };
 
@@ -182,13 +190,20 @@ export async function createShiftAction(
   }
 }
 
+/** Horario de un turno (para validar el acceso); null si no existe. */
+async function shiftSchedule(id: number): Promise<number | null> {
+  return (await prisma.shift.findUnique({ where: { id }, select: { schedule_group_id: true } }))?.schedule_group_id ?? null;
+}
+
 export async function updateShiftAction(
   _prev: AdminActionState,
   fd: FormData
 ): Promise<AdminActionState> {
-  const user = await requireUser();
   const id = Number(str(fd, "id"));
   if (!Number.isFinite(id)) return { status: "error", error: "ID inválido." };
+  const g = await allow({ edit: true, schedule: await shiftSchedule(id) });
+  if (!g.ok) return { status: "error", error: g.error };
+  const user = g.access.user;
   const before = await prisma.shift.findUnique({ where: { id } });
   if (!before) return { status: "error", error: "El turno no existe." };
   const parsed = shiftData(fd);
@@ -205,7 +220,9 @@ export async function updateShiftAction(
 }
 
 export async function deleteShiftAction(id: number): Promise<{ ok: boolean; error?: string }> {
-  const user = await requireUser();
+  const g = await allow({ edit: true, schedule: await shiftSchedule(id) });
+  if (!g.ok) return { ok: false, error: g.error };
+  const user = g.access.user;
   const before = await prisma.shift.findUnique({ where: { id } });
   if (!before) return { ok: false, error: "El turno no existe." };
   // attendance_day.shift_id es SetNull -> borrar es seguro

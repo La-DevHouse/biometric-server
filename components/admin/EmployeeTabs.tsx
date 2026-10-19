@@ -8,6 +8,7 @@ import { EmployeeFormDialog, type EmployeeValues } from "./EmployeeFormDialog";
 import { MultiOpButton } from "./MultiOpButton";
 import { syncEmployeeNowAction } from "@/app/admin/actions";
 import { companyReturn, withReturn } from "@/lib/returnTo";
+import { requireAccess } from "@/lib/access";
 
 export type EmployeeTab = "info" | "contratos" | "equipos" | "asistencia";
 
@@ -33,6 +34,7 @@ export async function EmployeeTabs({
   returnTo?: string | string[];
 }) {
   const ret = companyReturn(returnTo);
+  const access = await requireAccess();
   const [employee, withPhoto, vigentes, fromCompany] = await Promise.all([
     prisma.employee.findUnique({
       where: { id: employeeId },
@@ -68,7 +70,8 @@ export async function EmployeeTabs({
         subtitle={<span className="font-mono">{employee.national_id}</span>}
         actions={
           <>
-            <EmployeeFormDialog employee={form} />
+            {access.canEdit && <EmployeeFormDialog employee={form} />}
+            {access.canEdit && (
             <MultiOpButton
               action={syncEmployeeNowAction}
               hidden={{ employee_id: String(employee.id) }}
@@ -78,6 +81,7 @@ export async function EmployeeTabs({
             >
               {Icon.sync}
             </MultiOpButton>
+            )}
           </>
         }
       />

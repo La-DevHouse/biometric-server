@@ -1,6 +1,6 @@
 import { Suspense } from "react";
 import { notFound } from "next/navigation";
-import { requireUser } from "@/lib/auth";
+import { requirePage } from "@/lib/access";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { EmployeeTabs } from "@/components/admin/EmployeeTabs";
 import { UrlFilters } from "@/components/admin/UrlFilters";
@@ -26,15 +26,15 @@ export default async function EmpleadoAsistenciaPage({
   params: Promise<{ id: string }>;
   searchParams: Promise<{ volver?: string; from?: string; to?: string }>;
 }) {
-  await requireUser();
   const id = Number((await params).id);
   if (!Number.isFinite(id)) notFound();
+  const access = await requirePage({ employee: id });
   const sp = await searchParams;
 
   const def = defaultComputeRange();
   const from = sp.from && YMD.test(sp.from) ? sp.from : def.from;
   const to = sp.to && YMD.test(sp.to) ? sp.to : def.to;
-  const days = await employeeAttendanceDays(id, { from, to });
+  const days = await employeeAttendanceDays(id, { from, to }, access.companyIds);
 
   const counts = new Map<DayStatus, number>();
   for (const d of days) if (d.status) counts.set(d.status, (counts.get(d.status) ?? 0) + 1);
@@ -69,7 +69,7 @@ export default async function EmpleadoAsistenciaPage({
           description="La asistencia se calcula cada noche (o con “Recalcular asistencia” en la empresa). El día de hoy se calcula mañana."
         />
       ) : (
-        <AttendanceDaysTable rows={days} show="company" />
+        <AttendanceDaysTable rows={days} show="company" canCorrect={access.canEdit} />
       )}
     </div>
   );

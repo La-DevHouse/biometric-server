@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
-import { requireUser } from "@/lib/auth";
+import { requirePage } from "@/lib/access";
 import { Table, Th, Td, Tr } from "@/components/ui/Table";
 import { MobileList, MobileRow } from "@/components/ui/MobileRow";
 import { Tag } from "@/components/ui/Tag";
@@ -18,9 +18,9 @@ export const dynamic = "force-dynamic";
  * Cada sede activa permite asignarle cualquier equipo sin ir al equipo (C5).
  */
 export default async function EmpresaSedesPage({ params }: { params: Promise<{ id: string }> }) {
-  await requireUser();
   const id = Number((await params).id);
   if (!Number.isFinite(id)) notFound();
+  const access = await requirePage({ company: id });
 
   const company = await prisma.client_company.findUnique({
     where: { id },
@@ -33,7 +33,9 @@ export default async function EmpresaSedesPage({ params }: { params: Promise<{ i
   if (!company) notFound();
 
   // Todos los equipos, para asignar cualquiera a una sede desde acá (con dónde está hoy).
+  // Una cuenta limitada (docs/18) solo mueve equipos entre las sedes de sus empresas.
   const allDevices = await prisma.devices.findMany({
+    where: access.companyIds === null ? {} : { site: { company_id: { in: access.companyIds } } },
     select: { dev_id: true, name: true, site_id: true, site: { select: { name: true, company: { select: { name: true } } } } },
     orderBy: [{ name: "asc" }, { dev_id: "asc" }],
   });
@@ -47,17 +49,18 @@ export default async function EmpresaSedesPage({ params }: { params: Promise<{ i
   const statusTag = (active: boolean) => (
     <Tag variant={active ? "accent" : "neutral"}>{active ? "Activa" : "Inactiva"}</Tag>
   );
-  const siteActions = (s: (typeof company.sites)[number]) => (
+  const siteActions = (s: (typeof company.sites)[number]) =>
+    access.canEdit ? (
     <>
       <SiteDevicesDialog site={{ id: s.id, name: s.name, active: s.status === "active" }} devices={deviceOptions} />
       <SiteFormDialog companyId={company.id} site={{ id: s.id, name: s.name, code: s.code, timezone: s.timezone }} />
       <RecordStatusButton id={s.id} active={s.status === "active"} label="sede" action={setSiteStatusAction} />
     </>
-  );
+    ) : null;
 
   return (
     <div className="flex max-w-4xl flex-col gap-4">
-      <CompanyTabs companyId={company.id} companyName={company.name} active="sedes" actions={<SiteFormDialog companyId={company.id} />} />
+      <CompanyTabs companyId={company.id} companyName={company.name} active="sedes" actions={access.canEdit ? <SiteFormDialog companyId={company.id} /> : undefined} />
 
       {company.sites.length === 0 ? (
         <EmptyState title="Sin sedes" description="Una empresa activa necesita al menos una sede. Agregue una para asignarle equipos." />

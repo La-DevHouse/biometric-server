@@ -1,5 +1,5 @@
 import { allAsync, getAsync, initDb } from "@/lib/db";
-import { requireUser } from "@/lib/auth";
+import { requireAccess, scopedDevIds } from "@/lib/access";
 import { listActiveOperations } from "@/lib/operations";
 import { isDeviceOnline } from "@/lib/deviceStatus";
 import { formatVerifyMode } from "@/lib/verifyMode";
@@ -41,21 +41,26 @@ function fmtTime(ioTime: string): string {
   return `${ioTime.slice(6, 8)}/${ioTime.slice(4, 6)} ${ioTime.slice(8, 10)}:${ioTime.slice(10, 12)}`;
 }
 
-async function getData() {
+/** `devIds`: solo esos equipos (cuenta limitada, docs/18); null = todos. */
+async function getData(devIds: string[] | null) {
   await initDb();
+  // Sin filtro, `dev_id = ANY(NULL)` no aplica: el `? IS NULL` deja pasar todo.
+  const scope = `(?::text[] IS NULL OR dev_id = ANY(?::text[]))`;
+  const scopeArgs = [devIds, devIds];
 
   const devices = await allAsync<DeviceRow>(
-    `SELECT dev_id, name, last_seen_at FROM devices ORDER BY dev_id`
+    `SELECT dev_id, name, last_seen_at FROM devices WHERE ${scope} ORDER BY dev_id`,
+    scopeArgs
   );
 
   const totalToday = await getAsync<{ n: number }>(
-    `SELECT COUNT(*) AS n FROM attendance_logs WHERE io_time LIKE ?`,
-    [`${todayPrefix()}%`]
+    `SELECT COUNT(*) AS n FROM attendance_logs WHERE io_time LIKE ? AND ${scope}`,
+    [`${todayPrefix()}%`, ...scopeArgs]
   );
 
-  const totalUsers = await getAsync<{ n: number }>(`SELECT COUNT(*) AS n FROM users`);
+  const totalUsers = await getAsync<{ n: number }>(`SELECT COUNT(*) AS n FROM users WHERE ${scope}`, scopeArgs);
 
-  const activeOps = await listActiveOperations();
+  const activeOps = (await listActiveOperations()).filter((o) => devIds === null || devIds.includes(o.dev_id));
 
   const recentLogs = await allAsync<RecentLog>(
     `SELECT al.io_time, al.user_id, al.verify_mode,
@@ -64,8 +69,10 @@ async function getData() {
        FROM attendance_logs al
        LEFT JOIN devices d ON d.dev_id = al.dev_id
        LEFT JOIN users u ON u.dev_id = al.dev_id AND u.user_id = al.user_id
+      WHERE (?::text[] IS NULL OR al.dev_id = ANY(?::text[]))
       ORDER BY al.received_at DESC
-      LIMIT 8`
+      LIMIT 8`,
+    scopeArgs
   );
 
   return {
@@ -78,8 +85,8 @@ async function getData() {
 }
 
 export default async function InicioPage() {
-  await requireUser();
-  const { devices, totalToday, totalUsers, activeOpsCount, recentLogs } = await getData();
+  const access = await requireAccess();
+  const { devices, totalToday, totalUsers, activeOpsCount, recentLogs } = await getData(await scopedDevIds(access));
 
   const onlineDevices = devices.filter((d) => isDeviceOnline(d.last_seen_at));
   const offlineDevices = devices.filter((d) => !isDeviceOnline(d.last_seen_at));

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
-import { requireUser } from "@/lib/auth";
+import { companyIdWhere, requirePage } from "@/lib/access";
 import { activeEmploymentWhere } from "@/lib/scope";
 import { EmployeeTabs } from "@/components/admin/EmployeeTabs";
 
@@ -19,9 +19,9 @@ export default async function EmpleadoInfoPage({
   params: Promise<{ id: string }>;
   searchParams: Promise<{ volver?: string }>;
 }) {
-  await requireUser();
   const id = Number((await params).id);
   if (!Number.isFinite(id)) notFound();
+  const access = await requirePage({ employee: id });
 
   const [employee, withPhoto, vigentes] = await Promise.all([
     prisma.employee.findUnique({
@@ -36,7 +36,7 @@ export default async function EmpleadoInfoPage({
     }),
     prisma.$queryRaw<{ id: number }[]>`SELECT id FROM employee WHERE id = ${id} AND cedula_photo IS NOT NULL`,
     prisma.employment.findMany({
-      where: { employee_id: id, ...activeEmploymentWhere() },
+      where: { employee_id: id, ...activeEmploymentWhere(), company_id: companyIdWhere(access) },
       select: { company: { select: { id: true, name: true } } },
     }),
   ]);
