@@ -228,6 +228,10 @@ enum attendance_status {
   late
   early_leave
   absent
+  incomplete // una sola marcación: no hay horas
+  rest_day // día no laborable del horario, sin marcar
+  rest_day_worked // día no laborable con marcaciones (todas sus horas son extra de referencia)
+  no_schedule // el contrato no tiene horario: solo horas trabajadas
 }
 
 enum absence_rule {
@@ -634,8 +638,8 @@ model attendance_day {
   id               Int                @id @default(autoincrement())
   employee_id      Int
   employee         employee           @relation(fields: [employee_id], references: [id], onDelete: Cascade)
-  employment_id    Int?
-  employment       employment?        @relation(fields: [employment_id], references: [id], onDelete: SetNull)
+  employment_id    Int
+  employment       employment         @relation(fields: [employment_id], references: [id], onDelete: Cascade)
   date             DateTime           @db.Date
   shift_id         Int?
   shift            shift?             @relation(fields: [shift_id], references: [id], onDelete: SetNull)
@@ -643,6 +647,10 @@ model attendance_day {
   last_out         DateTime?          @db.Timestamptz(6)
   worked_minutes   Int?
   overtime_minutes Int? // referencia, sin recargo legal
+  late_minutes        Int? // minutos tarde (solo si pasó la tolerancia)
+  early_leave_minutes Int? // minutos de salida anticipada (solo si pasó la tolerancia)
+  scheduled_minutes   Int? // jornada esperada del turno ese día
+  mark_count          Int  @default(0)
   status           attendance_status?
   computed_at      DateTime?          @db.Timestamptz(6)
   created_at       DateTime           @default(now()) @db.Timestamptz(6)
@@ -650,7 +658,8 @@ model attendance_day {
 
   corrections attendance_correction[]
 
-  @@unique([employee_id, date])
+  @@unique([employment_id, date]) // un día por contrato (docs/16)
+  @@index([employee_id, date])
   @@index([date])
 }
 

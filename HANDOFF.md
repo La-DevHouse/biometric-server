@@ -143,7 +143,9 @@ Detalle en `docs/04` y `docs/05`. Modelos: huella `WS535BW1_BSCS_v1.5.31`; facia
 
 ### Lo que falta del plan de hitos (revisado el 2026-10-16)
 
-- **Hito 4 — motor de asistencia: no existe.** `attendanceComputeAll()` (lib/sync/attendance.ts)
+- **Hito 4 — motor de asistencia: en curso (ver `docs/16-motor-asistencia.md`).** Paso 1 hecho el
+  2026-10-19 (cálculo y guardado, `lib/attendance/`); faltan cálculo nocturno + botón, pantallas y
+  correcciones. Lo que sigue es el estado previo, como referencia: `attendanceComputeAll()` (lib/sync/attendance.ts)
   está vacía; las tablas `attendance_day` y `attendance_correction` existen pero nada las usa.
   Falta: asistencia/tardanzas/salidas anticipadas/ausencias contra el horario, horas trabajadas
   y extra de referencia (sin recargos), turnos nocturnos, **corrección manual auditada** (UI).
