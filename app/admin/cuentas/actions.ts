@@ -7,6 +7,7 @@ import { prisma } from "@/lib/db";
 import { requireUser, currentSessionToken, hashPassword, verifyPassword } from "@/lib/auth";
 import { writeAudit } from "@/lib/audit";
 import type { AdminActionState } from "@/lib/adminActionState";
+import { DENIED, requireAccess, type Profile } from "@/lib/access";
 
 const PATH = "/admin/cuentas";
 const MIN_PW = 8;
@@ -16,6 +17,35 @@ function str(fd: FormData, k: string) {
 }
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+/** Cuentas: solo administradores (docs/18). Devuelve el usuario o null. */
+async function adminOnly() {
+  const a = await requireAccess();
+  return a.isAdmin ? a.user : null;
+}
+
+interface ProfileInput {
+  role: Profile;
+  all_companies: boolean;
+  companyIds: number[];
+}
+
+/**
+ * Perfil del formulario (docs/18): Administrador = todas; Socio = solo las
+ * elegidas (al menos una); Solo lectura = todas o solo las elegidas.
+ */
+async function parseProfile(fd: FormData): Promise<ProfileInput | { error: string }> {
+  const role = str(fd, "role") as Profile;
+  if (!["admin", "viewer", "operator"].includes(role)) return { error: "Elija el perfil de la cuenta." };
+  const all = role === "admin" || (role === "viewer" && str(fd, "scope") !== "some");
+  const companyIds = all ? [] : [...new Set(fd.getAll("company_ids").map(Number).filter((n) => Number.isInteger(n) && n > 0))];
+  if (!all && companyIds.length === 0) return { error: "Elija al menos una empresa para esta cuenta." };
+  if (companyIds.length && (await prisma.client_company.count({ where: { id: { in: companyIds } } })) !== companyIds.length)
+    return { error: "Alguna de las empresas elegidas ya no existe. Recargue la página." };
+  return { role, all_companies: all, companyIds };
+}
+
+const profileAudit = (p: ProfileInput) => ({ role: p.role, all_companies: p.all_companies, company_ids: p.companyIds });
+
 // --------------------------------------------------------------------------
 // Alta / edición de cuentas
 // --------------------------------------------------------------------------
@@ -24,10 +54,13 @@ export async function createAccountAction(
   _prev: AdminActionState,
   fd: FormData
 ): Promise<AdminActionState> {
-  const user = await requireUser();
+  const user = await adminOnly();
+  if (!user) return { status: "error", error: DENIED };
   const name = str(fd, "name");
   const email = str(fd, "email").toLowerCase();
   const password = String(fd.get("password") ?? "");
+  const profile = await parseProfile(fd);
+  if ("error" in profile) return { status: "error", error: profile.error };
 
   if (!name) return { status: "error", error: "El nombre es obligatorio." };
   if (!EMAIL_RE.test(email)) return { status: "error", error: "Email inválido." };
@@ -36,14 +69,21 @@ export async function createAccountAction(
 
   try {
     const created = await prisma.app_user.create({
-      data: { name, email, password_hash: await hashPassword(password) },
+      data: {
+        name,
+        email,
+        password_hash: await hashPassword(password),
+        role: profile.role,
+        all_companies: profile.all_companies,
+        companies: { create: profile.companyIds.map((company_id) => ({ company_id })) },
+      },
     });
     await writeAudit({
       actorId: user.id,
       action: "app_user.create",
       entityType: "app_user",
       entityId: created.id,
-      after: { name: created.name, email: created.email, role: created.role },
+      after: { name: created.name, email: created.email, ...profileAudit(profile) },
     });
     revalidatePath(PATH);
     return { status: "ok", message: `Cuenta de ${name} creada.` };
@@ -58,11 +98,20 @@ export async function updateAccountAction(
   _prev: AdminActionState,
   fd: FormData
 ): Promise<AdminActionState> {
-  const user = await requireUser();
+  const user = await adminOnly();
+  if (!user) return { status: "error", error: DENIED };
   const id = Number(str(fd, "id"));
   if (!Number.isFinite(id)) return { status: "error", error: "ID inválido." };
-  const before = await prisma.app_user.findUnique({ where: { id } });
+  const before = await prisma.app_user.findUnique({ where: { id }, include: { companies: { select: { company_id: true } } } });
   if (!before) return { status: "error", error: "La cuenta no existe." };
+  const profile = await parseProfile(fd);
+  if ("error" in profile) return { status: "error", error: profile.error };
+  if (id === user.id && profile.role !== before.role)
+    return { status: "error", error: "No puede cambiar el perfil de su propia cuenta." };
+  if (before.role === "admin" && profile.role !== "admin" && before.status === "active") {
+    const admins = await prisma.app_user.count({ where: { role: "admin", status: "active" } });
+    if (admins <= 1) return { status: "error", error: "Debe quedar al menos un administrador activo." };
+  }
 
   const name = str(fd, "name");
   const email = str(fd, "email").toLowerCase();
@@ -70,14 +119,33 @@ export async function updateAccountAction(
   if (!EMAIL_RE.test(email)) return { status: "error", error: "Email inválido." };
 
   try {
-    const updated = await prisma.app_user.update({ where: { id }, data: { name, email } });
+    // El acceso cambia de inmediato: cada request vuelve a leer el perfil y las empresas.
+    const updated = await prisma.$transaction(async (tx) => {
+      await tx.app_user_company.deleteMany({ where: { app_user_id: id } });
+      return tx.app_user.update({
+        where: { id },
+        data: {
+          name,
+          email,
+          role: profile.role,
+          all_companies: profile.all_companies,
+          companies: { create: profile.companyIds.map((company_id) => ({ company_id })) },
+        },
+      });
+    });
     await writeAudit({
       actorId: user.id,
       action: "app_user.update",
       entityType: "app_user",
       entityId: id,
-      before: { name: before.name, email: before.email },
-      after: { name: updated.name, email: updated.email },
+      before: {
+        name: before.name,
+        email: before.email,
+        role: before.role,
+        all_companies: before.all_companies,
+        company_ids: before.companies.map((c) => c.company_id),
+      },
+      after: { name: updated.name, email: updated.email, ...profileAudit(profile) },
     });
     revalidatePath(PATH);
     return { status: "ok", message: "Cuenta actualizada." };
@@ -96,7 +164,8 @@ export async function resetPasswordAction(
   _prev: AdminActionState,
   fd: FormData
 ): Promise<AdminActionState> {
-  const user = await requireUser();
+  const user = await adminOnly();
+  if (!user) return { status: "error", error: DENIED };
   const id = Number(str(fd, "id"));
   const password = String(fd.get("password") ?? "");
   if (!Number.isFinite(id)) return { status: "error", error: "ID inválido." };
@@ -130,7 +199,8 @@ export async function setAccountStatusAction(
   id: number,
   active: boolean
 ): Promise<{ ok: boolean; error?: string }> {
-  const user = await requireUser();
+  const user = await adminOnly();
+  if (!user) return { ok: false, error: DENIED };
   const before = await prisma.app_user.findUnique({ where: { id } });
   if (!before) return { ok: false, error: "La cuenta no existe." };
 
@@ -138,6 +208,10 @@ export async function setAccountStatusAction(
     if (id === user.id) return { ok: false, error: "No puede desactivar su propia cuenta." };
     const activeCount = await prisma.app_user.count({ where: { status: "active" } });
     if (activeCount <= 1) return { ok: false, error: "Debe quedar al menos una cuenta activa." };
+    if (before.role === "admin") {
+      const admins = await prisma.app_user.count({ where: { role: "admin", status: "active" } });
+      if (admins <= 1) return { ok: false, error: "Debe quedar al menos un administrador activo." };
+    }
   }
 
   await prisma.$transaction([

@@ -11,6 +11,8 @@ import { OperationsTrackerProvider } from "./OperationsTracker";
 import { logoutAction } from "@/app/login/actions";
 import { CommandPalette } from "./CommandPalette";
 import { Icon } from "@/components/ui/icons";
+import { PROFILE_LABEL, type Profile } from "@/lib/accessLabels";
+import { ChangeMyPasswordDialog } from "./ChangeMyPasswordDialog";
 
 // Una figura por sección (components/ui/icons.tsx → nav*), en SVG como el resto
 // del panel: antes eran caracteres Unicode (⌂ ▤ ▢ ◉ ☰ ◫ ⚿) que no decían nada.
@@ -19,13 +21,15 @@ const NAV_ITEMS = [
   { href: "/admin/dispositivos", label: "Equipos", icon: Icon.navDevices },
 ] as const;
 
+// `adminOnly`: pantallas de Administrador (docs/18). Ocultarlas es solo comodidad;
+// cada página igual lo valida en el servidor (requireAdminPage).
 const ADMIN_ITEMS = [
-  { href: "/admin/empresas", label: "Empresas", icon: Icon.navCompanies },
-  { href: "/admin/empleados", label: "Empleados", icon: Icon.navEmployees },
-  { href: "/admin/categorias", label: "Categorías", icon: Icon.navCategories },
-  { href: "/admin/horarios", label: "Horarios y turnos", icon: Icon.navSchedules },
-  { href: "/admin/cuentas", label: "Cuentas", icon: Icon.navAccounts },
-  { href: "/admin/auditoria", label: "Auditoría", icon: Icon.navAudit },
+  { href: "/admin/empresas", label: "Empresas", icon: Icon.navCompanies, adminOnly: false },
+  { href: "/admin/empleados", label: "Empleados", icon: Icon.navEmployees, adminOnly: false },
+  { href: "/admin/categorias", label: "Categorías", icon: Icon.navCategories, adminOnly: true },
+  { href: "/admin/horarios", label: "Horarios y turnos", icon: Icon.navSchedules, adminOnly: false },
+  { href: "/admin/cuentas", label: "Cuentas", icon: Icon.navAccounts, adminOnly: true },
+  { href: "/admin/auditoria", label: "Auditoría", icon: Icon.navAudit, adminOnly: true },
 ] as const;
 
 const TITLES: Array<{ prefix: string; title: string }> = [
@@ -44,11 +48,6 @@ const TITLES: Array<{ prefix: string; title: string }> = [
   { prefix: "/admin", title: "Inicio" },
 ];
 
-const ROLE_LABEL: Record<"admin" | "operator" | "viewer", string> = {
-  admin: "Administrador",
-  operator: "Operador",
-  viewer: "Visor",
-};
 
 function titleFor(pathname: string): string {
   return TITLES.find((t) => pathname.startsWith(t.prefix))?.title ?? "";
@@ -166,7 +165,7 @@ export function AdminShell({
               <span className="flex-1 h-px bg-neutral-200" />
             </div>
 
-            {ADMIN_ITEMS.map((item) => (
+            {ADMIN_ITEMS.filter((item) => !item.adminOnly || (userRole ?? "admin") === "admin").map((item) => (
               <Link key={item.href} href={item.href} className={navLinkClass(item.href)}>
                 <span className={navIconClass(item.href)} aria-hidden>
                   {item.icon}
@@ -186,9 +185,10 @@ export function AdminShell({
                   {userName}
                 </span>
                 <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-neutral-700">
-                  {ROLE_LABEL[userRole ?? "admin"]}
+                  {PROFILE_LABEL[(userRole ?? "admin") as Profile]}
                 </span>
               </span>
+              <ChangeMyPasswordDialog trigger="icon" />
               <form action={logoutAction}>
                 <button
                   type="submit"

@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/db";
-import { requireUser } from "@/lib/auth";
+import { requireAdminPage, PROFILE_LABEL } from "@/lib/access";
 import { Table, Th, Td, Tr } from "@/components/ui/Table";
 import { MobileList, MobileRow } from "@/components/ui/MobileRow";
 import { Tag } from "@/components/ui/Tag";
@@ -19,31 +19,55 @@ function fmtWhen(d: Date | null): string {
 }
 
 export default async function CuentasPage() {
-  const me = await requireUser();
+  const me = (await requireAdminPage()).user;
 
-  const accounts = await prisma.app_user.findMany({
-    orderBy: [{ status: "asc" }, { name: "asc" }],
-    select: {
-      id: true,
-      name: true,
-      email: true,
-      role: true,
-      status: true,
-      last_login_at: true,
-      _count: { select: { sessions: true } },
-    },
+  const [accounts, companyRows] = await Promise.all([
+    prisma.app_user.findMany({
+      orderBy: [{ status: "asc" }, { name: "asc" }],
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        all_companies: true,
+        status: true,
+        last_login_at: true,
+        companies: { select: { company_id: true, company: { select: { name: true } } }, orderBy: { company: { name: "asc" } } },
+        _count: { select: { sessions: true } },
+      },
+    }),
+    prisma.client_company.findMany({
+      orderBy: { name: "asc" },
+      select: { id: true, name: true, group_id: true, group: { select: { name: true } } },
+    }),
+  ]);
+  const companies = companyRows.map((c) => ({ id: c.id, name: c.name, groupId: c.group_id, groupName: c.group?.name ?? null }));
+  type Row = (typeof accounts)[number];
+  const values = (a: Row) => ({
+    id: a.id,
+    name: a.name,
+    email: a.email,
+    role: a.role,
+    allCompanies: a.all_companies,
+    companyIds: a.companies.map((c) => c.company_id),
   });
+  /** "Todas las empresas" o los nombres (los 2 primeros y "+N"). */
+  const scopeText = (a: Row) => {
+    if (a.all_companies) return "Todas las empresas";
+    const names = a.companies.map((c) => c.company.name);
+    return names.length <= 2 ? names.join(", ") : `${names.slice(0, 2).join(", ")} y ${names.length - 2} más`;
+  };
 
   return (
     <div className="flex max-w-4xl flex-col gap-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="m-0 text-sm text-text/75">
-          Cuentas internas de Grupo ALCO para entrar al panel. En Fase 1 todas tienen el mismo
-          acceso.
+          Cuentas para entrar al panel. Administrador: todo. Solo lectura: ve y descarga. Socio: trabaja
+          solo con sus empresas, sin crear empresas ni editar huellas.
         </p>
         <div className="flex items-center gap-2">
           <ChangeMyPasswordDialog />
-          <AccountFormDialog />
+          <AccountFormDialog companies={companies} />
         </div>
       </div>
 
@@ -53,6 +77,7 @@ export default async function CuentasPage() {
             <tr>
               <Th>Nombre</Th>
               <Th>Email</Th>
+              <Th>Perfil</Th>
               <Th>Estado</Th>
               <Th>Último ingreso</Th>
               <Th>Sesiones</Th>
@@ -68,6 +93,10 @@ export default async function CuentasPage() {
                 </Td>
                 <Td className="font-mono text-xs">{a.email}</Td>
                 <Td>
+                  <div>{PROFILE_LABEL[a.role]}</div>
+                  <div className="text-xs text-text/60">{scopeText(a)}</div>
+                </Td>
+                <Td>
                   <Tag variant={a.status === "active" ? "accent" : "neutral"}>
                     {a.status === "active" ? "Activa" : "Inactiva"}
                   </Tag>
@@ -76,7 +105,7 @@ export default async function CuentasPage() {
                 <Td className="text-xs">{a._count.sessions}</Td>
                 <Td actions>
                   <div className="flex flex-nowrap items-center gap-[6px]">
-                    <AccountFormDialog account={{ id: a.id, name: a.name, email: a.email }} />
+                    <AccountFormDialog account={values(a)} companies={companies} isSelf={a.id === me.id} />
                     <ResetPasswordDialog id={a.id} name={a.name} />
                     <RecordStatusButton
                       id={a.id}
@@ -108,12 +137,13 @@ export default async function CuentasPage() {
             }
             fields={[
               { label: "Email", value: a.email },
+              { label: "Perfil", value: `${PROFILE_LABEL[a.role]} · ${scopeText(a)}` },
               { label: "Último ingreso", value: fmtWhen(a.last_login_at) },
               { label: "Sesiones", value: a._count.sessions },
             ]}
             actions={
               <>
-                <AccountFormDialog account={{ id: a.id, name: a.name, email: a.email }} />
+                <AccountFormDialog account={values(a)} companies={companies} isSelf={a.id === me.id} />
                 <ResetPasswordDialog id={a.id} name={a.name} />
                 <RecordStatusButton
                   id={a.id}

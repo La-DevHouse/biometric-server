@@ -346,6 +346,7 @@ model client_company {
   schedule_groups schedule_group[]
   export_runs     export_run[]
   import_runs     import_run[]
+  user_access     app_user_company[]
 
   @@index([group_id])
   @@index([business_model_id])
@@ -705,6 +706,8 @@ model app_user {
   name          String
   password_hash String
   role          app_user_role @default(admin)
+  /// false = solo las empresas de `companies` (docs/18). admin siempre true, operator siempre false (CHECK).
+  all_companies Boolean       @default(true)
   status        record_status @default(active)
   last_login_at DateTime?     @db.Timestamptz(6)
   created_at    DateTime      @default(now()) @db.Timestamptz(6)
@@ -716,6 +719,19 @@ model app_user {
   revoked_corrections attendance_correction[] @relation("correction_revoker")
   export_runs export_run[]
   import_runs import_run[]
+  companies   app_user_company[]
+}
+
+/// Empresas a las que tiene acceso una cuenta limitada (docs/18).
+model app_user_company {
+  app_user_id Int
+  app_user    app_user       @relation(fields: [app_user_id], references: [id], onDelete: Cascade)
+  company_id  Int
+  company     client_company @relation(fields: [company_id], references: [id], onDelete: Cascade)
+  created_at  DateTime       @default(now()) @db.Timestamptz(6)
+
+  @@id([app_user_id, company_id])
+  @@index([company_id])
 }
 
 /// Sesión de login. Token opaco en cookie httpOnly; la fila es la fuente de verdad.

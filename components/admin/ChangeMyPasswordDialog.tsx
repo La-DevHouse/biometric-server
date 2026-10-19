@@ -3,13 +3,15 @@
 import { useActionState, useEffect, useState } from "react";
 import { Dialog } from "@/components/ui/Dialog";
 import { Btn } from "@/components/ui/Btn";
+import { Icon } from "@/components/ui/icons";
 import { useToast } from "./Toaster";
 import { useFormSubmit } from "@/components/ui/useFormSubmit";
 import { changeMyPasswordAction } from "@/app/admin/cuentas/actions";
 import { ADMIN_ACTION_INITIAL } from "@/lib/adminActionState";
 import { FIELD_INPUT as INPUT, FIELD_LABEL as LABEL, FIELD_HINT } from "@/components/ui/fieldStyles";
 
-export function ChangeMyPasswordDialog() {
+/** `trigger="icon"`: la llave junto a "Salir" en el menú lateral (cualquier perfil). */
+export function ChangeMyPasswordDialog({ trigger = "button" }: { trigger?: "button" | "icon" }) {
   const [open, setOpen] = useState(false);
   const [state, formAction, pending] = useActionState(changeMyPasswordAction, ADMIN_ACTION_INITIAL);
   const onSubmit = useFormSubmit(formAction, state);
@@ -24,9 +26,21 @@ export function ChangeMyPasswordDialog() {
 
   return (
     <>
-      <Btn variant="secondary" onClick={() => setOpen(true)}>
-        Cambiar mi contraseña
-      </Btn>
+      {trigger === "icon" ? (
+        <button
+          type="button"
+          title="Cambiar mi contraseña"
+          aria-label="Cambiar mi contraseña"
+          onClick={() => setOpen(true)}
+          className="w-[34px] h-[34px] flex-none flex items-center justify-center bg-transparent border border-neutral-500 hover:border-text text-text text-[18px] leading-none cursor-pointer"
+        >
+          {Icon.key}
+        </button>
+      ) : (
+        <Btn variant="secondary" onClick={() => setOpen(true)}>
+          Cambiar mi contraseña
+        </Btn>
+      )}
       <Dialog open={open} onClose={() => setOpen(false)} title="Cambiar mi contraseña">
         <form onSubmit={onSubmit} className="flex flex-col gap-3">
           <p className="m-0 text-xs text-text/70">

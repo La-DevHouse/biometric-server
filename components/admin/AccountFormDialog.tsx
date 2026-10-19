@@ -10,14 +10,23 @@ import { useFormSubmit } from "@/components/ui/useFormSubmit";
 import { createAccountAction, updateAccountAction } from "@/app/admin/cuentas/actions";
 import { ADMIN_ACTION_INITIAL } from "@/lib/adminActionState";
 import { FIELD_INPUT as INPUT, FIELD_LABEL as LABEL, FIELD_HINT } from "@/components/ui/fieldStyles";
+import { AccountProfileFields, type AccessCompany, type AccountProfile } from "./AccountProfileFields";
 
-export interface AccountValues {
+export interface AccountValues extends AccountProfile {
   id: number;
   name: string;
   email: string;
 }
 
-export function AccountFormDialog({ account }: { account?: AccountValues }) {
+export function AccountFormDialog({
+  account,
+  companies,
+  isSelf,
+}: {
+  account?: AccountValues;
+  companies: AccessCompany[];
+  isSelf?: boolean;
+}) {
   const editing = !!account;
   const [open, setOpen] = useState(false);
   const [state, formAction, pending] = useActionState(
@@ -71,6 +80,7 @@ export function AccountFormDialog({ account }: { account?: AccountValues }) {
               <span className={FIELD_HINT}>Mínimo 8 caracteres.</span>
             </label>
           )}
+          <AccountProfileFields companies={companies} initial={account} disabledRole={isSelf} />
         </form>
       </Dialog>
     </>

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Suspense } from "react";
 import { prisma } from "@/lib/db";
-import { requireUser } from "@/lib/auth";
+import { requireAdminPage } from "@/lib/access";
 import { Table, Th, Td, Tr } from "@/components/ui/Table";
 import { MobileList, MobileRow } from "@/components/ui/MobileRow";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -70,7 +70,7 @@ export default async function AuditoriaPage({
 }: {
   searchParams: Promise<{ from?: string; to?: string; usuario?: string; area?: string; pagina?: string }>;
 }) {
-  await requireUser();
+  await requireAdminPage();
   const sp = await searchParams;
   const page = Math.max(1, Number(sp.pagina) || 1);
   const actorId = Number(sp.usuario) || undefined;
