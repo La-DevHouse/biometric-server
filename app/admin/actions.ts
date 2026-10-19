@@ -45,9 +45,9 @@ export async function queueCommandAction(
   const devId = String(formData.get("dev_id") || "");
   const cmdCode = String(formData.get("cmd_code") || "");
 
-  if (!devId) return { status: "error", message: "Selecciona un equipo." };
+  if (!devId) return { status: "error", message: "Seleccione un equipo." };
   const template = COMMAND_TEMPLATES[cmdCode];
-  if (!template) return { status: "error", message: "Selecciona un comando válido." };
+  if (!template) return { status: "error", message: "Seleccione un comando válido." };
 
   const params: Record<string, string> = {};
   for (const key of Object.keys(template.params ?? {})) {

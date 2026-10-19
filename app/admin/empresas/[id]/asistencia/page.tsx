@@ -245,7 +245,7 @@ export default async function EmpresaAsistenciaPage({
             {truncated ? ` (mostrando las ${RESULT_LIMIT} más recientes)` : ""} · por contrato: es lo que se exporta a
             nómina.
             {unmatchedShown > 0 &&
-              ` Las «Sin empleado» (${unmatchedShown}) son IDs del equipo que no son la cédula de nadie registrado: no salen en el export salvo que al exportar elijas de quién son.`}
+              ` Las «Sin empleado» (${unmatchedShown}) son IDs del equipo que no son la cédula de nadie registrado: no salen en el export salvo que al exportar elija de quién son.`}
           </p>
         </>
       )}

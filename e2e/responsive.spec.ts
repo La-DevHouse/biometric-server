@@ -38,7 +38,8 @@ test.describe("Responsive — mobile", () => {
     // o texto amontonado) queda oculta bajo `hidden md:block`; en su lugar
     // se ve un <MobileList> de tarjetas, una por persona.
     await expect(page.locator("table").first()).toBeHidden();
-    const mobileList = page.locator("div.md\\:hidden").first();
+    // `.flex-col`: el MobileList; los diálogos (cerrados) también tienen un div md:hidden (su manija).
+    const mobileList = page.locator("main div.flex-col.md\\:hidden").first();
     await expect(mobileList).toBeVisible();
     await expect(mobileList.locator(":scope > div").first()).toBeVisible();
 
@@ -48,7 +49,7 @@ test.describe("Responsive — mobile", () => {
     );
   });
 
-  test("un formulario en diálogo ocupa toda la pantalla, con header fijo, y colapsa a una columna", async ({
+  test("un formulario en diálogo es una hoja a todo el ancho desde abajo, con header fijo, y colapsa a una columna", async ({
     page,
   }) => {
     await page.goto("/admin/empresas");
@@ -60,12 +61,13 @@ test.describe("Responsive — mobile", () => {
     const viewportSize = page.viewportSize();
     expect(dialogBox).not.toBeNull();
     expect(viewportSize).not.toBeNull();
-    // Debajo de sm: el diálogo abarca toda la pantalla (w-screen h-screen,
-    // sin gutter) — no el modal chico centrado de desktop.
+    // Debajo de md: hoja modal desde abajo ("bottom sheet", components/ui/Dialog):
+    // todo el ancho, pegada al borde inferior, hasta el 90 % del alto — no el modal
+    // chico centrado de desktop.
     expect(dialogBox!.x).toBe(0);
-    expect(dialogBox!.y).toBe(0);
     expect(dialogBox!.width).toBe(viewportSize!.width);
-    expect(dialogBox!.height).toBe(viewportSize!.height);
+    expect(Math.abs(dialogBox!.y + dialogBox!.height - viewportSize!.height)).toBeLessThan(2);
+    expect(dialogBox!.height).toBeLessThanOrEqual(viewportSize!.height * 0.9 + 1);
 
     // El título + botón de cerrar quedan fijos arriba (no se van con el
     // scroll del body del form).

@@ -1,12 +1,11 @@
 "use client";
 
-import { useActionState, useEffect, useState } from "react";
+import { useState, useTransition, type FormEvent } from "react";
 import { Dialog } from "@/components/ui/Dialog";
 import { Btn } from "@/components/ui/Btn";
 import { IconBtn } from "@/components/ui/IconBtn";
 import { Icon } from "@/components/ui/icons";
 import { useToast } from "./Toaster";
-import { useFormSubmit } from "@/components/ui/useFormSubmit";
 import { endEmploymentAction } from "@/app/admin/empleados/actions";
 import { ADMIN_ACTION_INITIAL } from "@/lib/adminActionState";
 import { FIELD_INPUT as INPUT } from "@/components/ui/fieldStyles";
@@ -20,16 +19,23 @@ export function EndEmploymentDialog({
   companyName: string;
 }) {
   const [open, setOpen] = useState(false);
-  const [state, formAction, pending] = useActionState(endEmploymentAction, ADMIN_ACTION_INITIAL);
-  const onSubmit = useFormSubmit(formAction, state);
+  const [pending, start] = useTransition();
   const { push } = useToast();
 
-  useEffect(() => {
-    if (state.status === "ok") {
-      push("ok", state.message ?? "Baja registrada.");
-      setOpen(false);
-    } else if (state.status === "error") push("error", state.error);
-  }, [state, push]);
+  // El aviso sale de esta misma llamada, no de un efecto: al cerrarse el contrato su
+  // fila deja de mostrar este botón y el diálogo se desmonta antes de que un efecto
+  // alcance a avisar "Baja registrada" (pasaba: la baja se guardaba sin confirmación).
+  function onSubmit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const fd = new FormData(e.currentTarget);
+    start(async () => {
+      const r = await endEmploymentAction(ADMIN_ACTION_INITIAL, fd);
+      if (r.status === "ok") {
+        push("ok", r.message ?? "Baja registrada.");
+        setOpen(false);
+      } else if (r.status === "error") push("error", r.error);
+    });
+  }
 
   return (
     <>

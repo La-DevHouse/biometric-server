@@ -36,7 +36,9 @@ test.describe("Categorías — modelos de negocio y puestos M:N", () => {
     const modelRow = modelsSection.locator("tr", { hasText: modelName });
     await expect(modelRow).toBeVisible();
 
-    // 2. Puesto ligado a ese modelo (M:N).
+    // 2. Puesto ligado a ese modelo (M:N). Categorías tiene una pestaña por catálogo.
+    await page.getByRole("navigation", { name: "Categorías" }).getByRole("link", { name: /^Puestos/ }).click();
+    await expect(page).toHaveURL(/tab=puestos/);
     await page.getByRole("button", { name: "Nuevo puesto" }).click();
     await dialog.getByLabel("Nombre *").fill(positionName);
     await dialog.getByRole("checkbox", { name: modelName }).check();

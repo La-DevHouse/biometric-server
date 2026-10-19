@@ -194,6 +194,7 @@ const VALUE_LABEL: Record<string, string> = {
   admin: "administrador",
   quincenal: "quincenal",
   semanal: "semanal",
+  galepso_xlsx: "Excel para Galepso",
 };
 
 /** Nombres de campo frecuentes, en palabras; el resto se muestra con su código. */
@@ -232,6 +233,16 @@ const FIELD_LABEL: Record<string, string> = {
   end_time: "salida",
   workdays: "días laborables",
   revoked_at: "deshecha el",
+  format: "formato",
+  assigned: "asignadas",
+  employee_id: "persona",
+  employment_id: "contrato",
+  attendance_log_id: "marcación",
+  shared_employees: "comparte empleados",
+  group_id: "grupo",
+  business_model_id: "modelo de negocio",
+  all_companies: "todas las empresas",
+  company_ids: "empresas",
 };
 
 const isPlain = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
@@ -276,7 +287,7 @@ export function auditChanges(before: unknown, after: unknown, max = 6): { field:
     const one = isPlain(after) ? after : isPlain(before) ? before : null;
     if (one)
       for (const [k, v] of Object.entries(one))
-        if (!NOISE.has(k) && !isPlain(v) && v != null && v !== "") out.push({ field: FIELD_LABEL[k] ?? k, text: show(v) });
+        if (!NOISE.has(k) && !isPlain(v) && v != null && v !== "" && !(Array.isArray(v) && v.length === 0)) out.push({ field: FIELD_LABEL[k] ?? k, text: show(v) });
   }
   return out.slice(0, max);
 }

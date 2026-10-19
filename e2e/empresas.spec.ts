@@ -31,14 +31,14 @@ test.describe("Empresas — grupos, primera sede y RIF", () => {
     await expect(page.getByText(`Empresa "${companyName}" creada con la sede "Sede Centro".`)).toBeVisible();
     await closeToastIfAny(page);
 
-    // 3. La tabla muestra el grupo como encabezado y la empresa debajo, indentada.
+    // 3. La tabla muestra el grupo como una fila colapsable; al abrirla, la empresa debajo.
     const groupRow = page.locator("tr", { hasText: groupName });
     await expect(groupRow).toBeVisible();
-    await expect(groupRow).toContainText("Comparte empleados");
+    await expect(groupRow).toContainText("1 empresa · comparte empleados");
 
+    await groupRow.getByRole("button", { name: groupName }).click();
     const companyRow = page.locator("tr", { hasText: companyName });
     await expect(companyRow).toBeVisible();
-    await expect(companyRow).toContainText("↳");
     await expect(companyRow).toContainText("J-123456789");
   });
 
