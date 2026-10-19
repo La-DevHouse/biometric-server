@@ -16,6 +16,7 @@ import { syncUsersAction } from "@/app/admin/actions";
 import { deviceSyncState } from "@/lib/sync/reconcile";
 import { PRIVILEGE_SCREEN_LABEL } from "@/lib/operations";
 import { cx } from "@/lib/cx";
+import { desiredFingerprintIdsMany } from "@/lib/fingerprints";
 
 export const dynamic = "force-dynamic";
 
@@ -34,8 +35,8 @@ function PrivilegeTag({ privilege }: { privilege: string | null }) {
 
 /**
  * Equipo → Usuarios (docs/11 E6): los usuarios del equipo según su última
- * lectura, con su empleado vinculado por cédula y sus huellas (físicas /
- * copiadas), las acciones de la vieja "Usuarios de equipo" y lo pendiente que
+ * lectura, con su empleado vinculado por cédula, cuántas huellas tiene en el
+ * equipo y su estado (como en Empresa → Empleados), las acciones de la vieja "Usuarios de equipo" y lo pendiente que
  * mostraba la vieja "Enrolamiento" (qué falta, qué sobra, qué no se toca).
  */
 export default async function DeviceUsersPage({ params }: { params: Promise<{ devId: string }> }) {
@@ -45,15 +46,15 @@ export default async function DeviceUsersPage({ params }: { params: Promise<{ de
 
   const [users, slots, state] = await Promise.all([
     allAsync<UserRow>(
-      `SELECT u.user_id, u.user_name, u.user_privilege, COUNT(e.id) AS bio_count
+      `SELECT u.user_id, u.user_name, u.user_privilege, COUNT(e.id)::int AS bio_count
          FROM users u
-         LEFT JOIN enroll_data e ON e.dev_id = u.dev_id AND e.user_id = u.user_id
+         LEFT JOIN enroll_data e ON e.dev_id = u.dev_id AND e.user_id = u.user_id AND e.backup_number BETWEEN 0 AND 9
         WHERE u.dev_id = ?
         GROUP BY u.id
         ORDER BY NULLIF(regexp_replace(u.user_id, '\\D', '', 'g'), '')::bigint NULLS LAST, u.user_id`,
       [devId]
     ),
-    prisma.device_fingerprint_slot.findMany({ where: { dev_id: devId }, select: { device_user_id: true, origin: true } }),
+    prisma.device_fingerprint_slot.findMany({ where: { dev_id: devId }, select: { device_user_id: true, fingerprint_id: true } }),
     deviceSyncState(devId),
   ]);
   const employees = await prisma.employee.findMany({
@@ -63,8 +64,34 @@ export default async function DeviceUsersPage({ params }: { params: Promise<{ de
   const empName = new Map(employees.map((e) => [e.id, `${e.last_name}, ${e.first_name}`]));
   // Quién está en el alcance: si se lo borra a mano, el reconciliador lo vuelve a crear.
   const inScope = new Set(state.inScope.map((e) => e.cedula));
-  const slotCount = (userId: string, origin: "physical" | "propagated") =>
-    slots.filter((s) => s.device_user_id === userId && s.origin === origin).length;
+  // Huellas y estado como en Empresa → Empleados, pero en ESTE equipo: cuántas
+  // tiene acá, y si están todas las que la persona debería tener (sus copias
+  // canónicas, hasta 10).
+  const desired = await desiredFingerprintIdsMany([...new Set(state.employeeByUser.values())]);
+  const slotSet = new Set(slots.filter((s) => s.fingerprint_id != null).map((s) => `${s.device_user_id}|${s.fingerprint_id}`));
+  const fpStatus = (u: UserRow): { label: string; variant: "accent" | "neutral"; title?: string } | null => {
+    const eid = state.employeeByUser.get(u.user_id);
+    if (!eid) return null; // sin empleado: no se sincroniza
+    const want = desired.get(eid)?.ids ?? [];
+    if (want.length === 0) {
+      return u.bio_count > 0
+        ? { label: "Por asignar", variant: "neutral", title: "Tiene huella en el equipo; se asigna a la persona en la próxima sincronización." }
+        : { label: "Sin huella", variant: "neutral", title: "La persona no tiene huellas registradas todavía." };
+    }
+    const here = want.filter((f) => slotSet.has(`${u.user_id}|${f}`)).length;
+    return here === want.length
+      ? { label: "Al día", variant: "accent" }
+      : { label: `Faltan huellas (${here} de ${want.length})`, variant: "neutral", title: "La sincronización copia las que faltan." };
+  };
+  const statusCell = (u: UserRow) => {
+    const st = fpStatus(u);
+    if (!st) return <span className="text-text/60">—</span>;
+    return (
+      <span title={st.title}>
+        <Tag variant={st.variant}>{st.label}</Tag>
+      </span>
+    );
+  };
   const p = state.plan;
 
   const actions = (u: UserRow) => (
@@ -151,6 +178,7 @@ export default async function DeviceUsersPage({ params }: { params: Promise<{ de
                   <Th>Privilegio</Th>
                   <Th>Empleado</Th>
                   <Th>Huellas</Th>
+                  <Th>Estado</Th>
                   <Th />
                 </tr>
               </thead>
@@ -163,15 +191,8 @@ export default async function DeviceUsersPage({ params }: { params: Promise<{ de
                       <PrivilegeTag privilege={u.user_privilege} />
                     </Td>
                     <Td>{employeeCell(u.user_id)}</Td>
-                    <Td className="whitespace-nowrap">
-                      {/* físicas / copiadas (procedencia, device_fingerprint_slot) · plantillas leídas del equipo */}
-                      <span title="físicas / copiadas">
-                        {slotCount(u.user_id, "physical")} / {slotCount(u.user_id, "propagated")}
-                      </span>
-                      <span className="block text-xs text-neutral-700">
-                        {u.bio_count > 0 ? `${u.bio_count} leída${u.bio_count === 1 ? "" : "s"}` : "sin leer"}
-                      </span>
-                    </Td>
+                    <Td>{u.bio_count}</Td>
+                    <Td>{statusCell(u)}</Td>
                     <Td actions>
                       <div className="flex flex-nowrap justify-end gap-[6px]">{actions(u)}</div>
                     </Td>
@@ -189,10 +210,8 @@ export default async function DeviceUsersPage({ params }: { params: Promise<{ de
                 fields={[
                   { label: "ID", value: u.user_id },
                   { label: "Empleado", value: employeeCell(u.user_id) },
-                  {
-                    label: "Huellas",
-                    value: `${slotCount(u.user_id, "physical")} físicas / ${slotCount(u.user_id, "propagated")} copiadas`,
-                  },
+                  { label: "Huellas", value: u.bio_count },
+                  { label: "Estado", value: statusCell(u) },
                 ]}
                 actions={actions(u)}
               />
