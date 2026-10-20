@@ -27,11 +27,17 @@ test.describe.serial("Recorrido general", () => {
     other = seed();
   });
 
-  test("Inicio: tarjetas y últimas marcaciones", async ({ page }) => {
+  test("Inicio: ayer, atención, empresas y últimas marcaciones", async ({ page }) => {
     await page.goto("/admin");
-    for (const k of ["Equipos en línea", "Marcaciones hoy", "Operaciones en curso", "Usuarios registrados"])
+    for (const k of ["Equipos en línea", "Marcaciones hoy", "Personas con contrato"])
       await expect(page.getByText(k, { exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /^(Ayer|Último día laborable), / })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /^Empresas — / })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Últimas marcaciones" })).toBeVisible();
+    // Cada empresa de la tabla lleva a su "Por día" de ayer (en Docker hay muchas
+    // empresas E2E de corridas anteriores: se muestran las 15 con más incidencias).
+    const first = page.locator("table").first().locator("tbody tr a").first();
+    await expect(first).toHaveAttribute("href", /\/asistencia\?vista=dias&from=\d{4}-\d{2}-\d{2}&to=/);
     await shot(page, "01-inicio");
   });
 

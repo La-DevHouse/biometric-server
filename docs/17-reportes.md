@@ -62,3 +62,14 @@ ausencias.
 
 - Si las definiciones de "días trabajados" y "días laborables" son las que usan para nómina.
 - Si necesitan el consolidado de **todas las empresas** en un solo archivo (hoy es por empresa).
+
+## Inicio (2026-10-20)
+
+La pantalla de Inicio resume, dentro del alcance de la cuenta (`docs/18`): equipos en línea,
+marcaciones de hoy, personas con contrato e incidencias; el **último día laborable** calculado
+(ayer, o el viernes si es lunes) por estado; **"Requiere atención"** (equipos sin conexión, equipos
+sin sede —solo administradores—, contratos sin horario, IDs de equipo sin empleado en 7 días, bajas
+frenadas por aprobar, correcciones manuales de la semana); una tabla **por empresa** de ese día,
+ordenada por incidencias, con enlaces a su "Por día" filtrado; y las últimas marcaciones con el
+nombre de la persona. Código: `lib/dashboard.ts`, `app/admin/page.tsx`; prueba `__tests__/dashboard.test.ts`.
+"Hoy" es el día de Caracas (antes salía de la zona horaria del servidor).
