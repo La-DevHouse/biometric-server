@@ -2,7 +2,9 @@ import { test as setup, expect } from "@playwright/test";
 import { execSync } from "node:child_process";
 
 export const E2E_EMAIL = "e2e-admin@grupoalco.test";
-export const E2E_PASSWORD = "e2e-test-password-123";
+// En producción (prod-colegio.spec.ts) llega una contraseña aleatoria por corrida y
+// la cuenta se desactiva al final (e2e/prod-teardown.ts); en Docker, la fija de siempre.
+export const E2E_PASSWORD = process.env.E2E_PASSWORD || "e2e-test-password-123";
 const AUTH_FILE = "e2e/.auth/user.json";
 
 setup("crear usuario de prueba y loguearse", async ({ page }) => {
