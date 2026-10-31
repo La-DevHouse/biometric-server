@@ -1010,6 +1010,17 @@ Parameters: {}
 2. Verificar que los logs llegaron correctamente
 3. Recién entonces CLEAR_LOG_DATA
 
+**En el panel (2026-10-30): "Liberar memoria de marcaciones"** (ficha del equipo, solo
+administradores; operación `CLEAR_LOGS`, `lib/operations/clearLogs.ts`) hace exactamente esa receta
+y no deja saltarla: `GET_DEVICE_STATUS` (conteos de usuarios/huellas/rostros/marcaciones) →
+`GET_LOG_DATA` → verifica que **cada** marcación leída está en `attendance_logs` y que se leyeron al
+menos tantas como dijo el estado (si no, se detiene **sin borrar**) → `GET_DEVICE_STATUS` justo antes
+(si entraron marcaciones nuevas, vuelve a traerlas, hasta 3 veces) → `CLEAR_LOG_DATA` →
+`GET_DEVICE_STATUS` y compara: usuarios, huellas y rostros **iguales** que al principio (si no, error
+"¡Atención!"), marcaciones en 0. Con 0 marcaciones no pide `GET_LOG_DATA` (un facial no lo responde
+vacío). El servidor **nunca** borra `attendance_logs`. Pendiente: verificar en hardware que
+`CLEAR_LOG_DATA` no toca usuarios ni huellas (la comprobación del final lo detectaría).
+
 ---
 
 ## Gestión de datos biométricos completa

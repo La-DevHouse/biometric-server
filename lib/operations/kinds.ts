@@ -78,7 +78,7 @@ export const OPERATION_LABELS: Record<OperationKind, string> = {
   CREATE_USER: "Crear usuario nuevo",
   DELETE_USER: "Eliminar usuario",
   SYNC_LOGS: "Sincronizar historial completo",
-  CLEAR_LOGS: "Borrar memoria de logs",
+  CLEAR_LOGS: "Liberar memoria de marcaciones",
   CLEAR_ENROLL: "Borrar todos los biométricos",
   VIEW_BIOMETRICS: "Ver biométricos",
   REFRESH_STATUS: "Actualizar estado del equipo",

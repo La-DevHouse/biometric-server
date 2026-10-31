@@ -1473,3 +1473,139 @@ function numLE(n: number): Buffer {
   b.writeUInt32LE(n, 0);
   return b;
 }
+
+// --- CLEAR_LOGS: "Liberar memoria de marcaciones" (lib/operations/clearLogs) ---
+
+/** Un GET_LOG_DATA con estas marcaciones, en el formato binario real (12 bytes por registro). */
+function logDataResult(rows: { userId: number; ioTime: string }[]) {
+  const buf = Buffer.alloc(rows.length * 12);
+  rows.forEach((r, i) => {
+    const o = i * 12;
+    const y = Number(r.ioTime.slice(0, 4)), mo = Number(r.ioTime.slice(4, 6)), d = Number(r.ioTime.slice(6, 8));
+    const h = Number(r.ioTime.slice(8, 10)), mi = Number(r.ioTime.slice(10, 12)), s = Number(r.ioTime.slice(12, 14));
+    buf.writeUInt32LE(r.userId, o);
+    buf[o + 4] = 1;
+    buf[o + 5] = 0;
+    buf[o + 6] = 1;
+    buf[o + 7] = s;
+    const packed = (0b01 | ((y - 1964) << 2) | (0b0001 << 8) | (mo << 12) | (d << 16) | ((h & 0x07) << 21) | (((h >> 3) & 0x03) << 24) | (mi << 26)) >>> 0;
+    buf.writeUInt32LE(packed, o + 8);
+  });
+  return { ok: true, resultJson: { log_count: String(rows.length), one_log_size: "12", log_array: "BIN_1" }, binaries: [buf] };
+}
+
+const devStatus = (users: number, fps: number, logs: number) => ({
+  ok: true,
+  resultJson: { total_user_count: String(users), fp_count: String(fps), total_log_count: String(logs) },
+});
+
+const LOGS3 = [
+  { userId: 111, ioTime: "20261020080000" },
+  { userId: 111, ioTime: "20261020170000" },
+  { userId: 222, ioTime: "20261020081500" },
+];
+
+async function commandCodes(opId: number) {
+  return (await ops.getOperationCommands(opId)).map((c) => c.cmd_code);
+}
+
+test("CLEAR_LOGS - respalda, verifica, borra y comprueba que usuarios y huellas siguen igual", async () => {
+  await freshDb();
+  const { id } = await ops.startClearLogs(DEV_A);
+  await completeCurrentStep(id, devStatus(5, 8, 3));
+  await completeCurrentStep(id, logDataResult(LOGS3));
+  await completeCurrentStep(id, devStatus(5, 8, 3)); // nada nuevo desde la lectura
+  await completeCurrentStep(id, { ok: true, resultJson: {} }); // CLEAR_LOG_DATA
+  await completeCurrentStep(id, devStatus(5, 8, 0));
+  const op = await ops.getOperation(id);
+  assert.equal(op?.stage, "done");
+  assert.match(op?.result_note ?? "", /3 marcaciones respaldadas/);
+  assert.deepEqual(await commandCodes(id), ["GET_DEVICE_STATUS", "GET_LOG_DATA", "GET_DEVICE_STATUS", "CLEAR_LOG_DATA", "GET_DEVICE_STATUS"]);
+  // El servidor conserva todo.
+  const n = await db.getAsync<{ n: number }>(`SELECT count(*)::int AS n FROM attendance_logs WHERE dev_id = ?`, [DEV_A]);
+  assert.equal(n?.n, 3);
+});
+
+test("CLEAR_LOGS - sin marcaciones en el equipo no pide nada más (un facial no responde GET_LOG_DATA vacío)", async () => {
+  await freshDb();
+  const { id } = await ops.startClearLogs(DEV_A);
+  await completeCurrentStep(id, devStatus(5, 8, 0));
+  assert.equal((await ops.getOperation(id))?.stage, "done");
+  assert.deepEqual(await commandCodes(id), ["GET_DEVICE_STATUS"]);
+});
+
+test("CLEAR_LOGS - si el equipo manda menos marcaciones de las que dijo tener, NO borra", async () => {
+  await freshDb();
+  const { id } = await ops.startClearLogs(DEV_A);
+  await completeCurrentStep(id, devStatus(5, 8, 10));
+  await completeCurrentStep(id, logDataResult(LOGS3));
+  const op = await ops.getOperation(id);
+  assert.equal(op?.stage, "error");
+  assert.match(op?.error_note ?? "", /No se borró nada/);
+  assert.equal((await commandCodes(id)).includes("CLEAR_LOG_DATA"), false);
+});
+
+test("CLEAR_LOGS - si no se pueden leer las marcaciones, NO borra", async () => {
+  await freshDb();
+  const { id } = await ops.startClearLogs(DEV_A);
+  await completeCurrentStep(id, devStatus(5, 8, 3));
+  await completeCurrentStep(id, { ok: false, returnCode: "Error" });
+  assert.equal((await ops.getOperation(id))?.stage, "error");
+  assert.equal((await commandCodes(id)).includes("CLEAR_LOG_DATA"), false);
+});
+
+test("CLEAR_LOGS - marcaciones nuevas entre la lectura y el borrado: las vuelve a traer antes de borrar", async () => {
+  await freshDb();
+  const { id } = await ops.startClearLogs(DEV_A);
+  await completeCurrentStep(id, devStatus(5, 8, 3));
+  await completeCurrentStep(id, logDataResult(LOGS3));
+  await completeCurrentStep(id, devStatus(5, 8, 4)); // alguien marcó
+  const four = [...LOGS3, { userId: 333, ioTime: "20261020090000" }];
+  await completeCurrentStep(id, logDataResult(four));
+  await completeCurrentStep(id, devStatus(5, 8, 4));
+  await completeCurrentStep(id, { ok: true, resultJson: {} });
+  await completeCurrentStep(id, devStatus(5, 8, 0));
+  assert.equal((await ops.getOperation(id))?.stage, "done");
+  assert.deepEqual(await commandCodes(id), [
+    "GET_DEVICE_STATUS", "GET_LOG_DATA", "GET_DEVICE_STATUS", "GET_LOG_DATA", "GET_DEVICE_STATUS", "CLEAR_LOG_DATA", "GET_DEVICE_STATUS",
+  ]);
+  const n = await db.getAsync<{ n: number }>(`SELECT count(*)::int AS n FROM attendance_logs WHERE dev_id = ?`, [DEV_A]);
+  assert.equal(n?.n, 4);
+});
+
+test("CLEAR_LOGS - si después cambiaron las huellas o los usuarios, lo reporta como error", async () => {
+  await freshDb();
+  const { id } = await ops.startClearLogs(DEV_A);
+  await completeCurrentStep(id, devStatus(5, 8, 3));
+  await completeCurrentStep(id, logDataResult(LOGS3));
+  await completeCurrentStep(id, devStatus(5, 8, 3));
+  await completeCurrentStep(id, { ok: true, resultJson: {} });
+  await completeCurrentStep(id, devStatus(5, 0, 0));
+  const op = await ops.getOperation(id);
+  assert.equal(op?.stage, "error");
+  assert.match(op?.error_note ?? "", /huellas: 8 → 0/);
+});
+
+test("CLEAR_LOGS - el borrado devuelve Error pero el equipo quedó en 0: se confirma por el estado", async () => {
+  await freshDb();
+  const { id } = await ops.startClearLogs(DEV_A);
+  await completeCurrentStep(id, devStatus(5, 8, 3));
+  await completeCurrentStep(id, logDataResult(LOGS3));
+  await completeCurrentStep(id, devStatus(5, 8, 3));
+  await completeCurrentStep(id, { ok: false, returnCode: "Error" });
+  await completeCurrentStep(id, devStatus(5, 8, 0));
+  assert.equal((await ops.getOperation(id))?.stage, "done");
+});
+
+test("CLEAR_LOGS - el borrado no se aplicó: mismatch, sin perder nada", async () => {
+  await freshDb();
+  const { id } = await ops.startClearLogs(DEV_A);
+  await completeCurrentStep(id, devStatus(5, 8, 3));
+  await completeCurrentStep(id, logDataResult(LOGS3));
+  await completeCurrentStep(id, devStatus(5, 8, 3));
+  await completeCurrentStep(id, { ok: true, resultJson: {} });
+  await completeCurrentStep(id, devStatus(5, 8, 3));
+  const op = await ops.getOperation(id);
+  assert.equal(op?.stage, "mismatch");
+  assert.match(op?.result_note ?? "", /no se aplicó/);
+});

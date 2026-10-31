@@ -12,6 +12,7 @@ import { DeviceSerialDialog } from "./DeviceSerialDialog";
 import { serialCorrectionReason } from "@/lib/deviceRekey";
 import { syncClockAction, updateDeviceAction } from "@/app/admin/actions";
 import { requireAccess } from "@/lib/access";
+import { ClearLogsDialog } from "./ClearLogsDialog";
 
 export type DeviceTab = "info" | "usuarios" | "marcaciones";
 
@@ -33,6 +34,7 @@ export async function DeviceTabs({ devId, active }: { devId: string; active: Dev
       last_seen_at: true,
       site_id: true,
       device_admin_note: true,
+      stat_log_count: true,
       site: { select: { status: true } },
     },
   });
@@ -129,6 +131,7 @@ export async function DeviceTabs({ devId, active }: { devId: string; active: Dev
               {Icon.refresh}
             </OpButton>
             )}
+            {access.isAdmin && <ClearLogsDialog devId={device.dev_id} logCount={device.stat_log_count} />}
             {access.canEdit && (
               <DeviceAssignDialog
                 devId={device.dev_id}

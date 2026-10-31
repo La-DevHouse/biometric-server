@@ -388,13 +388,25 @@ export async function startSyncLogs(
   return { id, warning: offlineWarning(dev) };
 }
 
+/**
+ * "Liberar memoria de marcaciones" (lib/operations/clearLogs): respalda TODAS las
+ * marcaciones del equipo en el servidor, verifica que quedaron guardadas y recién
+ * ahí las borra del equipo; después comprueba que usuarios y huellas siguen igual.
+ * Nunca borra nada del servidor. Arranca leyendo el estado del equipo.
+ */
 export async function startClearLogs(devId: string): Promise<StartResult> {
   const dev = await ensureDevice(devId);
   const existing = await findActiveOperation("CLEAR_LOGS", devId);
   if (existing) return { id: existing };
 
-  const id = await createOperation({ kind: "CLEAR_LOGS", label: OPERATION_LABELS.CLEAR_LOGS, devId });
-  await queueCommandForOperation(id, devId, "CLEAR_LOG_DATA", {});
+  const id = await createOperation({
+    kind: "CLEAR_LOGS",
+    label: OPERATION_LABELS.CLEAR_LOGS,
+    devId,
+    stepTotal: 5,
+    plan: { phase: "before" },
+  });
+  await queueCommandForOperation(id, devId, "GET_DEVICE_STATUS", {});
   return { id, warning: offlineWarning(dev) };
 }
 

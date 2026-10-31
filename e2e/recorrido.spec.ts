@@ -60,6 +60,17 @@ test.describe.serial("Recorrido general", () => {
     await expect(page).toHaveURL(new RegExp(`/admin/dispositivos/${dev}$`));
     await expect(page.getByRole("heading", { name: `Equipo E2E ${stampOf(S)}` })).toBeVisible();
     await shot(page, "03-equipo-info");
+    // Liberar memoria de marcaciones: explica los pasos y pide escribir el serial.
+    await page.getByRole("button", { name: "Liberar memoria de marcaciones…" }).click();
+    const dlg = page.getByRole("dialog");
+    await expect(dlg.getByText(/No toca usuarios ni huellas/)).toBeVisible();
+    const go = dlg.getByRole("button", { name: "Liberar memoria de marcaciones" });
+    await expect(go).toBeDisabled();
+    await dlg.getByRole("checkbox").check();
+    await dlg.getByLabel("Número de serie del equipo").fill(dev);
+    await expect(go).toBeEnabled();
+    await shot(page, "03b-liberar-memoria");
+    await page.keyboard.press("Escape");
     const tabs = page.getByRole("navigation", { name: "Secciones del equipo" });
     await tabs.getByRole("link", { name: "Usuarios" }).click();
     await expect(page).toHaveURL(/\/usuarios$/);

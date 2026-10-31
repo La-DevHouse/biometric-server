@@ -11,6 +11,7 @@ import { TERMINAL_STAGES, OperationKind, MAX_FINGERPRINT_INDEX } from "./kinds";
 import { getOperationRow, setStage, finishOperation, queueCommandForOperation, OperationRow } from "./queue";
 import { insertAttendanceLogs, upsertUserFromInfo, UserInfoResult } from "./persist";
 import { advanceAddEmployeesBatch } from "./batch";
+import { advanceClearLogs } from "./clearLogs";
 import {
   ingestUserInfo,
   usedSlots,
@@ -157,6 +158,9 @@ export async function advanceOperationForCommand(input: AdvanceInput): Promise<v
     "ADD_EMPLOYEE_TO_DEVICE",
     "ADD_EMPLOYEES_BATCH",
     "RECONCILE_DEVICE",
+    // Liberar memoria de marcaciones: cada paso decide qué hacer con un error (antes
+    // de borrar = se detiene sin borrar; después de pedir el borrado = igual verifica).
+    "CLEAR_LOGS",
   ];
   if (!input.ok && !SELF_HANDLED.includes(op.kind)) {
     await finishOperation(
@@ -170,7 +174,6 @@ export async function advanceOperationForCommand(input: AdvanceInput): Promise<v
   switch (op.kind) {
     case "SYNC_CLOCK":
     case "RENAME_DEVICE":
-    case "CLEAR_LOGS":
     case "CLEAR_ENROLL":
     case "VIEW_BIOMETRICS":
     case "REFRESH_STATUS":
@@ -179,6 +182,10 @@ export async function advanceOperationForCommand(input: AdvanceInput): Promise<v
 
     case "SYNC_USERS":
       await advanceSyncUsers(op, input);
+      break;
+
+    case "CLEAR_LOGS":
+      await advanceClearLogs(op, input);
       break;
 
     case "SYNC_LOGS":
@@ -249,13 +256,6 @@ async function advanceSimple(op: OperationRow, input: AdvanceInput): Promise<voi
     // biometric memory.
     await runAsync(`DELETE FROM enroll_data WHERE dev_id = ?`, [op.dev_id]);
     await finishOperation(op.id, "done", "Biométricos borrados del equipo.");
-    return;
-  }
-  if (op.kind === "CLEAR_LOGS") {
-    // Deliberately does NOT touch local attendance_logs — the server is the
-    // archive; clearing the device's memory is the whole point of this
-    // action, not a reason to discard what's already synced.
-    await finishOperation(op.id, "done", "Memoria de logs del equipo borrada.");
     return;
   }
   if (op.kind === "REFRESH_STATUS") {
