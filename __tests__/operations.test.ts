@@ -1648,16 +1648,28 @@ test("SYNC_LOGS year - si el equipo se desconecta, se retoma donde quedó", asyn
   assert.deepEqual((await logParams(again)).map((p) => p.begin_time), [q1.from]);
 });
 
-test("SYNC_LOGS year - un lote sin respuesta con el equipo presente se divide y sigue, sin frenar los demás", async () => {
+test("SYNC_LOGS year - un rango sin respuesta significa 'nada ahí': a los 90 s sigue con el próximo, sin dividirlo y sin error", async () => {
   await freshDb();
-  const [q1] = syncLogs.quarterWindows();
-  const months = syncLogs.monthWindows(q1);
+  const windows = syncLogs.quarterWindows();
   const { id } = await ops.startSyncLogs(DEV_A, { mode: "year" });
-  await db.runAsync(`UPDATE operations SET stage = 'sent', updated_at = updated_at - 4 * 60 * 1000 WHERE id = ?`, [id]);
+  await db.runAsync(`UPDATE operations SET stage = 'sent' WHERE id = ?`, [id]);
+  const age = (s: number) => db.runAsync(`UPDATE operations SET updated_at = ? WHERE id = ?`, [Date.now() - s * 1000, id]);
+
+  await age(60);
   await advance.sweepStaleOperations();
+  assert.equal((await commandCodes(id)).length, 1, "a los 60 s todavía espera");
+
+  for (let i = 0; i < windows.length; i++) {
+    await age(95);
+    await db.runAsync(`UPDATE devices SET last_seen_at = ? WHERE dev_id = ?`, [Date.now(), DEV_A]);
+    await advance.sweepStaleOperations();
+  }
   const op = await ops.getOperation(id);
-  assert.equal(op?.stage, "sent", "no termina");
-  assert.deepEqual((await logParams(id)).map((p) => p.begin_time), [q1.from, months[0].from]);
+  assert.equal(op?.stage, "done");
+  assert.match(op?.result_note ?? "", /El equipo no contestó del .*: así responde cuando no encuentra marcaciones/);
+  assert.deepEqual((await logParams(id)).map((p) => p.begin_time), windows.map((w) => w.from));
+  const sync = await db.getAsync<{ last_sync_at: number | null }>(`SELECT last_sync_at FROM devices WHERE dev_id = ?`, [DEV_A]);
+  assert.ok(sync?.last_sync_at, "terminó: no se repite entera en cada reconexión");
 });
 
 test("SYNC_LOGS full - una sola lectura sin rango, y guarda también lo de más de un año", async () => {

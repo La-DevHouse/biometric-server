@@ -12,7 +12,7 @@ import { getOperationRow, setStage, finishOperation, queueCommandForOperation, O
 import { upsertUserFromInfo, UserInfoResult } from "./persist";
 import { advanceAddEmployeesBatch } from "./batch";
 import { advanceClearLogs } from "./clearLogs";
-import { advanceSyncLogs } from "./syncLogs";
+import { advanceSyncLogs, LOG_DEVICE_GONE_MS, LOG_WINDOW_TIMEOUT_MS } from "./syncLogs";
 import {
   ingestUserInfo,
   usedSlots,
@@ -1275,6 +1275,16 @@ const PROBE_PHASE_KINDS: ReadonlySet<OperationKind> = new Set(["CREATE_USER", "A
 
 const PROBE_TIMEOUT_MS = 30 * 1000;
 
+/** Un lote de marcaciones con rango ya entregado: el silencio suele significar "nada en ese rango". */
+function isLogWindow(op: OperationRow): boolean {
+  if (op.kind !== "SYNC_LOGS" || op.stage !== "sent" || !op.plan_json) return false;
+  try {
+    return JSON.parse(op.plan_json).current != null;
+  } catch {
+    return false;
+  }
+}
+
 function isPendingProbe(op: OperationRow): boolean {
   if (!PROBE_PHASE_KINDS.has(op.kind) || op.stage !== "sent") return false;
   try {
@@ -1331,7 +1341,9 @@ export async function sweepStaleOperations(): Promise<number> {
       ? VERIFY_TIMEOUT_MS
       : pendingProbe
         ? PROBE_TIMEOUT_MS
-        : op.stage === "sent"
+        : isLogWindow(op)
+          ? LOG_WINDOW_TIMEOUT_MS
+          : op.stage === "sent"
           ? THREE_MINUTES_MS
           : TEN_MINUTES_MS;
     if (age < threshold) continue;
@@ -1374,14 +1386,14 @@ export async function sweepStaleOperations(): Promise<number> {
     }
 
     if (op.kind === "SYNC_LOGS" && op.stage === "sent" && transId) {
-      const gone = !op.device_last_seen_at || now - op.device_last_seen_at > DEVICE_GONE_MS;
+      const gone = !op.device_last_seen_at || now - op.device_last_seen_at > LOG_DEVICE_GONE_MS;
       if (gone) {
         // El plan queda con el lote pendiente: se retoma al volver (lib/sync/attendance).
         await finishOperation(op.id, "error", "El equipo se desconectó durante la lectura. Lo ya leído quedó guardado; se retoma cuando vuelva.");
         expired++;
         continue;
       }
-      // Sigue consultando pero no contestó este lote: se divide o se anota, y sigue con los demás.
+      // Sigue consultando pero no contestó este lote: se anota y sigue con los demás.
       try {
         await advanceOperationForCommand({
           opId: op.id,

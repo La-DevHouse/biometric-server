@@ -988,9 +988,18 @@ Por eso la operación `SYNC_LOGS` tiene tres modos:
   ignora `begin_time`: esa respuesta ya es toda su memoria y no se le pide más. A
   los faciales con `dev_id` placeholder ni se les divide (`04` → "dev_id
   placeholder").
-- **Sin verificar en hardware (2026-11-02):** que un equipo no facial respete
-  `begin_time`/`end_time` y conteste `log_count` 0 en un rango vacío. Si no
-  contesta, ese lote vence a los 3 min y se sigue con el resto.
+- **Verificado en producción (2026-11-02, `WS535BW1_BSCS_v1.5.31`):** respeta
+  `begin_time`/`end_time`, tanto `YYYYMMDD` como `YYYYMMDDhhmmss`. Un rango sin
+  marcaciones **no contesta**: ningún equipo real ha respondido nunca `log_count`
+  0. Por eso ese lote vence a los 90 s, se anota como "no contestó" y se sigue; no
+  se divide, porque tampoco es un fallo.
+- **`total_log_count` no es lo que se puede leer (verificado 2026-11-02):** hay
+  equipos cuya lectura se detiene mucho antes del total, y lo posterior tampoco
+  sale con rango. `2022085399`: reporta 18 880, entrega 3 754 y termina en
+  13/04/2024. `2022085390`: reporta 35 427, entrega 341 y termina en 25/01/2024.
+  `2023054246`: reporta 17 498, entrega 13 333 y termina en 24/04/2026. Ese
+  `log_count` no delata el corte: coincide con los bytes enviados. Causa
+  desconocida. Las marcaciones nuevas sí llegan por `realtime_glog`.
 - "Liberar memoria" no usa esto: lee siempre toda la memoria, porque después la borra.
 - Las marcaciones de hace más de 35 días no entran solas en los días de asistencia
   (`ATTENDANCE_COMPUTE_DAYS`): hay que usar "Recalcular asistencia" con ese período.

@@ -10,6 +10,10 @@
 // Un lote que falla o llega incompleto (anuncia más marcaciones de las que manda) se
 // divide por meses y se sigue con los demás; lo que aun así falte queda en la nota final.
 //
+// Un rango sin respuesta NO es un fallo y no se divide: ningún equipo real contestó
+// nunca log_count 0 (verificado en producción, 2026-11-02): cuando no encuentra nada
+// en el rango se queda callado. Vence a los 90 s (LOG_WINDOW_TIMEOUT_MS) y se sigue.
+//
 // Los faciales con dev_id placeholder ignoran el rango y mandan toda la memoria
 // (docs/04): se les pide una sola vez, y de lo que mandan se guarda solo el último
 // año. Lo mismo si un equipo normal resulta ignorar el rango: se detecta en la
@@ -49,7 +53,14 @@ export interface SyncLogsPlan {
   older: number;
   ignoresRange?: boolean;
   failed: Array<{ from: string | null; to: string | null; reason: string }>;
+  /** Rangos que el equipo no contestó: normalmente, sin marcaciones. */
+  silent?: LogWindow[];
 }
+
+/** Lo que se espera un lote con rango. Cada bloque de una respuesta larga reinicia la espera. */
+export const LOG_WINDOW_TIMEOUT_MS = 90 * 1000;
+/** Sin consultar hace más que esto, el equipo se fue: el lote queda pendiente, no "sin respuesta". */
+export const LOG_DEVICE_GONE_MS = 60 * 1000;
 
 const compact = (d: Date) => d.toISOString().slice(0, 10).replace(/-/g, "");
 const parse = (ymd: string) => new Date(Date.UTC(Number(ymd.slice(0, 4)), Number(ymd.slice(4, 6)) - 1, Number(ymd.slice(6, 8))));
@@ -125,7 +136,9 @@ export function logDataParams(w: LogWindow | null): Record<string, string> {
   return w ? { begin_time: w.from, end_time: w.to } : {};
 }
 
-export const planSteps = (plan: SyncLogsPlan) => plan.reads + plan.failed.length + plan.pending.length + 1;
+const stepsDone = (plan: SyncLogsPlan) => plan.reads + plan.failed.length + (plan.silent?.length ?? 0);
+
+export const planSteps = (plan: SyncLogsPlan) => stepsDone(plan) + plan.pending.length + 1;
 
 /** La última importación del año de este equipo, si se cortó (equipo desconectado) sin terminar. */
 export async function interruptedYearPlan(devId: string): Promise<SyncLogsPlan | null> {
@@ -154,6 +167,10 @@ function summary(plan: SyncLogsPlan): string {
   if (plan.mode !== "since" && plan.inserted > 0) {
     parts.push("Para que las de hace más de 35 días cuenten en la asistencia, use “Recalcular asistencia” con ese período en la empresa.");
   }
+  if (plan.silent?.length) {
+    const list = plan.silent.map((s) => `del ${fmt(s.from)} al ${fmt(s.to)}`);
+    parts.push(`El equipo no contestó ${list.join(", ")}: así responde cuando no encuentra marcaciones en ese período.`);
+  }
   if (plan.failed.length > 0) {
     const list = plan.failed.map((f) => (f.from && f.to ? `del ${fmt(f.from)} al ${fmt(f.to)} (${f.reason})` : `la memoria del equipo (${f.reason})`));
     parts.push(`No se pudo leer completo: ${list.join("; ")}. Vuelva a sincronizar para reintentar.`);
@@ -171,7 +188,8 @@ export async function advanceSyncLogs(op: OperationRow, input: AdvanceStep): Pro
   const decoded = !input.ok ? null : empty ? [] : input.resultJson ? decodeLogData(input.resultJson, input.binaries) : null;
 
   let problem: string | null = null;
-  if (!input.ok) problem = input.returnCode === "TIMEOUT" ? "el equipo no respondió" : `el equipo devolvió ${input.returnCode}`;
+  if (!input.ok && input.returnCode === "TIMEOUT" && w) plan.silent = [...(plan.silent ?? []), w];
+  else if (!input.ok) problem = input.returnCode === "TIMEOUT" ? "el equipo no respondió" : `el equipo devolvió ${input.returnCode}`;
   else if (decoded === null) problem = "no se pudo leer la respuesta";
 
   if (decoded) {
@@ -212,7 +230,7 @@ export async function advanceSyncLogs(op: OperationRow, input: AdvanceStep): Pro
   const next = plan.pending.shift();
   if (next) {
     plan.current = next;
-    await setStage(op.id, "sent", { plan, stepIndex: plan.reads + plan.failed.length, stepTotal: planSteps(plan) });
+    await setStage(op.id, "sent", { plan, stepIndex: stepsDone(plan), stepTotal: planSteps(plan) });
     await queueCommandForOperation(op.id, op.dev_id, "GET_LOG_DATA", logDataParams(next));
     return;
   }
@@ -220,7 +238,8 @@ export async function advanceSyncLogs(op: OperationRow, input: AdvanceStep): Pro
   plan.current = null;
   await setStage(op.id, op.stage, { plan });
   // Última sync EXITOSA de marcajes (≠ heartbeat last_seen_at) — docs/07 §1.6. Va al
-  // final: mientras la importación no termina, el equipo cuenta como pendiente.
-  if (plan.reads > 0) await runAsync(`UPDATE devices SET last_sync_at = ${NOW_MS} WHERE dev_id = ?`, [op.dev_id]);
+  // final: mientras la importación no termina, el equipo cuenta como pendiente. La del
+  // año cuenta aunque no haya contestado nada: si no, se repetiría entera cada vez.
+  if (plan.reads > 0 || plan.mode === "year") await runAsync(`UPDATE devices SET last_sync_at = ${NOW_MS} WHERE dev_id = ?`, [op.dev_id]);
   await finishOperation(op.id, plan.failed.length > 0 ? "error" : "done", summary(plan));
 }
