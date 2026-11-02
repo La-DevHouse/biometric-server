@@ -199,7 +199,21 @@ export async function syncLogsAction(_prev: OpActionState, formData: FormData): 
   const g = await allow({ edit: true, device: devId });
   if (!g.ok) return { status: "error", message: g.error };
   try {
-    const { id, warning } = await startSyncLogs(devId);
+    const { id, warning } = await startSyncLogs(devId, { mode: "year" });
+    await afterStart();
+    return { status: "ok", id, warning };
+  } catch (err) {
+    return opError(err);
+  }
+}
+
+/** Toda la memoria del equipo, sin el límite de 1 año. Solo administradores. */
+export async function syncFullLogsAction(_prev: OpActionState, formData: FormData): Promise<OpActionState> {
+  const devId = String(formData.get("dev_id") || "");
+  const g = await allow({ admin: true });
+  if (!g.ok) return { status: "error", message: g.error };
+  try {
+    const { id, warning } = await startSyncLogs(devId, { mode: "full" });
     await afterStart();
     return { status: "ok", id, warning };
   } catch (err) {

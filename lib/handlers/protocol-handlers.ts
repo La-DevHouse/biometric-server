@@ -376,6 +376,9 @@ export async function handleSendCmdResult(
        VALUES (?, ?, ?, ?)`,
       [reportedDevId, transId, blkNoNum, requestBody]
     );
+    // Sigue llegando: una respuesta larga no debe vencer a mitad de camino (lo que
+    // llega después de vencer la operación se pierde).
+    await runAsync(`UPDATE operations SET updated_at = ${NOW_MS} WHERE current_trans_id = ?`, [transId]);
 
     const resp = buildResponse({ responseCode: "OK", transId });
     await logRawTraffic("out", reportedDevId, "send_cmd_result", resp.headers, resp.body);
@@ -636,9 +639,12 @@ export async function handleRealtimeGlog(
   const ioTime = json.io_time;
   const logImage = binaries.length > 0 ? binaries[0] : null;
 
+  // ON CONFLICT: una marcación que ya entró por GET_LOG_DATA se contesta OK igual.
+  // Con un error, el equipo no la daría por entregada.
   await runAsync(
     `INSERT INTO attendance_logs (dev_id, user_id, verify_mode, io_mode, io_time, log_image)
-     VALUES (?, ?, ?, ?, ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, ?)
+     ON CONFLICT (dev_id, user_id, io_time) DO NOTHING`,
     [devId, userId, verifyMode, ioMode, ioTime, logImage]
   );
 

@@ -9,7 +9,7 @@ import { Icon } from "@/components/ui/icons";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { OpButton } from "@/components/admin/OpButton";
 import { DeviceTabs } from "@/components/admin/DeviceTabs";
-import { syncLogsAction } from "@/app/admin/actions";
+import { syncFullLogsAction, syncLogsAction } from "@/app/admin/actions";
 import { toDayBound, formatIoTime } from "@/lib/ioTime";
 import { UrlFilters } from "@/components/admin/UrlFilters";
 import { filterSummary } from "@/lib/filterSummary";
@@ -116,11 +116,22 @@ export default async function DeviceMarcacionesPage({
           <OpButton
             action={syncLogsAction}
             hidden={{ dev_id: devId }}
-            title="Traer historial completo"
-            description="Pide al equipo TODAS las marcaciones que tiene en memoria. Normalmente no hace falta: llegan solas en el momento, y si el equipo estuvo sin red las reenvía al reconectar."
+            title="Sincronizar el último año"
+            description="Pide al equipo las marcaciones del último año, de a trimestres: cada uno se guarda aparte, así que un corte no pierde lo ya leído. Normalmente no hace falta: un equipo nuevo lo hace solo, y después llegan en el momento."
             variant="icon"
           >
             {Icon.sync}
+          </OpButton>
+          )}
+          {access.isAdmin && (
+          <OpButton
+            action={syncFullLogsAction}
+            hidden={{ dev_id: devId }}
+            title="Traer todo el historial"
+            description="Pide al equipo TODAS las marcaciones que tiene en memoria, de una sola vez y sin importar su antigüedad. Úselo solo si un cliente necesita marcaciones de hace más de un año, o para diagnosticar un equipo."
+            variant="icon"
+          >
+            {Icon.capture}
           </OpButton>
           )}
         </div>

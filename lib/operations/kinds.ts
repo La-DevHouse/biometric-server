@@ -77,7 +77,7 @@ export const OPERATION_LABELS: Record<OperationKind, string> = {
   CHANGE_PRIVILEGE: "Cambiar privilegio",
   CREATE_USER: "Crear usuario nuevo",
   DELETE_USER: "Eliminar usuario",
-  SYNC_LOGS: "Sincronizar historial completo",
+  SYNC_LOGS: "Sincronizar marcaciones",
   CLEAR_LOGS: "Liberar memoria de marcaciones",
   CLEAR_ENROLL: "Borrar todos los biométricos",
   VIEW_BIOMETRICS: "Ver biométricos",

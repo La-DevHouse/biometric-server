@@ -6,6 +6,7 @@ import { prisma } from "@/lib/db";
 import { DEFAULT_TZ, dateKeyInTz } from "@/lib/time";
 import { addDays } from "@/lib/attendance/compute";
 import { isDeviceOnline } from "@/lib/deviceStatus";
+import { devicesWithoutRecentMarks } from "@/lib/sync/attendance";
 
 export interface DayCounts {
   present: number;
@@ -58,6 +59,8 @@ export interface Dashboard {
     unmatchedIds: number;
     pendingHolds: number;
     corrections7d: number;
+    /** En línea y ya sincronizados, pero sin ninguna marcación del último año. */
+    withoutRecentMarks: { devId: string; name: string }[];
   };
   recent: RecentMark[];
 }
@@ -78,7 +81,7 @@ export async function dashboard(companyIds: number[] | null): Promise<Dashboard>
   const weekAgo = addDays(today, -7).replace(/-/g, "");
   const ids = companyIds;
 
-  const [devices, companies, contracts, people, dayRows, marksToday, unmatched, holds, corrections, recent] = await Promise.all([
+  const [devices, companies, contracts, people, dayRows, marksToday, unmatched, holds, corrections, recent, noRecentMarks] = await Promise.all([
     // Equipos: los de las sedes del alcance; los sin sede solo para quien ve todas.
     prisma.devices.findMany({
       where: ids === null ? {} : { site: { company_id: { in: ids } } },
@@ -156,6 +159,7 @@ export async function dashboard(companyIds: number[] | null): Promise<Dashboard>
        WHERE (${ids}::int[] IS NULL OR s.company_id = ANY(${ids}::int[]))
        ORDER BY al.received_at DESC
        LIMIT 8`,
+    devicesWithoutRecentMarks(ids),
   ]);
 
   const byCompany = new Map(contracts.map((c) => [c.company_id, c]));
@@ -192,6 +196,11 @@ export async function dashboard(companyIds: number[] | null): Promise<Dashboard>
       place: d.site ? `${d.site.company.name} · ${d.site.name}` : null,
     }))
     .sort((a, b) => (b.lastSeen ?? 0) - (a.lastSeen ?? 0));
+  // Solo los que están en línea: de los desconectados ya avisa "sin conexión".
+  const offlineIds = new Set(offline.map((d) => d.devId));
+  const withoutRecentMarks = assigned
+    .filter((d) => noRecentMarks.includes(d.dev_id) && !offlineIds.has(d.dev_id))
+    .map((d) => ({ devId: d.dev_id, name: d.name || d.dev_id }));
 
   return {
     today,
@@ -220,6 +229,7 @@ export async function dashboard(companyIds: number[] | null): Promise<Dashboard>
       unmatchedIds: n(unmatched[0]?.n),
       pendingHolds: holds,
       corrections7d: corrections,
+      withoutRecentMarks,
     },
     recent: recent.map((r) => ({
       ioTime: r.io_time,

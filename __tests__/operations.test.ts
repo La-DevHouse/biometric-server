@@ -1509,6 +1509,175 @@ async function commandCodes(opId: number) {
   return (await ops.getOperationCommands(opId)).map((c) => c.cmd_code);
 }
 
+// --- SYNC_LOGS: marcaciones en lotes (lib/operations/syncLogs) ---
+
+const syncLogs = require("../lib/operations/syncLogs") as typeof import("../lib/operations/syncLogs");
+
+async function logParams(opId: number) {
+  return (await ops.getOperationCommands(opId)).map((c) => JSON.parse(c.cmd_param ?? "{}"));
+}
+
+const storedLogs = async () =>
+  (await db.getAsync<{ n: number }>(`SELECT count(*)::int AS n FROM attendance_logs WHERE dev_id = ?`, [DEV_A]))?.n;
+
+test("SYNC_LOGS - los lotes cubren el último año sin huecos, del más reciente al más viejo", () => {
+  const q = syncLogs.quarterWindows("20261102");
+  assert.equal(q.length, 4);
+  assert.deepEqual(q[0], { from: "20260802", to: "20261103" });
+  assert.equal(q[3].from, "20251102");
+  for (let i = 1; i < q.length; i++) assert.equal(q[i].to, q[i - 1].from, "el borde de un lote es el inicio del siguiente");
+  assert.deepEqual(
+    syncLogs.monthWindows({ from: "20260502", to: "20260802" }).map((m) => [m.from, m.to]),
+    [["20260702", "20260802"], ["20260602", "20260702"], ["20260502", "20260602"]]
+  );
+});
+
+test("SYNC_LOGS year - pide cada trimestre, guarda cada uno y marca la sync recién al final", async () => {
+  await freshDb();
+  const windows = syncLogs.quarterWindows();
+  const { id } = await ops.startSyncLogs(DEV_A, { mode: "year" });
+  for (let i = 0; i < windows.length; i++) {
+    const sync = await db.getAsync<{ last_sync_at: number | null }>(`SELECT last_sync_at FROM devices WHERE dev_id = ?`, [DEV_A]);
+    assert.equal(sync?.last_sync_at, null, "mientras no termina, el equipo sigue pendiente");
+    await completeCurrentStep(id, logDataResult([{ userId: 111, ioTime: `${windows[i].from}120000` }]));
+    assert.equal(await storedLogs(), i + 1, "cada lote queda guardado aparte");
+  }
+  const op = await ops.getOperation(id);
+  assert.equal(op?.stage, "done");
+  assert.match(op?.result_note ?? "", /4 registros leídos del equipo: 4 nuevos/);
+  assert.deepEqual(await logParams(id), windows.map((w) => ({ begin_time: w.from, end_time: w.to })));
+  const sync = await db.getAsync<{ last_sync_at: number | null }>(`SELECT last_sync_at FROM devices WHERE dev_id = ?`, [DEV_A]);
+  assert.ok(sync?.last_sync_at);
+});
+
+test("SYNC_LOGS year - un rango vacío no es un error", async () => {
+  await freshDb();
+  const { id } = await ops.startSyncLogs(DEV_A, { mode: "year" });
+  for (let i = 0; i < 4; i++) await completeCurrentStep(id, { ok: true, resultJson: { log_count: "0" } });
+  const op = await ops.getOperation(id);
+  assert.equal(op?.stage, "done");
+  assert.match(op?.result_note ?? "", /no reportó marcaciones del último año/);
+});
+
+test("SYNC_LOGS year - un trimestre incompleto se divide por meses, conserva lo recibido y sigue", async () => {
+  await freshDb();
+  const [q1, q2, q3, q4] = syncLogs.quarterWindows();
+  const { id } = await ops.startSyncLogs(DEV_A, { mode: "year" });
+  const partial = logDataResult([{ userId: 111, ioTime: `${q1.from}120000` }]);
+  await completeCurrentStep(id, { ...partial, resultJson: { ...partial.resultJson, log_count: "50" } });
+  assert.equal(await storedLogs(), 1, "lo que llegó se guarda");
+  const months = syncLogs.monthWindows(q1);
+  assert.ok(months.length >= 3);
+  for (const _ of months) await completeCurrentStep(id, { ok: true, resultJson: { log_count: "0" } });
+  for (const _ of [q2, q3, q4]) await completeCurrentStep(id, { ok: true, resultJson: { log_count: "0" } });
+  assert.equal((await ops.getOperation(id))?.stage, "done");
+  assert.deepEqual(
+    (await logParams(id)).map((p) => p.begin_time),
+    [q1.from, ...months.map((m) => m.from), q2.from, q3.from, q4.from]
+  );
+});
+
+test("SYNC_LOGS year - un mes que también falla queda en la nota, y los demás se leen igual", async () => {
+  await freshDb();
+  const [q1] = syncLogs.quarterWindows();
+  const months = syncLogs.monthWindows(q1);
+  const { id } = await ops.startSyncLogs(DEV_A, { mode: "year" });
+  await completeCurrentStep(id, { ok: false, returnCode: "Error", resultJson: null });
+  await completeCurrentStep(id, { ok: false, returnCode: "Error", resultJson: null });
+  for (let i = 1; i < months.length + 3; i++) await completeCurrentStep(id, { ok: true, resultJson: { log_count: "0" } });
+  const op = await ops.getOperation(id);
+  assert.equal(op?.stage, "error");
+  assert.match(op?.error_note ?? "", /No se pudo leer completo: del .* \(el equipo devolvió Error\)/);
+  assert.equal((await db.getAsync<{ last_sync_at: number | null }>(`SELECT last_sync_at FROM devices WHERE dev_id = ?`, [DEV_A]))?.last_sync_at != null, true);
+});
+
+test("SYNC_LOGS year - un equipo que ignora el rango no se vuelve a leer, y lo de más de un año no se guarda", async () => {
+  await freshDb();
+  const cutoff = syncLogs.yearCutoff();
+  const [q1] = syncLogs.quarterWindows();
+  const { id } = await ops.startSyncLogs(DEV_A, { mode: "year" });
+  await completeCurrentStep(id, logDataResult([
+    { userId: 111, ioTime: `${q1.from}120000` },
+    { userId: 111, ioTime: `${cutoff}120000` },
+    { userId: 111, ioTime: "20240413120000" },
+  ]));
+  const op = await ops.getOperation(id);
+  assert.equal(op?.stage, "done");
+  assert.match(op?.result_note ?? "", /1 de más de un año no se importaron/);
+  assert.match(op?.result_note ?? "", /no filtra por fechas/);
+  assert.equal(await storedLogs(), 2);
+  assert.equal((await commandCodes(id)).length, 1);
+});
+
+test("SYNC_LOGS year - a un facial con dev_id placeholder se le pide una sola vez, sin rango", async () => {
+  await freshDb();
+  await db.runAsync(`UPDATE devices SET reported_dev_id = '000000000001' WHERE dev_id = ?`, [DEV_A]);
+  const { id } = await ops.startSyncLogs(DEV_A, { mode: "year" });
+  assert.deepEqual(await logParams(id), [{}]);
+  await completeCurrentStep(id, logDataResult([
+    { userId: 111, ioTime: `${syncLogs.quarterWindows()[0].from}120000` },
+    { userId: 111, ioTime: "20240413120000" },
+  ]));
+  assert.equal((await ops.getOperation(id))?.stage, "done");
+  assert.equal(await storedLogs(), 1);
+  assert.equal((await commandCodes(id)).length, 1);
+});
+
+test("SYNC_LOGS year - si el equipo se desconecta, se retoma donde quedó", async () => {
+  await freshDb();
+  const [q1, q2, q3, q4] = syncLogs.quarterWindows();
+  const { id } = await ops.startSyncLogs(DEV_A, { mode: "year" });
+  await completeCurrentStep(id, logDataResult([{ userId: 111, ioTime: `${q1.from}120000` }]));
+  // Vence el segundo lote con el equipo ausente.
+  await db.runAsync(`UPDATE devices SET last_seen_at = ? WHERE dev_id = ?`, [Date.now() - 6 * 60 * 1000, DEV_A]);
+  await db.runAsync(`UPDATE operations SET updated_at = updated_at - 4 * 60 * 1000 WHERE id = ?`, [id]);
+  await advance.sweepStaleOperations();
+  const cut = await ops.getOperation(id);
+  assert.equal(cut?.stage, "error");
+  assert.match(cut?.error_note ?? "", /se retoma cuando vuelva/);
+  assert.equal(await storedLogs(), 1, "lo ya leído no se pierde");
+
+  await db.runAsync(`UPDATE devices SET last_seen_at = ? WHERE dev_id = ?`, [Date.now(), DEV_A]);
+  const { id: resumed } = await ops.startSyncLogs(DEV_A, { mode: "year" });
+  assert.notEqual(resumed, id);
+  for (const _ of [q2, q3, q4]) await completeCurrentStep(resumed, { ok: true, resultJson: { log_count: "0" } });
+  assert.equal((await ops.getOperation(resumed))?.stage, "done");
+  assert.deepEqual((await logParams(resumed)).map((p) => p.begin_time), [q2.from, q3.from, q4.from]);
+  // Terminó: la próxima vuelve a empezar desde el trimestre más reciente.
+  const { id: again } = await ops.startSyncLogs(DEV_A, { mode: "year" });
+  assert.deepEqual((await logParams(again)).map((p) => p.begin_time), [q1.from]);
+});
+
+test("SYNC_LOGS year - un lote sin respuesta con el equipo presente se divide y sigue, sin frenar los demás", async () => {
+  await freshDb();
+  const [q1] = syncLogs.quarterWindows();
+  const months = syncLogs.monthWindows(q1);
+  const { id } = await ops.startSyncLogs(DEV_A, { mode: "year" });
+  await db.runAsync(`UPDATE operations SET stage = 'sent', updated_at = updated_at - 4 * 60 * 1000 WHERE id = ?`, [id]);
+  await advance.sweepStaleOperations();
+  const op = await ops.getOperation(id);
+  assert.equal(op?.stage, "sent", "no termina");
+  assert.deepEqual((await logParams(id)).map((p) => p.begin_time), [q1.from, months[0].from]);
+});
+
+test("SYNC_LOGS full - una sola lectura sin rango, y guarda también lo de más de un año", async () => {
+  await freshDb();
+  const { id } = await ops.startSyncLogs(DEV_A, { mode: "full" });
+  assert.deepEqual(await logParams(id), [{}]);
+  await completeCurrentStep(id, logDataResult([{ userId: 111, ioTime: "20240413120000" }]));
+  assert.equal((await ops.getOperation(id))?.stage, "done");
+  assert.equal(await storedLogs(), 1);
+});
+
+test("SYNC_LOGS - una operación creada antes de los lotes (sin plan) sigue funcionando", async () => {
+  await freshDb();
+  const { id } = await ops.startSyncLogs(DEV_A, { mode: "full" });
+  await db.runAsync(`UPDATE operations SET plan_json = NULL WHERE id = ?`, [id]);
+  await completeCurrentStep(id, logDataResult(LOGS3));
+  assert.equal((await ops.getOperation(id))?.stage, "done");
+  assert.equal(await storedLogs(), 3);
+});
+
 test("CLEAR_LOGS - respalda, verifica, borra y comprueba que usuarios y huellas siguen igual", async () => {
   await freshDb();
   const { id } = await ops.startClearLogs(DEV_A);

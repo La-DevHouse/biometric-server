@@ -44,6 +44,14 @@ export default async function InicioPage() {
         .join(", ") + (d.devices.offline.length > 4 ? "…" : ""),
       href: "/admin/dispositivos?estado=offline",
     });
+  if (d.attention.withoutRecentMarks.length) {
+    const noMarks = d.attention.withoutRecentMarks;
+    attention.push({
+      label: `${noMarks.length} equipo${noMarks.length === 1 ? "" : "s"} en línea sin marcaciones del último año`,
+      detail: `${noMarks.slice(0, 4).map((x) => x.name).join(", ")}${noMarks.length > 4 ? "…" : ""}: revise su fecha y hora, si tiene la memoria llena, y el sistema que usaba antes.`,
+      href: noMarks.length === 1 ? `/admin/dispositivos/${noMarks[0].devId}` : "/admin/dispositivos",
+    });
+  }
   if (access.isAdmin && d.devices.unassigned)
     attention.push({
       label: `${d.devices.unassigned} equipo${d.devices.unassigned === 1 ? "" : "s"} sin sede`,

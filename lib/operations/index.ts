@@ -31,6 +31,7 @@ import {
   MIN_TEMPLATE_BYTES,
 } from "@/lib/fingerprints";
 import { sweepStaleOperations } from "./advance";
+import { fullPlan, interruptedYearPlan, logDataParams, planSteps, sincePlan, yearPlan, type SyncLogsPlan } from "./syncLogs";
 import { isDeviceOnline } from "@/lib/deviceStatus";
 import { isPlaceholderDevId } from "@/lib/deviceIdentity";
 import { LOOKS_LIKE_SERIAL, serialCorrectionReason } from "@/lib/deviceRekey";
@@ -364,27 +365,37 @@ export async function startDeleteUser(
 
 export async function startSyncLogs(
   devId: string,
-  opts: StartOptions & { since?: Date | null } = {}
+  opts: StartOptions & { since?: Date | null; mode?: "year" | "full" } = {}
 ): Promise<StartResult> {
   const dev = await ensureDevice(devId);
   const existing = await findActiveOperation("SYNC_LOGS", devId);
   if (existing) return { id: existing };
 
-  // Con `since`: solo desde esa fecha (el pull diario de asistencia, docs/10
-  // §4.6). GET_LOG_DATA toma begin_time/end_time "YYYYMMDD" (docs/05).
-  const params: Record<string, string> = {};
+  // En lotes (lib/operations/syncLogs): `since` = desde esa fecha (el pull diario,
+  // docs/10 §4.6); "year" = el último año, o lo que faltó si la anterior se cortó;
+  // "full" = toda la memoria. GET_LOG_DATA toma begin_time/end_time "YYYYMMDD" (docs/05).
+  let plan: SyncLogsPlan;
+  let label: string;
   if (opts.since) {
-    const ymd = (d: Date) => d.toISOString().slice(0, 10).replace(/-/g, "");
-    params.begin_time = ymd(opts.since);
-    params.end_time = ymd(new Date(Date.now() + 24 * 3600 * 1000));
+    plan = sincePlan(opts.since);
+    label = `${OPERATION_LABELS.SYNC_LOGS} (desde ${plan.current?.from})`;
+  } else if (opts.mode === "year") {
+    const row = await getAsync<{ reported_dev_id: string | null }>(`SELECT reported_dev_id FROM devices WHERE dev_id = ?`, [devId]);
+    plan = (await interruptedYearPlan(devId)) ?? yearPlan(isPlaceholderDevId(row?.reported_dev_id));
+    label = `${OPERATION_LABELS.SYNC_LOGS} del último año`;
+  } else {
+    plan = fullPlan();
+    label = "Traer todo el historial del equipo";
   }
   const id = await createOperation({
     kind: "SYNC_LOGS",
-    label: opts.since ? `${OPERATION_LABELS.SYNC_LOGS} (desde ${params.begin_time})` : OPERATION_LABELS.SYNC_LOGS,
+    label,
     devId,
+    stepTotal: planSteps(plan),
+    plan,
     priority: priorityOf(opts),
   });
-  await queueCommandForOperation(id, devId, "GET_LOG_DATA", params);
+  await queueCommandForOperation(id, devId, "GET_LOG_DATA", logDataParams(plan.current));
   return { id, warning: offlineWarning(dev) };
 }
 

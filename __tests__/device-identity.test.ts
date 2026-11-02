@@ -137,6 +137,14 @@ test("realtime_glog de un placeholder no se guarda (entra por el pull de GET_LOG
   assert.equal(afterCount, before);
 });
 
+test("realtime_glog de una marcación ya guardada: contesta OK y no la duplica", async () => {
+  await poll(NORMAL, "");
+  const mark = () => handlers.handleRealtimeGlog(req(), body({ user_id: "12345678", verify_mode: "FP", io_mode: "0", io_time: "20261012080000" }), NORMAL);
+  assert.equal((await mark()).status, 200);
+  assert.equal((await mark()).status, 200, "un error haría que el equipo no la dé por entregada");
+  assert.equal(await prisma.attendance_logs.count({ where: { dev_id: NORMAL, io_time: "20261012080000" } }), 1);
+});
+
 test("equipo normal con fk_name cambiado: se reescribe con su serial, una sola vez", async () => {
   await poll(NORMAL, "Oficina");
   await poll(NORMAL, "Oficina"); // el SET_FK_NAME sale en esta consulta

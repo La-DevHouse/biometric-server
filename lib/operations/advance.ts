@@ -5,13 +5,14 @@
 // cost the device its HTTP 200 (the firmware does not retry send_cmd_result;
 // losing that response loses the result forever).
 
-import { decodeUserIdList, decodeLogData, resolveBinaryRef } from "@/lib/protocol";
+import { decodeUserIdList, resolveBinaryRef } from "@/lib/protocol";
 import { runAsync, allAsync, getAsync, prisma, NOW_MS } from "@/lib/db";
 import { TERMINAL_STAGES, OperationKind, MAX_FINGERPRINT_INDEX } from "./kinds";
 import { getOperationRow, setStage, finishOperation, queueCommandForOperation, OperationRow } from "./queue";
-import { insertAttendanceLogs, upsertUserFromInfo, UserInfoResult } from "./persist";
+import { upsertUserFromInfo, UserInfoResult } from "./persist";
 import { advanceAddEmployeesBatch } from "./batch";
 import { advanceClearLogs } from "./clearLogs";
+import { advanceSyncLogs } from "./syncLogs";
 import {
   ingestUserInfo,
   usedSlots,
@@ -161,6 +162,8 @@ export async function advanceOperationForCommand(input: AdvanceInput): Promise<v
     // Liberar memoria de marcaciones: cada paso decide qué hacer con un error (antes
     // de borrar = se detiene sin borrar; después de pedir el borrado = igual verifica).
     "CLEAR_LOGS",
+    // Marcaciones en lotes: un lote que falla se divide o se anota, y se sigue con los demás.
+    "SYNC_LOGS",
   ];
   if (!input.ok && !SELF_HANDLED.includes(op.kind)) {
     await finishOperation(
@@ -369,33 +372,6 @@ async function getCommandParamUserId(transId: number): Promise<string> {
   } catch {
     return "desconocido";
   }
-}
-
-async function advanceSyncLogs(op: OperationRow, input: AdvanceInput): Promise<void> {
-  // Un rango sin marcaciones (el pull diario, docs/10 §4.6) llega con
-  // log_count 0 y sin binario: eso es "nada nuevo", no un error de lectura.
-  const empty = Number(input.resultJson?.log_count) === 0;
-  const entries = empty ? [] : input.resultJson ? decodeLogData(input.resultJson, input.binaries) : null;
-  if (entries === null) {
-    await finishOperation(op.id, "error", "No se pudo leer el historial del equipo.");
-    return;
-  }
-  const summary = await insertAttendanceLogs(op.dev_id, entries);
-  // Última sync EXITOSA de marcajes (≠ heartbeat last_seen_at) — docs/07 §1.6.
-  await runAsync(`UPDATE devices SET last_sync_at = ${NOW_MS} WHERE dev_id = ?`, [op.dev_id]);
-  // Resolver a quién pertenece cada marcaje por cédula (user_id = cédula, docs/10 §4.6).
-  await runAsync(
-    `UPDATE attendance_logs al SET employee_id = e.id
-       FROM employee e
-      WHERE al.dev_id = ? AND al.employee_id IS NULL
-        AND regexp_replace(e.national_id, '\\D', '', 'g') = al.user_id`,
-    [op.dev_id]
-  );
-  const note =
-    summary.total === 0
-      ? "El equipo no reportó marcaciones."
-      : `${summary.total} registros leídos del equipo: ${summary.inserted} nuevos, ${summary.skipped} ya estaban registrados.`;
-  await finishOperation(op.id, "done", note);
 }
 
 /**
@@ -1394,6 +1370,33 @@ export async function sweepStaleOperations(): Promise<number> {
       } catch (err) {
         console.error("[operations] fallo al resolver un timeout de verificación:", op.id, err);
         // Falls through to the generic error path below.
+      }
+    }
+
+    if (op.kind === "SYNC_LOGS" && op.stage === "sent" && transId) {
+      const gone = !op.device_last_seen_at || now - op.device_last_seen_at > DEVICE_GONE_MS;
+      if (gone) {
+        // El plan queda con el lote pendiente: se retoma al volver (lib/sync/attendance).
+        await finishOperation(op.id, "error", "El equipo se desconectó durante la lectura. Lo ya leído quedó guardado; se retoma cuando vuelva.");
+        expired++;
+        continue;
+      }
+      // Sigue consultando pero no contestó este lote: se divide o se anota, y sigue con los demás.
+      try {
+        await advanceOperationForCommand({
+          opId: op.id,
+          devId: op.dev_id,
+          transId,
+          cmdCode: "GET_LOG_DATA",
+          ok: false,
+          returnCode: "TIMEOUT",
+          resultJson: null,
+          binaries: [],
+        });
+        expired++;
+        continue;
+      } catch (err) {
+        console.error("[operations] fallo al resolver un lote de marcaciones sin respuesta:", op.id, err);
       }
     }
 

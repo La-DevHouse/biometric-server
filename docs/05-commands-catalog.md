@@ -969,6 +969,32 @@ fecha/hora completa hasta el segundo) contra los logs ya conocidos por
 dispositivo de referencia podrían tener un significado que esta muestra no
 llegó a activar — no se les asume un valor por decoración.
 
+**Lectura en lotes (`lib/operations/syncLogs.ts`):** el servidor guarda una
+respuesta entera o nada, así que una lectura grande que se corta no deja nada.
+Por eso la operación `SYNC_LOGS` tiene tres modos:
+
+| Modo | Quién lo usa | Qué pide |
+|------|--------------|----------|
+| `year` | Primera sincronización de un equipo, botón del panel | Último año en 4 trimestres, del más reciente al más viejo. Lo más viejo no se guarda |
+| `since` | Pull diario | Desde `last_sync_at` menos 1 día |
+| `full` | "Traer todo el historial" (solo administradores) | Toda la memoria, sin rango |
+
+- Un lote que falla o llega incompleto (`log_count` mayor que lo recibido) se
+  divide por meses y se sigue con los demás. Lo que aun así falte queda en la
+  nota final de la operación.
+- Si el equipo se desconecta, el plan conserva el lote pendiente y la importación
+  se retoma al volver.
+- Si una respuesta trae marcaciones anteriores al inicio del rango, el equipo
+  ignora `begin_time`: esa respuesta ya es toda su memoria y no se le pide más. A
+  los faciales con `dev_id` placeholder ni se les divide (`04` → "dev_id
+  placeholder").
+- **Sin verificar en hardware (2026-11-02):** que un equipo no facial respete
+  `begin_time`/`end_time` y conteste `log_count` 0 en un rango vacío. Si no
+  contesta, ese lote vence a los 3 min y se sigue con el resto.
+- "Liberar memoria" no usa esto: lee siempre toda la memoria, porque después la borra.
+- Las marcaciones de hace más de 35 días no entran solas en los días de asistencia
+  (`ATTENDANCE_COMPUTE_DAYS`): hay que usar "Recalcular asistencia" con ese período.
+
 **Notas:**
 - Puede retornar MUCHA data (>100MB para un año completo)
 - Se **fragmenta automáticamente** en bloques de 8KB

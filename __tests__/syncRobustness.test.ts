@@ -25,7 +25,9 @@ const DEV_FP = P + "FP";
 const DEV_LOGS = P + "LOGS";
 const DEV_SWEEP = P + "SWEEP";
 const DEV_OFF = P + "OFF";
-const DEVS = [DEV_EMPTY, DEV_FP, DEV_LOGS, DEV_SWEEP, DEV_OFF];
+const DEV_FIRST = P + "FIRST";
+const DEV_STALE = P + "STALE";
+const DEVS = [DEV_EMPTY, DEV_FP, DEV_LOGS, DEV_SWEEP, DEV_OFF, DEV_FIRST, DEV_STALE];
 const companies: number[] = [];
 
 after(async () => {
@@ -53,6 +55,35 @@ async function step(devId: string, opId: number, ok: boolean, returnCode: string
     resultJson: resultJson as Record<string, any> | null, binaries: [],
   });
 }
+
+test("asistencia - la primera vez trae el último año en lotes; después, solo lo nuevo", async () => {
+  await assignedDevice(DEV_FIRST);
+  const attendance = require("../lib/sync/attendance") as typeof import("../lib/sync/attendance");
+  const [first] = await attendance.attendancePullDevices([DEV_FIRST], "manual");
+  assert.match((await ops.getOperation(first))?.label ?? "", /del último año/);
+  const steps = async (id: number) => (await ops.getOperationCommands(id)).length;
+  while ((await ops.getOperation(first))?.stage !== "done") await step(DEV_FIRST, first, true, "OK", { log_count: "0" });
+  assert.equal(await steps(first), 4);
+
+  const [second] = await attendance.attendancePullDevices([DEV_FIRST], "manual");
+  assert.match((await ops.getOperation(second))?.label ?? "", /\(desde \d{8}\)/);
+  assert.equal(await steps(second), 1);
+  await step(DEV_FIRST, second, true, "OK", { log_count: "0" });
+});
+
+test("asistencia - aviso: con marcaciones viejas y ninguna del último año; uno nuevo sin marcaciones no cuenta", async () => {
+  const attendance = require("../lib/sync/attendance") as typeof import("../lib/sync/attendance");
+  const none = () => attendance.devicesWithoutRecentMarks(null, DEV_STALE);
+  await assignedDevice(DEV_STALE);
+  assert.deepEqual(await none(), [], "todavía no sincronizó");
+  await db.runAsync(`UPDATE devices SET last_sync_at = ? WHERE dev_id = ?`, [Date.now(), DEV_STALE]);
+  assert.deepEqual(await none(), [], "equipo nuevo, sin marcaciones en ningún lado");
+  const e = (io_time: string) => ({ user_id: "1", verify_mode: "1", io_mode: 0, io_time });
+  await persist.insertAttendanceLogs(DEV_STALE, [e("20240413080000")]);
+  assert.deepEqual(await none(), [DEV_STALE]);
+  await persist.insertAttendanceLogs(DEV_STALE, [e(`${new Date().toISOString().slice(0, 10).replace(/-/g, "")}080000`)]);
+  assert.deepEqual(await none(), []);
+});
 
 test("reconcile - equipo sin huellas: ERROR_NO_USER al listar es una lista vacía, no un fallo", async () => {
   await assignedDevice(DEV_EMPTY);

@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { requirePage } from "@/lib/access";
 import { getAsync, initDb, prisma } from "@/lib/db";
 import { isDeviceOnline } from "@/lib/deviceStatus";
+import { devicesWithoutRecentMarks } from "@/lib/sync/attendance";
 import { formatRelativeTime } from "@/lib/formatRelativeTime";
 import { Card, CardMeta } from "@/components/ui/Card";
 import { StatCard } from "@/components/ui/StatCard";
@@ -44,7 +45,7 @@ async function getData(devId: string) {
   );
   if (!device) return null;
 
-  const [userCount, currentSite, lastRun, openHold, history] = await Promise.all([
+  const [userCount, currentSite, lastRun, openHold, history, noRecentMarks] = await Promise.all([
     getAsync<{ n: number }>(`SELECT COUNT(*) AS n FROM users WHERE dev_id = ?`, [devId]),
     device.site_id != null
       ? prisma.site.findUnique({
@@ -69,9 +70,10 @@ async function getData(devId: string) {
         site: { select: { name: true, company: { select: { id: true, name: true } } } },
       },
     }),
+    devicesWithoutRecentMarks(null, devId),
   ]);
 
-  return { device, userCount: userCount?.n ?? 0, currentSite, lastRun, openHold, history };
+  return { device, userCount: userCount?.n ?? 0, currentSite, lastRun, openHold, history, noRecentMarks: noRecentMarks.length > 0 };
 }
 
 /** Equipo → Información (docs/11 E6): asignación, contadores, sincronización y bajas frenadas. */
@@ -81,7 +83,7 @@ export default async function DeviceDetailPage({ params }: { params: Promise<{ d
   const data = await getData(devId);
   if (!data) notFound();
 
-  const { device, userCount, currentSite, lastRun, openHold, history } = data;
+  const { device, userCount, currentSite, lastRun, openHold, history, noRecentMarks } = data;
   const runStats = (lastRun?.stats ?? {}) as {
     added?: number;
     completed?: number;
@@ -103,6 +105,14 @@ export default async function DeviceDetailPage({ params }: { params: Promise<{ d
             Este equipo está desconectado. Puede encolar operaciones; se ejecutarán cuando vuelva a reportarse.
           </CardMeta>
         </Card>
+      )}
+
+      {online && noRecentMarks && (
+        <div className="border border-accent2 p-3 text-sm">
+          <strong>Sin marcaciones del último año.</strong> El equipo está en línea, pero el servidor no tiene ninguna
+          marcación suya de los últimos 12 meses. Revise la fecha y hora en la pantalla del equipo, si tiene la memoria
+          llena, y el sistema que usaba antes: lo reciente podría estar allí.
+        </div>
       )}
 
       <section className="flex flex-col gap-2 border border-divider p-4">

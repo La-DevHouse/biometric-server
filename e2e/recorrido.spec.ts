@@ -79,6 +79,14 @@ test.describe.serial("Recorrido general", () => {
     // La semana sembrada: marcaciones de las dos personas.
     await page.goto(`/admin/dispositivos/${dev}/marcaciones?from=${S.from}&to=${S.to}`);
     await expect(page.locator("table tbody tr").first()).toBeVisible();
+    // Sincronizar: el último año en lotes, y aparte todo el historial (administradores).
+    await page.getByRole("button", { name: "Sincronizar el último año" }).click();
+    await expect(page.getByRole("dialog").getByText(/de a trimestres/)).toBeVisible();
+    await page.keyboard.press("Escape");
+    await page.getByRole("button", { name: "Traer todo el historial" }).click();
+    await expect(page.getByRole("dialog").getByText(/sin importar su antigüedad/)).toBeVisible();
+    await shot(page, "04b-traer-historial");
+    await page.keyboard.press("Escape");
     await shot(page, "04-equipo-marcaciones");
   });
 

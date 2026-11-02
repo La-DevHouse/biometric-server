@@ -349,9 +349,10 @@ Reglas para el reconciliador:
 
 - **(a) `attendance_pull`**, diario (`SYNC_ATTENDANCE_CRON`, por defecto 02:00 hora
   de Caracas), por dispositivo con sede: `GET_LOG_DATA` con
-  `begin_time = last_sync_at` (o 7 días, si no hay valor). El unique natural
+  `begin_time = last_sync_at`. Si nunca sincronizó, trae el **último año en lotes
+  trimestrales** (ver `05` → `GET_LOG_DATA`, "Lectura en lotes"). El unique natural
   `ux_attendance_natural` descarta los duplicados; `devices.last_sync_at` se
-  actualiza solo si el pull termina bien.
+  actualiza al terminar, si alguna lectura respondió bien.
 - **(b) `attendance_compute`**, al terminar (a): corre el motor de Hito 4 sobre los
   días afectados. Mientras el motor no exista, este trabajo no hace nada.
 - **Resolución de `attendance_logs.employee_id`**: pasa a ser por cédula directa
