@@ -533,3 +533,76 @@ test("importar - 5 000 trabajadores: vista previa + aplicar en tiempo razonable"
   assert.ok(tPreview + tApply < 60_000);
   assert.equal(await prisma.employment.count({ where: { company_id: id } }), 5000);
 });
+
+test("importar - persona con dos puestos: no bloquea, se elige uno y queda un solo contrato", async () => {
+  const id = await company();
+  const dup = CED();
+  const other = CED();
+  const buf = await galepso([
+    [`OSMAR JESUS ${TAG} PEREZ`, dup, `Instructor ${TAG}`, d(2023, 11, 6)],
+    [`ANA ${TAG} LOPEZ`, other, `Analista ${TAG}`, d(2024, 1, 1)],
+    [`OSMAR JESUS ${TAG} PEREZ`, dup, `Profesor ${TAG}`, d(2026, 2, 13)],
+  ]);
+  const v = await service.previewCompanyImport(id, buf, "t.xlsx", null);
+  // No es un rechazo, la persona sale en la lista una sola vez, y falta elegir.
+  assert.equal(v.ok, true, JSON.stringify(v.rejected));
+  assert.deepEqual(v.people.filter((p) => p.cedula === dup).map((p) => p.pendingChoice), [true]);
+  assert.equal(v.counts.people, 2);
+  assert.deepEqual(v.duplicates.map((x) => [x.cedula, x.chosenRow, x.options.map((o) => [o.row, o.startDate])]), [
+    [dup, null, [[9, "2023-11-06"], [11, "2026-02-13"]]],
+  ]);
+  // Los dos cargos están en pantalla mientras no se elija.
+  assert.equal(v.cargos.length, 3);
+
+  // Sin elegir no se confirma, y la importación sigue abierta.
+  await assert.rejects(service.confirmCompanyImport(v.runId, null), /Falta elegir el puesto/);
+  const res = await service.confirmCompanyImport(v.runId, null, { duplicates: { [dup]: 11 } });
+  assert.equal(res.status, "applied", JSON.stringify(res));
+
+  const contracts = await prisma.employment.findMany({
+    where: { company_id: id, employee: { national_id: dup } },
+    select: { start_date: true, position: { select: { name: true } } },
+  });
+  assert.equal(contracts.length, 1, "un solo contrato");
+  assert.equal(contracts[0].start_date.toISOString().slice(0, 10), "2026-02-13");
+  assert.match(contracts[0].position?.name ?? "", /^Profesor/);
+  // El cargo de la fila descartada no creó un puesto.
+  assert.equal(await prisma.position.count({ where: { name: { equals: `Instructor ${TAG}`, mode: "insensitive" } } }), 0);
+
+  // Reimportar el mismo archivo: ya viene elegida la de su contrato vigente, y no hay nada que hacer con ella.
+  const again = await service.previewCompanyImport(id, buf, "t.xlsx", null);
+  assert.equal(again.duplicates[0].chosenRow, 11);
+  assert.equal(again.people.find((p) => p.cedula === dup)?.contract, "same");
+  assert.equal(again.people.find((p) => p.cedula === dup)?.pendingChoice, undefined);
+});
+
+test("importar - cédula repetida: filas iguales se juntan con aviso; nombres distintos bloquean", async () => {
+  const id = await company();
+  const same = CED();
+  const v = await service.previewCompanyImport(
+    id,
+    await galepso([
+      [`ROSA MARIA ${TAG} DIAZ`, same, `Cajera ${TAG}`, d(2024, 3, 1)],
+      [`ROSA MARIA ${TAG} DIAZ`, same, `Cajera ${TAG}`, d(2024, 3, 1)],
+    ]),
+    "t.xlsx",
+    null
+  );
+  assert.equal(v.ok, true, JSON.stringify(v.rejected));
+  assert.equal(v.duplicates.length, 0);
+  assert.equal(v.counts.people, 1);
+  assert.ok(v.warnings.some((w) => w.includes(same) && w.includes("mismos datos")), JSON.stringify(v.warnings));
+
+  const clash = CED();
+  const w = await service.previewCompanyImport(
+    id,
+    await galepso([
+      [`LUIS ${TAG} UNO`, clash, "", d(2024, 3, 1)],
+      [`PEDRO ${TAG} DOS`, clash, "", d(2024, 3, 1)],
+    ]),
+    "t.xlsx",
+    null
+  );
+  assert.equal(w.ok, false);
+  assert.match(w.rejected[0].message, /nombres distintos/);
+});

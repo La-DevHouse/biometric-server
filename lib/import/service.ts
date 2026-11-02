@@ -8,7 +8,7 @@ import { prisma } from "@/lib/db";
 import { writeAudit } from "@/lib/audit";
 import { devicesAffectedByCompany, triggerReconcile } from "@/lib/sync/reconcile";
 import { applyPlan, type ApplyResult } from "./apply";
-import { buildPlan, loadSnapshot, type CategoryOp, type CompanyImportPlan, type Overrides, type PersonOp, type Rejection } from "./plan";
+import { buildPlan, loadSnapshot, type CategoryOp, type CompanyImportPlan, type DuplicateOp, type Overrides, type PersonOp, type Rejection } from "./plan";
 import { readGalepso } from "./read";
 
 export const MAX_FILE_BYTES = 5 * 1024 * 1024;
@@ -18,7 +18,7 @@ const RETENTION_DAYS = 30;
 
 export type PreviewPerson = Pick<
   PersonOp,
-  "row" | "cedula" | "employee" | "firstName" | "lastName" | "split" | "fileName" | "birthDate" | "personChanges" | "contract" | "startDate" | "cargoKey" | "deptKey" | "changes"
+  "row" | "cedula" | "employee" | "firstName" | "lastName" | "split" | "fileName" | "birthDate" | "personChanges" | "contract" | "startDate" | "cargoKey" | "deptKey" | "changes" | "pendingChoice"
 >;
 
 export interface PreviewView {
@@ -29,6 +29,8 @@ export interface PreviewView {
   ok: boolean;
   warnings: string[];
   rejected: Rejection[];
+  /** Personas con varias filas distintas: se elige con cuál queda (docs/14 D4). */
+  duplicates: DuplicateOp[];
   counts: {
     people: number;
     newPeople: number;
@@ -60,7 +62,7 @@ async function computePlan(companyId: number, file: Buffer, overrides: Overrides
 /** Huella del plan SIN ajustes: si cambia entre la vista previa y confirmar, algo cambió en la base. */
 function planHash(plan: CompanyImportPlan): string {
   return createHash("sha256")
-    .update(JSON.stringify([plan.people.map((p) => ({ ...p, row: undefined })), plan.cargos, plan.departments, plan.rejected, plan.ok]))
+    .update(JSON.stringify([plan.people.map((p) => ({ ...p, row: undefined })), plan.cargos, plan.departments, plan.rejected, plan.duplicates, plan.ok]))
     .digest("hex");
 }
 
@@ -82,6 +84,7 @@ async function buildView(runId: number, fileName: string, plan: CompanyImportPla
     ok: plan.ok,
     warnings: plan.warnings,
     rejected: plan.rejected,
+    duplicates: plan.duplicates,
     counts: {
       people: plan.people.length,
       newPeople: plan.people.filter((p) => p.employee === "create").length,
@@ -94,8 +97,8 @@ async function buildView(runId: number, fileName: string, plan: CompanyImportPla
     },
     people: sorted
       .slice(0, VIEW_LIMIT)
-      .map(({ row, cedula, employee, firstName, lastName, split, fileName: fn, birthDate, personChanges, contract, startDate, cargoKey, deptKey, changes }) => ({
-        row, cedula, employee, firstName, lastName, split, fileName: fn, birthDate, personChanges, contract, startDate, cargoKey, deptKey, changes,
+      .map(({ row, cedula, employee, firstName, lastName, split, fileName: fn, birthDate, personChanges, contract, startDate, cargoKey, deptKey, changes, pendingChoice }) => ({
+        row, cedula, employee, firstName, lastName, split, fileName: fn, birthDate, personChanges, contract, startDate, cargoKey, deptKey, changes, pendingChoice,
       })),
     peopleTotal: plan.people.length,
     cargos: plan.cargos,
@@ -177,7 +180,10 @@ export async function confirmCompanyImport(runId: number, actorId: number | null
       return { status: "changed", view, message: "Algo cambió en el sistema desde la vista previa. Revise la vista previa actualizada y confirme de nuevo." };
     }
     plan = await computePlan(run.company_id, file, overrides);
-    if (!plan.ok) throw new Error("Los ajustes de la vista previa dejaron filas inválidas. Vuelva a subir el archivo.");
+    // La fila elegida puede chocar con su contrato vigente: se dice cuál y por qué.
+    if (!plan.ok) throw new Error(plan.rejected[0]?.message ?? "Los ajustes de la vista previa dejaron filas inválidas. Vuelva a subir el archivo.");
+    const pending = plan.duplicates.filter((d) => d.chosenRow === null);
+    if (pending.length) throw new Error(`Falta elegir el puesto de: ${pending.map((d) => d.name).join(", ")}.`);
   } catch (e) {
     await prisma.import_run.update({ where: { id: run.id }, data: { status: "preview" } });
     throw e;

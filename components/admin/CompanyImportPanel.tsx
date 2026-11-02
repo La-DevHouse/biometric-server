@@ -14,7 +14,7 @@ import { useToast } from "./Toaster";
 import { describeActionError } from "@/lib/actionErrors";
 import { previewCompanyImportAction, confirmCompanyImportAction, reopenCompanyImportAction } from "@/app/admin/empresas/[id]/importar/actions";
 import type { PreviewPerson, PreviewView } from "@/lib/import/service";
-import type { CategoryChoice, CategoryOp } from "@/lib/import/plan";
+import type { CategoryChoice, CategoryOp, DuplicateOption } from "@/lib/import/plan";
 
 const SELECT = `${FIELD_INPUT} h-auto! py-[6px] text-sm`;
 const fmtDate = (ymd: string) => ymd.split("-").reverse().join("/");
@@ -29,6 +29,8 @@ export function CompanyImportPanel({ companyId, resumeRunId }: { companyId: numb
   const [splits, setSplits] = useState<Record<string, number>>({});
   const [cargoChoice, setCargoChoice] = useState<Choices>({});
   const [deptChoice, setDeptChoice] = useState<Choices>({});
+  /** cédula repetida → fila elegida (las que el servidor ya trae elegidas no se guardan aquí). */
+  const [dupChoice, setDupChoice] = useState<Record<string, number>>({});
   const [notice, setNotice] = useState<string | null>(null);
   const [reading, startReading] = useTransition();
   const [applying, startApplying] = useTransition();
@@ -38,6 +40,7 @@ export function CompanyImportPanel({ companyId, resumeRunId }: { companyId: numb
     setSplits({});
     setCargoChoice({});
     setDeptChoice({});
+    setDupChoice({});
   }
 
   // "Continuar" desde el historial: reabre la vista previa del archivo guardado.
@@ -85,11 +88,21 @@ export function CompanyImportPanel({ companyId, resumeRunId }: { companyId: numb
     setDrop({ status: "idle" });
   }
 
+  /** Lo elegido en pantalla sobre lo que ya venía elegido (su contrato vigente). */
+  function effectiveDuplicates(): Record<string, number> {
+    const out: Record<string, number> = {};
+    for (const d of view?.duplicates ?? []) {
+      const row = dupChoice[d.cedula] ?? d.chosenRow;
+      if (row !== null) out[d.cedula] = row;
+    }
+    return out;
+  }
+
   function confirm() {
     if (!view) return;
     startApplying(async () => {
       try {
-        const res = await confirmCompanyImportAction(view.runId, { splits, cargos: cargoChoice, departments: deptChoice });
+        const res = await confirmCompanyImportAction(view.runId, { splits, cargos: cargoChoice, departments: deptChoice, duplicates: effectiveDuplicates() });
         if (res.ok) {
           push("ok", res.message);
           reset();
@@ -128,8 +141,18 @@ export function CompanyImportPanel({ companyId, resumeRunId }: { companyId: numb
     return `Departamento: ${names[0]}`;
   };
 
+  const dupByCedula = new Map((view?.duplicates ?? []).map((d) => [d.cedula, d]));
+  const chosenOption = (cedula: string): DuplicateOption | null => {
+    const d = dupByCedula.get(cedula);
+    const row = d ? (dupChoice[cedula] ?? d.chosenRow) : null;
+    return d?.options.find((o) => o.row === row) ?? null;
+  };
+  const pendingDuplicates = (view?.duplicates ?? []).filter((d) => !chosenOption(d.cedula));
   const pendingReview = view ? view.people.filter((p) => p.split?.ambiguous && splits[p.cedula] === undefined).length : 0;
   const nothingToDo = view ? view.counts.newContracts + view.counts.updatedContracts + view.counts.updatedPeople === 0 : true;
+  /** Nombre final de un cargo o departamento; si salió de la tabla (fila descartada), el del archivo. */
+  const optionLabel = (key: string | null, text: string, byKey: Map<string, CategoryOp>, label: (k: string | null) => string) =>
+    !key ? "—" : byKey.has(key) ? label(key) : text;
 
   return (
     <div className="flex flex-col gap-4">
@@ -200,13 +223,51 @@ export function CompanyImportPanel({ companyId, resumeRunId }: { companyId: numb
             </div>
           )}
 
+          {view.duplicates.length > 0 && (
+            <div className="flex flex-col gap-2 border border-accent2 bg-accent2-100 p-3" data-testid="duplicados">
+              <h3 className="m-0 font-mono text-label uppercase tracking-[0.12em] text-neutral-800">Personas con más de un puesto</h3>
+              <p className="m-0 text-sm">
+                <b>{view.duplicates.length === 1 ? "Esta persona aparece" : `Estas ${view.duplicates.length} personas aparecen`} varias veces en el archivo.</b>{" "}
+                Elija con qué puesto queda{view.duplicates.length === 1 ? "" : " cada una"}: se crea <b>un solo contrato</b>, con el puesto, el departamento y la fecha de ingreso de la opción elegida.
+              </p>
+              {view.duplicates.map((d) => {
+                const current = dupChoice[d.cedula] ?? d.chosenRow;
+                return (
+                  <fieldset key={d.cedula} className="m-0 flex flex-col gap-1 border border-neutral-400 bg-surface p-3">
+                    <legend className="px-1 text-sm font-semibold">
+                      {d.name} · <span className="font-mono">{d.cedula}</span>
+                    </legend>
+                    {d.options.map((o) => (
+                      <label key={o.row} className="flex cursor-pointer items-start gap-2 text-sm">
+                        <input
+                          type="radio"
+                          name={`dup-${d.cedula}`}
+                          checked={current === o.row}
+                          onChange={() => setDupChoice((prev) => ({ ...prev, [d.cedula]: o.row }))}
+                          className="mt-1"
+                        />
+                        <span>
+                          <b>{optionLabel(o.cargoKey, o.cargoText, cargoByKey, cargoLabel)}</b>
+                          {o.deptKey ? ` · ${optionLabel(o.deptKey, o.deptText, deptByKey, deptLabel)}` : ""}
+                          {" · ingreso "}
+                          {fmtDate(o.startDate)}
+                          <span className="text-text/60"> (fila {o.row})</span>
+                        </span>
+                      </label>
+                    ))}
+                  </fieldset>
+                );
+              })}
+            </div>
+          )}
+
           {view.departments.length > 0 && (
             <CategoryTable
               title="Departamentos"
               intro={
                 <>
                   Unifique los que son el mismo (<b>Igual que…</b>), corrija el nombre de los que se crean, o asígnelos a un departamento que ya
-                  existe. Lo que decidas se recuerda para los próximos archivos.
+                  existe. Lo que decida se recuerda para los próximos archivos.
                 </>
               }
               noun="departamento"
@@ -225,7 +286,7 @@ export function CompanyImportPanel({ companyId, resumeRunId }: { companyId: numb
                 <>
                   Unifique los cargos que son el mismo puesto (<b>Igual que…</b>: un error de escritura o la versión en femenino), corrija el nombre de
                   los que se crean, o asígnelos a un puesto que ya existe. Cada puesto queda en el departamento en el que está en el archivo. Lo
-                  que decidas se recuerda para los próximos archivos.
+                  que decida se recuerda para los próximos archivos.
                 </>
               }
               noun="puesto"
@@ -260,16 +321,22 @@ export function CompanyImportPanel({ companyId, resumeRunId }: { companyId: numb
                   </tr>
                 </thead>
                 <tbody>
-                  {view.people.map((p) => (
-                    <PersonRow
-                      key={p.cedula}
-                      p={p}
-                      boundary={splits[p.cedula]}
-                      onBoundary={(b) => setSplits((s) => ({ ...s, [p.cedula]: b }))}
-                      cargo={cargoLabel(p.cargoKey)}
-                      department={deptLabel(p.deptKey)}
-                    />
-                  ))}
+                  {view.people.map((p) => {
+                    // Persona con varias filas: lo que muestra es lo de la opción elegida.
+                    const opt = chosenOption(p.cedula);
+                    const pending = dupByCedula.has(p.cedula) && !opt;
+                    return (
+                      <PersonRow
+                        key={p.cedula}
+                        p={opt ? { ...p, row: opt.row, startDate: opt.startDate } : p}
+                        boundary={splits[p.cedula]}
+                        onBoundary={(b) => setSplits((s) => ({ ...s, [p.cedula]: b }))}
+                        cargo={opt ? optionLabel(opt.cargoKey, opt.cargoText, cargoByKey, cargoLabel) : cargoLabel(p.cargoKey)}
+                        department={opt ? optionLabel(opt.deptKey, opt.deptText, deptByKey, deptLabel) : deptLabel(p.deptKey)}
+                        pendingChoice={pending}
+                      />
+                    );
+                  })}
                 </tbody>
               </Table>
               {view.peopleTotal > view.people.length && (
@@ -294,12 +361,17 @@ export function CompanyImportPanel({ companyId, resumeRunId }: { companyId: numb
           )}
 
           <div className="flex flex-wrap items-center gap-2">
-            <Btn variant="primary" onClick={confirm} disabled={!view.ok || applying || nothingToDo}>
+            <Btn variant="primary" onClick={confirm} disabled={!view.ok || applying || nothingToDo || pendingDuplicates.length > 0}>
               {applying ? "Aplicando…" : "Confirmar importación"}
             </Btn>
             <Btn onClick={reset} disabled={applying}>
               Subir otro archivo
             </Btn>
+            {view.ok && pendingDuplicates.length > 0 && (
+              <span className="text-sm font-semibold">
+                Falta elegir el puesto de {pendingDuplicates.length === 1 ? "1 persona" : `${pendingDuplicates.length} personas`} (arriba).
+              </span>
+            )}
             {view.ok && nothingToDo && <span className="text-sm text-neutral-700">Todos ya tienen su contrato: no hay nada para aplicar.</span>}
             {view.ok && !nothingToDo && pendingReview > 0 && (
               <span className="text-sm text-neutral-700">Quedan {pendingReview} nombre(s) resaltado(s) sin revisar.</span>
@@ -354,16 +426,19 @@ function PersonRow({
   onBoundary,
   cargo,
   department,
+  pendingChoice,
 }: {
   p: PreviewPerson;
   boundary?: number;
   onBoundary: (b: number) => void;
   cargo: string;
   department: string;
+  /** Aparece varias veces y falta elegir el puesto. */
+  pendingChoice?: boolean;
 }) {
   const split = p.split;
   const b = boundary ?? split?.boundary ?? 0;
-  const highlight = split?.ambiguous && boundary === undefined;
+  const highlight = pendingChoice || (split?.ambiguous && boundary === undefined);
   const contract =
     p.contract === "create" ? (
       <Tag variant="accent">Nuevo</Tag>
@@ -405,9 +480,9 @@ function PersonRow({
           </span>
         ))}
       </Td>
-      <Td className="whitespace-nowrap">{fmtDate(p.startDate)}</Td>
-      <Td>{department}</Td>
-      <Td>{cargo}</Td>
+      <Td className="whitespace-nowrap">{pendingChoice ? "—" : fmtDate(p.startDate)}</Td>
+      <Td>{pendingChoice ? "—" : department}</Td>
+      <Td>{pendingChoice ? <Tag variant="accent2">Elija el puesto</Tag> : cargo}</Td>
       <Td>{contract}</Td>
     </Tr>
   );

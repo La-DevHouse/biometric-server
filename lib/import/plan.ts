@@ -11,6 +11,9 @@
 //        se corrige (el roster de Galepso a veces no la trae: eso no borra nada).
 //   D3 — no se da de baja a nadie: los que tienen contrato vigente y no están en
 //        el archivo solo se listan.
+//   D4 — una persona que aparece varias veces (tiene varios puestos en la empresa)
+//        no bloquea: se elige en la vista previa con cuál fila queda y se crea UN
+//        solo contrato con los datos de esa fila. Sin elegir no se confirma.
 //   Cargo → puesto y departamento → departamento (categorías): el que ya existe
 //        con ese nombre, o el asignado antes (alias), o el que se elija en la vista
 //        previa, o uno nuevo.
@@ -40,6 +43,27 @@ export interface Overrides {
   cargos?: Record<string, CategoryChoice>;
   /** clave del departamento del archivo → qué hacer con él. */
   departments?: Record<string, CategoryChoice>;
+  /** cédula repetida en el archivo → fila con la que queda (D4). */
+  duplicates?: Record<string, number>;
+}
+
+/** Una de las filas (distintas) de una persona que aparece varias veces. */
+export interface DuplicateOption {
+  row: number;
+  cargoKey: string | null;
+  cargoText: string;
+  deptKey: string | null;
+  deptText: string;
+  startDate: string;
+}
+
+/** Persona que aparece varias veces con datos distintos: hay que elegir una fila (D4). */
+export interface DuplicateOp {
+  cedula: string;
+  name: string;
+  options: DuplicateOption[];
+  /** La elegida (o la de su contrato vigente); null = falta elegir. */
+  chosenRow: number | null;
 }
 
 /**
@@ -92,6 +116,8 @@ export interface PersonOp {
   deptKey: string | null;
   /** Contrato existente: qué cambia (Puesto, Departamento). */
   changes: Change[];
+  /** Aparece varias veces en el archivo y todavía no se eligió con cuál fila queda. */
+  pendingChoice?: boolean;
 }
 
 export interface CompanyImportPlan {
@@ -102,6 +128,8 @@ export interface CompanyImportPlan {
   absent: Array<{ cedula: string; name: string }>;
   rejected: Rejection[];
   warnings: string[];
+  /** Personas con varias filas distintas (D4). */
+  duplicates: DuplicateOp[];
   ok: boolean;
 }
 
@@ -261,7 +289,7 @@ export function buildPlan(companyId: number, read: ReadResult, snap: Snapshot, o
   const reject = (row: number, column: string | null, message: string) => rejected.push({ row, column, message });
 
   if (!snap.company) rejected.push({ row: null, column: null, message: "La empresa no existe." });
-  else if (snap.company.status !== "active") rejected.push({ row: null, column: null, message: "La empresa está inactiva: reactivala antes de importar." });
+  else if (snap.company.status !== "active") rejected.push({ row: null, column: null, message: "La empresa está inactiva: reactívela antes de importar." });
 
   // Cédulas repetidas dentro del archivo.
   const rowsByCedula = new Map<string, number[]>();
@@ -273,7 +301,65 @@ export function buildPlan(companyId: number, read: ReadResult, snap: Snapshot, o
   const cargos = resolveCategories(read.rows.map((r) => cellText(r.cells.cargo)), snap.positions, overrides.cargos, "el cargo");
   const departments = resolveCategories(read.rows.map((r) => departmentText(r.cells.department)), snap.departments, overrides.departments, "el departamento");
   const keyOf = (raw: string) => (isBlank(raw) ? null : normKey(raw));
+
+  // Personas que aparecen varias veces (D4): con qué fila queda cada una.
+  const warnings = [...read.warnings];
+  const duplicates: DuplicateOp[] = [];
+  /** cédula → fila que representa a la persona en `people`. */
+  const keptRow = new Map<string, number>();
+  /** Filas que ya no cuentan (no generan persona, ni puesto, ni departamento). */
+  const droppedRows = new Set<number>();
+  const pendingCedulas = new Set<string>();
+  const birthByCedula = new Map<string, string>();
+  for (const [cedula, rows] of rowsByCedula) {
+    if (rows.length < 2) continue;
+    const group = read.rows.filter((r) => rows.includes(r.row));
+    const names = new Set(group.map((r) => normKey(cellText(r.cells.full_name))));
+    // Misma cédula con nombres distintos no es "varios puestos": es un error del archivo.
+    if (names.size > 1) {
+      const shown = [...new Set(group.map((r) => cellText(r.cells.full_name).replace(/\s+/g, " ").trim()))].join(" / ");
+      for (const r of group) reject(r.row, "CEDULA", `La cédula ${cedula} está en las filas ${rows.join(", ")} con nombres distintos (${shown}). Corrija el archivo.`);
+      for (const r of group) droppedRows.add(r.row);
+      continue;
+    }
+    for (const r of group) {
+      const b = isBlank(r.cells.birth_date) ? null : parseDate(r.cells.birth_date);
+      if (b && "value" in b && b.value && !birthByCedula.has(cedula)) birthByCedula.set(cedula, b.value);
+    }
+    const options: DuplicateOption[] = [];
+    for (const r of group) {
+      const start = parseDate(r.cells.start_date);
+      if ("error" in start) continue; // ya se rechaza abajo, como cualquier fila
+      const cargoText = cellText(r.cells.cargo);
+      const deptText = departmentText(r.cells.department);
+      const o = { row: r.row, cargoKey: keyOf(cargoText), cargoText: cleanLabel(cargoText), deptKey: keyOf(deptText), deptText: cleanLabel(deptText), startDate: start.value };
+      if (!options.some((x) => x.cargoKey === o.cargoKey && x.deptKey === o.deptKey && x.startDate === o.startDate)) options.push(o);
+    }
+    if (options.length === 0) continue;
+    let chosen: number | null = null;
+    if (options.length === 1) {
+      chosen = options[0].row;
+      warnings.push(`La cédula ${cedula} está en las filas ${rows.join(", ")} con los mismos datos: se toma una sola.`);
+    } else {
+      const asked = overrides.duplicates?.[cedula];
+      if (asked !== undefined && options.some((o) => o.row === asked)) chosen = asked;
+      else {
+        // Reimportar: la fila de su contrato vigente ya es la elegida.
+        const emp = snap.employeesByCedula.get(cedula);
+        const active = emp ? (snap.contractsByEmployee.get(emp.id) ?? []).find((c) => c.status === "active") : undefined;
+        chosen = active ? (options.find((o) => o.startDate === active.start_date)?.row ?? null) : null;
+      }
+      const name = cellText(group[0].cells.full_name).replace(/\s+/g, " ").trim();
+      duplicates.push({ cedula, name, options, chosenRow: chosen });
+    }
+    keptRow.set(cedula, chosen ?? options[0].row);
+    if (chosen === null) pendingCedulas.add(cedula);
+    // Sin elegir, los cargos de todas las opciones siguen en pantalla (se pueden elegir).
+    else for (const r of group) if (r.row !== chosen) droppedRows.add(r.row);
+  }
+
   for (const r of read.rows) {
+    if (droppedRows.has(r.row)) continue;
     const ck = keyOf(cellText(r.cells.cargo));
     const dk = keyOf(departmentText(r.cells.department));
     if (!ck || !dk) continue;
@@ -306,13 +392,10 @@ export function buildPlan(companyId: number, read: ReadResult, snap: Snapshot, o
       bad = true;
     }
     if (bad || "error" in ced || "error" in start || "error" in birth) continue;
-    const birthDate = birth.value;
     const cedula = ced.value;
-    const dup = rowsByCedula.get(cedula)!;
-    if (dup.length > 1) {
-      reject(r.row, "CEDULA", `La cédula ${cedula} está repetida en las filas ${dup.join(", ")}.`);
-      continue;
-    }
+    // Varias filas de la misma persona: una sola entra (D4), y una sola vez su nacimiento.
+    if ((rowsByCedula.get(cedula)?.length ?? 0) > 1 && keptRow.get(cedula) !== r.row) continue;
+    const birthDate = birth.value ?? birthByCedula.get(cedula) ?? null;
     const cargoKey = keyOf(cellText(r.cells.cargo));
     const deptKey = keyOf(departmentText(r.cells.department));
 
@@ -366,6 +449,7 @@ export function buildPlan(companyId: number, read: ReadResult, snap: Snapshot, o
         continue;
       }
     }
+    if (pendingCedulas.has(cedula)) op.pendingChoice = true;
     people.push(op);
   }
 
@@ -373,13 +457,28 @@ export function buildPlan(companyId: number, read: ReadResult, snap: Snapshot, o
   return {
     companyId,
     people,
-    cargos: [...cargos.values()],
-    departments: [...departments.values()],
+    cargos: withoutDropped(cargos, read.rows.filter((r) => droppedRows.has(r.row)).map((r) => keyOf(cellText(r.cells.cargo)))),
+    departments: withoutDropped(departments, read.rows.filter((r) => droppedRows.has(r.row)).map((r) => keyOf(departmentText(r.cells.department)))),
     absent: snap.activeInCompany.filter((a) => !inFile.has(a.cedula)),
     rejected,
-    warnings: read.warnings,
+    warnings,
+    duplicates,
     ok: rejected.length === 0,
   };
+}
+
+/**
+ * Descuenta las filas descartadas (D4): un cargo o departamento que solo estaba en
+ * ellas no se crea, salvo que otro que sí se usa esté unificado con él.
+ */
+function withoutDropped(ops: Map<string, CategoryOp>, droppedKeys: Array<string | null>): CategoryOp[] {
+  for (const k of droppedKeys) {
+    const c = k ? ops.get(k) : undefined;
+    if (c) c.count--;
+  }
+  const kept = new Set([...ops.values()].filter((c) => c.count > 0).map((c) => c.key));
+  for (const c of ops.values()) if (kept.has(c.key) && c.resolution.kind === "same") kept.add(c.resolution.into);
+  return [...ops.values()].filter((c) => kept.has(c.key));
 }
 
 function fmt(ymd: string | null): string {

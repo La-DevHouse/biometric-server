@@ -230,3 +230,21 @@ de forma atómica).
 
 **Medido (test, base local):** 5 000 trabajadores → vista previa ≈0,2 s, aplicar
 ≈1,5 s.
+
+---
+
+## Personas con más de un puesto (2026-11-02)
+
+El roster de Galepso puede traer a la misma persona varias veces cuando tiene varios puestos en la
+empresa (visto en Cleveland English Institute: la misma cédula como "Instructor docente" y como
+"Profesor por hora"). Eso **no bloquea** la importación (regla D4 de `lib/import/plan.ts`):
+
+- La vista previa muestra un aviso, **"Personas con más de un puesto"**, con una opción por cada fila
+  distinta. Hay que **elegir una**: sin elegir no se puede confirmar, y el servidor también lo exige.
+- Se crea **un solo contrato**, con el puesto, el departamento y la fecha de ingreso de la fila elegida.
+- El cargo o departamento que solo estaba en las filas descartadas **no se crea**.
+- La fecha de nacimiento, si la fila elegida no la trae, se toma de otra fila de la misma persona.
+- Filas con **los mismos datos**: se toma una sola, con un aviso, sin preguntar.
+- Al reimportar, si ya tiene un contrato vigente con la fecha de una de las opciones, esa viene elegida.
+- **Sigue bloqueando:** la misma cédula con **nombres distintos**, porque probablemente es un error de
+  cédula y no varios puestos. Hay que corregir el archivo.
