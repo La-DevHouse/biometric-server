@@ -54,7 +54,10 @@ solo puede ser nacimiento, ingreso o egreso; un texto, nombre, cargo, status o t
 Los encabezados se buscan solo en la franja de `CÉDULA` (el `STATUS : ACTIVO` de los
 filtros no es la columna). Varias páginas: cada una tiene sus encabezados.
 
-- Filas con STATUS distinto de ACTIVO: no se importan (aviso).
+- La columna STATUS se importa como **estatus de la persona** (§3 "Estatus"). Desde
+  2026-11-16 ya no se descartan las filas que no dicen ACTIVO: para traer también a
+  los que están de vacaciones o desactivados, saque el Roster con el filtro de STATUS
+  en todos.
 - **Control de total:** la cantidad leída tiene que coincidir con `TOTALES
   GENERALES`. Si no, se rechaza todo: nunca queda alguien afuera sin avisar.
 - PDF sin texto (escaneo, foto) → rechazado con el motivo.
@@ -70,7 +73,8 @@ Relevado de `ACTIVOS CASTILLO.xlsx` (2026-09-29, 13 trabajadores):
   ACTIVOS"), **encabezados en la fila 8**, datos desde la 9. No trae la empresa (ni
   RIF ni nombre): por eso se importa desde la página de la empresa.
 - Columnas: `N°` (se ignora), `NOMBRES Y APELLIDOS`, `CEDULA`, `CARGO`,
-  `FECHA DE INGRESO`, y opcional `FECHA DE NACIMIENTO`.
+  `FECHA DE INGRESO`, y opcionales `FECHA DE NACIMIENTO`, `DEPARTAMENTO` y `STATUS`
+  (también `ESTATUS` o `ESTADO`).
 
 **Cómo se lee** (`lib/import/read.ts`): la fila de encabezados se busca sola (la
 primera con `CEDULA` en las primeras 30 filas de cualquier hoja); las columnas se
@@ -123,6 +127,28 @@ existe: si no la tiene, **se completa**; si tiene otra, **se corrige** y la vist
 previa lo muestra ("antes DD/MM/AAAA"), con auditoría `import.employee.update`. Si
 el archivo no la trae, **no se toca** la que ya tenga. Una fecha inválida rechaza la
 fila (D1).
+
+### Estatus (2026-11-16)
+`employee.status`: **Activo**, **De vacaciones** o **Desactivado**
+(`lib/employeeStatus.ts`). Lo que escribe Galepso se traduce así:
+
+| En el archivo | Estatus |
+| --- | --- |
+| `ACTIVO` / `ACTIVA` | Activo |
+| `VACACIONES` / `VACACION` / `DE VACACIONES` | De vacaciones |
+| `INACTIVO`, `DESACTIVADO`, `EGRESADO`, `RETIRADO`, `LIQUIDADO` (y femeninos) | Desactivado |
+| vacío | no se toca (persona nueva: Activo) |
+| cualquier otro (`REPOSO`, `PERMISO`…) | **fila rechazada** (D1): nunca se adivina; si aparece un valor nuevo de Galepso se agrega a la tabla de `lib/employeeStatus.ts` |
+
+Persona nueva: se crea con ese estatus. Persona que ya existe: si es otro, se
+actualiza y la vista previa lo muestra en la columna **Estatus** ("antes Activo"),
+con auditoría `import.employee.update`. Si la persona tiene varias filas (D4), vale
+el de la fila elegida, o el de otra fila si esa no lo trae.
+
+El estatus también se cambia a mano en **Empleado → Editar datos**, y la lista de
+Empleados lo muestra y lo filtra. **Es informativo:** no cierra contratos ni saca
+a nadie de los equipos (eso sigue siendo "Dar de baja" el contrato), ni cambia el
+cálculo de asistencia.
 
 ### Cargo → Puesto
 En este orden:
@@ -203,7 +229,7 @@ de forma atómica).
 | # | Tema | Decidido |
 | --- | --- | --- |
 | D1 | Filas con error | Todo o nada |
-| D2 | Datos que ya existen | No se borra nada; a una persona existente no se le cambia el nombre (la fecha de nacimiento sí se completa o corrige, §3) |
+| D2 | Datos que ya existen | No se borra nada; a una persona existente no se le cambia el nombre (la fecha de nacimiento sí se completa o corrige, y el estatus se actualiza, §3) |
 | D8 | Departamentos (2026-09-30) | Se crean o enlazan como los cargos; van al contrato y el puesto pasa a ese departamento aunque tuviera otro |
 | D7 | Formato (2026-09-30) | El Roster de Personal impreso a PDF. El `.xls` de Galepso está corrupto y no se acepta |
 | D3 | Bajas | Nunca desde la importación; los ausentes solo se listan |
@@ -225,7 +251,7 @@ de forma atómica).
 | Aplicar en una transacción (timeout 180 s, `createManyAndReturn`, auditoría `import.*`) | `lib/import/apply.ts` |
 | Vista previa / confirmar, huella del plan, equipos, limpieza a 30 días | `lib/import/service.ts` |
 | Página, acciones y panel | `app/admin/empresas/[id]/importar/`, `components/admin/CompanyImportPanel.tsx`, `ImportEmployeesButton.tsx` |
-| Tablas | `import_run` (+ `company_id`), `position_alias`, `department_alias` — migraciones `20260928140000_import_run`, `20260929100000_company_import`, `20260930120000_department_alias` |
+| Tablas | `import_run` (+ `company_id`), `position_alias`, `department_alias` — migraciones `20260928140000_import_run`, `20260929100000_company_import`, `20260930120000_department_alias`; `employee.status` en `20261116120000_employee_status` |
 | Tests | `__tests__/import.test.ts` (archivos con la forma del export real, generados en el test; el PDF del Roster se dibuja con las mismas posiciones que el real) |
 
 **Medido (test, base local):** 5 000 trabajadores → vista previa ≈0,2 s, aplicar

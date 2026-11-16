@@ -195,6 +195,7 @@ model employee {
   last_name   String
   birth_date  DateTime? @db.Date
   photo       Bytes?
+  status      employee_status @default(active) // 2026-11-16: active | vacation | inactive — informativo (docs/14 §3 "Estatus")
   created_at  DateTime  @default(now()) @db.Timestamptz(6)
   updated_at  DateTime  @updatedAt @db.Timestamptz(6)
 

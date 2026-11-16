@@ -6,6 +6,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { normKey, ymdToDate } from "./normalize";
 import type { CategoryOp, CompanyImportPlan } from "./plan";
+import { BIRTH_FIELD, STATUS_FIELD } from "./changeFields";
 
 /** El timeout por defecto de Prisma (5 s) no alcanza para miles de filas. */
 const TX_TIMEOUT_MS = 180_000;
@@ -151,8 +152,9 @@ export async function applyPlan(plan: CompanyImportPlan, actorId: number | null,
             first_name: p.firstName,
             last_name: p.lastName,
             birth_date: p.birthDate ? ymdToDate(p.birthDate) : null,
+            status: p.status ?? "active",
           })),
-          select: { id: true, national_id: true, first_name: true, last_name: true, birth_date: true },
+          select: { id: true, national_id: true, first_name: true, last_name: true, birth_date: true, status: true },
         });
         for (const e of created) {
           employeeByCedula.set(e.national_id, e.id);
@@ -161,7 +163,14 @@ export async function applyPlan(plan: CompanyImportPlan, actorId: number | null,
       }
       const updatedPeople = plan.people.filter((p) => p.personChanges.length > 0);
       for (const p of updatedPeople) {
-        await tx.employee.update({ where: { id: p.employeeId! }, data: { birth_date: ymdToDate(p.birthDate!) } });
+        const fields = new Set(p.personChanges.map((c) => c.field));
+        await tx.employee.update({
+          where: { id: p.employeeId! },
+          data: {
+            ...(fields.has(BIRTH_FIELD) ? { birth_date: ymdToDate(p.birthDate!) } : {}),
+            ...(fields.has(STATUS_FIELD) ? { status: p.status! } : {}),
+          },
+        });
         log(
           "import.employee.update", "employee", p.employeeId!,
           Object.fromEntries(p.personChanges.map((c) => [c.field, c.from])),

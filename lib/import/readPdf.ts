@@ -46,7 +46,6 @@ export async function readGalepsoPdf(buf: Buffer | Uint8Array): Promise<ReadResu
 
   let reportTotal: number | null = null;
   let headersFound = false;
-  let skipped = 0;
   // Un departamento puede seguir en la página siguiente.
   let department: string | null = null;
   for (const items of pages) {
@@ -68,10 +67,6 @@ export async function readGalepsoPdf(buf: Buffer | Uint8Array): Promise<ReadResu
       if (!ced) continue;
       const cells = rowCells(row, ced, anchors);
       cells.cells.department = department;
-      if (cells.status && normKey(cells.status) !== "activo") {
-        skipped++;
-        continue;
-      }
       out.rows.push({ row: out.rows.length + 1, cells: cells.cells });
     }
   }
@@ -80,14 +75,13 @@ export async function readGalepsoPdf(buf: Buffer | Uint8Array): Promise<ReadResu
     out.errors.push("No se encontraron los encabezados del reporte (CÉDULA, NOMBRE, CARGO, FECHA INGRESO). ¿Es el Roster de Personal de Galepso?");
     return out;
   }
-  if (skipped) out.warnings.push(`${skipped} trabajador(es) del reporte no están ACTIVO: no se importan.`);
   if (out.rows.length === 0) out.errors.push("El reporte no tiene trabajadores.");
   if (out.rows.length > MAX_ROWS) out.errors.push(`Tiene ${out.rows.length} trabajadores; el máximo es ${MAX_ROWS}. Divídalo en varios archivos.`);
   if (reportTotal === null) {
     out.warnings.push("No se encontró el TOTALES GENERALES del reporte: revise que estén todos los trabajadores.");
-  } else if (reportTotal !== out.rows.length + skipped) {
+  } else if (reportTotal !== out.rows.length) {
     out.errors.push(
-      `El reporte dice ${reportTotal} trabajadores (TOTALES GENERALES) pero se leyeron ${out.rows.length + skipped}. No se importa nada para no dejar a nadie afuera.`
+      `El reporte dice ${reportTotal} trabajadores (TOTALES GENERALES) pero se leyeron ${out.rows.length}. No se importa nada para no dejar a nadie afuera.`
     );
   }
   return out;
@@ -156,7 +150,7 @@ function nearest<C>(x: number, anchors: Array<{ x: number; col: C }>): C {
   return anchors.reduce((best, a) => (Math.abs(a.x - x) < Math.abs(best.x - x) ? a : best)).col;
 }
 
-function rowCells(row: Item[], ced: Item, anchors: Anchors): { cells: Record<ColumnKey, unknown>; status: string | null } {
+function rowCells(row: Item[], ced: Item, anchors: Anchors): { cells: Record<ColumnKey, unknown> } {
   const parts: Record<TextColumn, string[]> = { full_name: [], cargo: [], status: [], tipo: [] };
   const dates: Partial<Record<DateColumn, string>> = {};
   for (const it of row) {
@@ -173,8 +167,9 @@ function rowCells(row: Item[], ced: Item, anchors: Anchors): { cells: Record<Col
       start_date: dates.start_date ?? null,
       birth_date: dates.birth_date ?? null,
       department: null,
+      // ACTIVO / VACACIONES / INACTIVO…: se importa como estatus de la persona (docs/14 §3).
+      status: join("status"),
     },
-    status: join("status"),
   };
 }
 

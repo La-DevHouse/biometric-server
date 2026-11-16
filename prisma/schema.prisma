@@ -218,6 +218,13 @@ enum employment_status {
   inactive
 }
 
+/// Estatus de la persona (docs/14 §3 "Estatus"): lo trae Galepso y se edita a mano.
+enum employee_status {
+  active
+  vacation
+  inactive
+}
+
 enum enrollment_status {
   active
   inactive
@@ -377,16 +384,17 @@ model site {
 /// La persona. Registro global permanente (pool de reclutamiento) — nunca se
 /// borra, puede no tener ningún employment activo.
 model employee {
-  id           Int       @id @default(autoincrement())
-  national_id  String    @unique // V/E/J/G + dígitos, validado en app
+  id           Int             @id @default(autoincrement())
+  national_id  String          @unique // V/E/J/G + dígitos, validado en app
   tax_id       String?
   first_name   String
   last_name    String
-  birth_date   DateTime? @db.Date
+  birth_date   DateTime?       @db.Date
   photo        Bytes?
   cedula_photo Bytes? // foto de la cédula subida para autocompletar (docs/09 §3.10) — se conserva luego de extraer los datos, decisión explícita del cliente
-  created_at   DateTime  @default(now()) @db.Timestamptz(6)
-  updated_at   DateTime  @updatedAt @db.Timestamptz(6)
+  status       employee_status @default(active) // activo / vacaciones / desactivado — informativo, no toca contratos ni equipos
+  created_at   DateTime        @default(now()) @db.Timestamptz(6)
+  updated_at   DateTime        @updatedAt @db.Timestamptz(6)
 
   employments     employment[]
   enrollments     employee_device_enrollment[]
@@ -395,6 +403,7 @@ model employee {
   attendance_logs attendance_logs[] // lado nullable de la resolución
 
   @@index([last_name, first_name])
+  @@index([status])
 }
 
 /// Contrato de trabajo (UI: "Contrato de trabajo"; la tabla conserva el
@@ -511,8 +520,8 @@ model schedule_group {
   created_at DateTime @default(now()) @db.Timestamptz(6)
   updated_at DateTime @updatedAt @db.Timestamptz(6)
 
-  shifts      shift[]
-  employments employment[]
+  shifts               shift[]
+  employments          employment[]
   employment_schedules employment_schedule[]
 
   @@index([company_id])
@@ -640,26 +649,26 @@ model sync_hold {
 
 /// Día procesado por el motor de asistencia (Hito 4).
 model attendance_day {
-  id               Int                @id @default(autoincrement())
-  employee_id      Int
-  employee         employee           @relation(fields: [employee_id], references: [id], onDelete: Cascade)
-  employment_id    Int
-  employment       employment         @relation(fields: [employment_id], references: [id], onDelete: Cascade)
-  date             DateTime           @db.Date
-  shift_id         Int?
-  shift            shift?             @relation(fields: [shift_id], references: [id], onDelete: SetNull)
-  first_in         DateTime?          @db.Timestamptz(6)
-  last_out         DateTime?          @db.Timestamptz(6)
-  worked_minutes   Int?
-  overtime_minutes Int? // referencia, sin recargo legal
+  id                  Int                @id @default(autoincrement())
+  employee_id         Int
+  employee            employee           @relation(fields: [employee_id], references: [id], onDelete: Cascade)
+  employment_id       Int
+  employment          employment         @relation(fields: [employment_id], references: [id], onDelete: Cascade)
+  date                DateTime           @db.Date
+  shift_id            Int?
+  shift               shift?             @relation(fields: [shift_id], references: [id], onDelete: SetNull)
+  first_in            DateTime?          @db.Timestamptz(6)
+  last_out            DateTime?          @db.Timestamptz(6)
+  worked_minutes      Int?
+  overtime_minutes    Int? // referencia, sin recargo legal
   late_minutes        Int? // minutos tarde (solo si pasó la tolerancia)
   early_leave_minutes Int? // minutos de salida anticipada (solo si pasó la tolerancia)
   scheduled_minutes   Int? // jornada esperada del turno ese día
-  mark_count          Int  @default(0)
-  status           attendance_status?
-  computed_at      DateTime?          @db.Timestamptz(6)
-  created_at       DateTime           @default(now()) @db.Timestamptz(6)
-  updated_at       DateTime           @updatedAt @db.Timestamptz(6)
+  mark_count          Int                @default(0)
+  status              attendance_status?
+  computed_at         DateTime?          @db.Timestamptz(6)
+  created_at          DateTime           @default(now()) @db.Timestamptz(6)
+  updated_at          DateTime           @updatedAt @db.Timestamptz(6)
 
   @@unique([employment_id, date]) // un día por contrato (docs/16)
   @@index([employee_id, date])
@@ -713,13 +722,13 @@ model app_user {
   created_at    DateTime      @default(now()) @db.Timestamptz(6)
   updated_at    DateTime      @updatedAt @db.Timestamptz(6)
 
-  sessions    app_session[]
-  audit_logs  audit_log[]
+  sessions            app_session[]
+  audit_logs          audit_log[]
   corrections         attendance_correction[] @relation("correction_actor")
   revoked_corrections attendance_correction[] @relation("correction_revoker")
-  export_runs export_run[]
-  import_runs import_run[]
-  companies   app_user_company[]
+  export_runs         export_run[]
+  import_runs         import_run[]
+  companies           app_user_company[]
 }
 
 /// Empresas a las que tiene acceso una cuenta limitada (docs/18).

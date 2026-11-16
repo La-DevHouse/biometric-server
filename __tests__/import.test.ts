@@ -338,7 +338,7 @@ test("importar - el archivo no es un listado de Galepso", async () => {
   assert.match(v.rejected[0].message, /No se encontró la fila de encabezados/);
 });
 
-test("importar PDF - Roster de Personal: departamentos, cédula sin V, nacimiento cuando está, no ACTIVO afuera", async () => {
+test("importar PDF - Roster de Personal: departamentos, cédula sin V, nacimiento cuando está, STATUS como estatus", async () => {
   const id = await company();
   const [c1, c2, c3, c4] = [CED(), CED(), CED(), CED()];
   const pdf = rosterPdf([
@@ -360,14 +360,16 @@ test("importar PDF - Roster de Personal: departamentos, cédula sin V, nacimient
   ]);
   const view = await service.previewCompanyImport(id, pdf, "ACTIVOS.pdf", null);
   assert.equal(view.ok, true, JSON.stringify(view.rejected));
-  assert.deepEqual(view.people.map((p) => p.cedula).sort(), [c1, c2, c3].sort(), "c3 sin V se lee como V-; el EGRESADO no entra");
-  assert.match(view.warnings.join(" "), /1 trabajador\(es\) del reporte no están ACTIVO/);
+  assert.deepEqual(view.people.map((p) => p.cedula).sort(), [c1, c2, c3, c4].sort(), "c3 sin V se lee como V-; el EGRESADO también entra");
   const byCed = new Map(view.people.map((p) => [p.cedula, p]));
   assert.equal(byCed.get(c1)?.birthDate, "1965-09-25", "25/09/1965 es nacimiento, 28/10/2020 es ingreso: cada una en su columna");
   assert.equal(byCed.get(c1)?.startDate, "2020-10-28");
   assert.equal(byCed.get(c2)?.birthDate, null, "sin nacimiento en el reporte");
   assert.equal(byCed.get(c3)?.startDate, "2025-11-17");
-  assert.deepEqual(view.cargos.map((c) => c.text).sort(), [`Despachadora - atención al ${TAG.toLowerCase()}`, `Hornero ${TAG.toLowerCase()}`].sort());
+  assert.deepEqual(
+    view.cargos.map((c) => c.text).sort(),
+    [`Cajero ${TAG.toLowerCase()}`, `Despachadora - atención al ${TAG.toLowerCase()}`, `Hornero ${TAG.toLowerCase()}`].sort()
+  );
 
   const res = await service.confirmCompanyImport(view.runId, null);
   assert.equal(res.status, "applied");
@@ -376,6 +378,67 @@ test("importar PDF - Roster de Personal: departamentos, cédula sin V, nacimient
   assert.equal(aurelio?.employments[0].start_date.toISOString().slice(0, 10), "2020-10-28");
   assert.equal((await prisma.employee.findUnique({ where: { national_id: c2 } }))?.birth_date, null);
   assert.equal((await prisma.employee.findUnique({ where: { national_id: c3 } }))?.last_name, `${TAG} Navas`);
+  assert.equal(aurelio?.status, "active");
+  assert.equal((await prisma.employee.findUnique({ where: { national_id: c4 } }))?.status, "inactive", "EGRESADO → Desactivado");
+});
+
+test("importar - estatus: ACTIVO / VACACIONES / INACTIVO, se actualiza a quien ya existe, uno desconocido bloquea", async () => {
+  const id = await company();
+  const [nuevoVac, existeAct, existeVac, sinCambio] = [CED(), CED(), CED(), CED()];
+  await prisma.employee.createMany({
+    data: [
+      { national_id: existeAct, first_name: "Ana", last_name: `Uno ${TAG}`, status: "active" },
+      { national_id: existeVac, first_name: "Luis", last_name: `Dos ${TAG}`, status: "vacation" },
+      { national_id: sinCambio, first_name: "Rosa", last_name: `Tres ${TAG}`, status: "inactive" },
+    ],
+  });
+  const rows = (extra: RosterRow[] = []) =>
+    rosterPdf([
+      {
+        name: "1 - OPERATIVO",
+        rows: [
+          { ced: nuevoVac, name: `IRIS ${UP} CUATRO`, cargo: "", ingreso: "01/02/2024", status: "VACACIONES" },
+          { ced: existeAct, name: `ANA ${UP} UNO`, cargo: "", ingreso: "01/02/2024", status: "VACACIONES" },
+          { ced: existeVac, name: `LUIS ${UP} DOS`, cargo: "", ingreso: "01/02/2024", status: "ACTIVO" },
+          { ced: sinCambio, name: `ROSA ${UP} TRES`, cargo: "", ingreso: "01/02/2024", status: "INACTIVO" },
+          ...extra,
+        ],
+      },
+    ]);
+
+  const bad = await service.previewCompanyImport(id, rows([{ ced: CED(), name: `EVA ${UP} CINCO`, cargo: "", ingreso: "01/02/2024", status: "PERMISO" }]), "t.pdf", null);
+  assert.equal(bad.ok, false);
+  assert.equal(bad.rejected[0].column, "STATUS");
+  assert.match(bad.rejected[0].message, /Estatus "PERMISO" no reconocido/);
+
+  const view = await service.previewCompanyImport(id, rows(), "t.pdf", null);
+  assert.equal(view.ok, true, JSON.stringify(view.rejected));
+  const byCed = new Map(view.people.map((p) => [p.cedula, p]));
+  assert.equal(byCed.get(nuevoVac)?.status, "vacation");
+  assert.deepEqual(byCed.get(existeAct)?.personChanges, [{ field: "Estatus", from: "Activo", to: "De vacaciones" }]);
+  assert.deepEqual(byCed.get(existeVac)?.personChanges, [{ field: "Estatus", from: "De vacaciones", to: "Activo" }]);
+  assert.deepEqual(byCed.get(sinCambio)?.personChanges, []);
+  assert.equal(view.counts.updatedPeople, 2);
+
+  const res = await service.confirmCompanyImport(view.runId, null);
+  assert.equal(res.status, "applied");
+  const st = async (ced: string) => (await prisma.employee.findUnique({ where: { national_id: ced } }))?.status;
+  assert.equal(await st(nuevoVac), "vacation");
+  assert.equal(await st(existeAct), "vacation");
+  assert.equal(await st(existeVac), "active");
+  assert.equal(await st(sinCambio), "inactive");
+
+  // .xlsx sin columna STATUS: no se toca el estatus de nadie; los nuevos entran activos.
+  const nuevo = CED();
+  await applyFile(
+    id,
+    await galepso([
+      [`ANA ${UP} UNO`, existeAct, "", d(2024, 2, 1)],
+      [`EVA ${UP} SEIS`, nuevo, "", d(2024, 3, 1)],
+    ])
+  );
+  assert.equal(await st(existeAct), "vacation");
+  assert.equal(await st(nuevo), "active");
 });
 
 test("importar - fecha de nacimiento de alguien que ya existe: se completa o se corrige, nunca se borra", async () => {

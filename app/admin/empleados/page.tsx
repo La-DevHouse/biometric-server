@@ -6,6 +6,7 @@ import { Tag } from "@/components/ui/Tag";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { EmployeeFormDialog } from "@/components/admin/EmployeeFormDialog";
 import { EmployeeFiltersDialog } from "@/components/admin/EmployeeFiltersDialog";
+import { EMPLOYEE_STATUS_LABEL, EMPLOYEE_STATUS_TAG, isEmployeeStatus } from "@/lib/employeeStatus";
 
 export const dynamic = "force-dynamic";
 
@@ -14,6 +15,7 @@ type SearchParams = Promise<{
   grupo?: string;
   empresa?: string;
   estado?: string;
+  estatus?: string;
 }>;
 
 export default async function EmpleadosPage({ searchParams }: { searchParams: SearchParams }) {
@@ -27,6 +29,7 @@ export default async function EmpleadosPage({ searchParams }: { searchParams: Se
   const grupoId = sp.grupo ? Number(sp.grupo) : null;
   const empresaId = sp.empresa ? Number(sp.empresa) : null;
   const estado = sp.estado === "pool" ? "pool" : sp.estado === "activo" ? "activo" : null;
+  const estatus = isEmployeeStatus(sp.estatus) ? sp.estatus : null;
 
   const where: Record<string, unknown> = {};
   const and: Record<string, unknown>[] = [];
@@ -48,6 +51,7 @@ export default async function EmpleadosPage({ searchParams }: { searchParams: Se
     and.push({ employments: { some: { status: "active", company: { group_id: grupoId } } } });
   if (empresaId)
     and.push({ employments: { some: { status: "active", company_id: empresaId } } });
+  if (estatus) and.push({ status: estatus });
   if (and.length) where.AND = and;
 
   const [employees, companies, groups] = await Promise.all([
@@ -100,7 +104,8 @@ export default async function EmpleadosPage({ searchParams }: { searchParams: Se
                   <Th>Documento</Th>
                   <Th>Empresa(s) con contrato activo</Th>
                   <Th>Huella</Th>
-                  <Th>Estado</Th>
+                  <Th>Contrato</Th>
+                  <Th>Estatus</Th>
                 </tr>
               </thead>
               <tbody>
@@ -130,10 +135,13 @@ export default async function EmpleadosPage({ searchParams }: { searchParams: Se
                     </Td>
                     <Td>
                       {e.employments.length ? (
-                        <Tag variant="accent">Activo</Tag>
+                        <Tag variant="accent">Vigente</Tag>
                       ) : (
                         <Tag variant="neutral">Pool</Tag>
                       )}
+                    </Td>
+                    <Td>
+                      <Tag variant={EMPLOYEE_STATUS_TAG[e.status]}>{EMPLOYEE_STATUS_LABEL[e.status]}</Tag>
                     </Td>
                   </Tr>
                 ))}
@@ -149,10 +157,11 @@ export default async function EmpleadosPage({ searchParams }: { searchParams: Se
                 tags={
                   <>
                     {e.employments.length ? (
-                      <Tag variant="accent">Activo</Tag>
+                      <Tag variant="accent">Vigente</Tag>
                     ) : (
                       <Tag variant="neutral">Pool</Tag>
                     )}
+                    <Tag variant={EMPLOYEE_STATUS_TAG[e.status]}>{EMPLOYEE_STATUS_LABEL[e.status]}</Tag>
                     {e._count.fingerprints > 0 && <Tag variant="accent2">Huella</Tag>}
                   </>
                 }
