@@ -36,5 +36,33 @@ test.describe("Empleados — registro y búsqueda", () => {
 
     // Sin empleo activo todavía => Pool.
     await expect(page.locator("tr", { hasText: lastName })).toContainText("Pool");
+
+    // Sin contrato vigente: el administrador la puede eliminar, escribiendo el documento.
+    await page.locator("tr", { hasText: lastName }).locator("a").first().click();
+    await page.getByRole("button", { name: "Eliminar empleado…" }).click();
+    const del = page.getByRole("dialog");
+    await expect(del.getByText("Se borra definitivamente")).toBeVisible();
+    const go = del.getByRole("button", { name: "Eliminar definitivamente" });
+    await expect(go).toBeDisabled();
+    await del.getByLabel("Documento de la persona").fill(`V-${suffix}`);
+    await expect(go).toBeEnabled();
+    await page.screenshot({ path: test.info().outputPath("eliminar-empleado.png"), fullPage: true });
+    await go.click();
+    await expect(page.getByText(`${firstName} ${lastName} fue eliminado/a.`)).toBeVisible();
+    await expect(page).toHaveURL(/\/admin\/empleados$/);
+    await page.goto(`/admin/empleados?q=${encodeURIComponent(`V-${suffix}`)}`);
+    await expect(page.locator("tr", { hasText: lastName })).toHaveCount(0);
+  });
+
+  test("con contrato vigente no se puede eliminar", async ({ page }) => {
+    const { execSync } = await import("node:child_process");
+    const seed = JSON.parse(execSync("npx tsx --env-file=.env e2e/seed-asistencia.ts", { encoding: "utf8" }).trim().split("\n").pop()!);
+    await page.goto(`/admin/empleados/${seed.ana.id}`);
+    await page.getByRole("button", { name: "Eliminar empleado…" }).click();
+    const del = page.getByRole("dialog");
+    await expect(del.getByText(/No se puede eliminar/)).toBeVisible();
+    await expect(del.getByText(seed.companyName)).toBeVisible();
+    await expect(del.getByRole("button", { name: "Eliminar definitivamente" })).toHaveCount(0);
+    await page.screenshot({ path: test.info().outputPath("eliminar-bloqueado.png"), fullPage: true });
   });
 });

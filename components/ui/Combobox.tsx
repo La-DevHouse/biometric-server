@@ -11,6 +11,9 @@ export interface ComboboxOption {
   hint?: string;
 }
 
+/** Ancho mínimo de la lista desplegada, en px. */
+const MIN_LIST_W = 320;
+
 /** Minúsculas y sin acentos: "Farmacía" encuentra "farmacia" y viceversa. */
 function norm(s: string): string {
   return s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
@@ -102,10 +105,14 @@ export function Combobox({
       const below = window.innerHeight - r.bottom - gap - margin;
       const above = r.top - gap - margin;
       const want = 256;
+      // Nunca más angosta que MIN_LIST_W (un campo en media columna dejaba los nombres
+      // en 4 líneas), sin salirse de la pantalla.
+      const width = Math.min(Math.max(r.width, MIN_LIST_W), window.innerWidth - 2 * margin);
+      const left = Math.max(margin, Math.min(r.left, window.innerWidth - margin - width));
       if (below >= Math.min(want, 160) || below >= above) {
-        setPos({ left: r.left, width: r.width, top: r.bottom + gap, maxHeight: Math.min(want, below) });
+        setPos({ left, width, top: r.bottom + gap, maxHeight: Math.min(want, below) });
       } else {
-        setPos({ left: r.left, width: r.width, bottom: window.innerHeight - r.top + gap, maxHeight: Math.min(want, above) });
+        setPos({ left, width, bottom: window.innerHeight - r.top + gap, maxHeight: Math.min(want, above) });
       }
     };
     place();
@@ -190,7 +197,7 @@ export function Combobox({
           style={{ left: pos.left, width: pos.width, top: pos.top, bottom: pos.bottom, maxHeight: pos.maxHeight }}
           // font-sans/normal-case/tracking-normal: el combobox suele vivir dentro de un
           // FIELD_LABEL (mono, mayúsculas, tracking ancho) y las opciones lo heredaban.
-          className="fixed z-50 m-0 list-none overflow-y-auto border border-text bg-surface p-0 font-sans normal-case tracking-normal text-text shadow-hard"
+          className="fixed z-50 m-0 list-none overflow-x-hidden overflow-y-auto border border-text bg-surface p-0 font-sans normal-case tracking-normal text-text shadow-hard"
         >
           {filtered.length === 0 ? (
             <li className="px-3 py-2 text-sm text-text/60">Sin resultados</li>
@@ -205,14 +212,16 @@ export function Combobox({
                 onMouseDown={(e) => e.preventDefault()} // no perder el foco antes del click
                 onMouseEnter={() => setActive(i)}
                 onClick={() => choose(o)}
+                // El hint (ej. el RIF) va debajo del nombre, no al lado: al lado le
+                // quitaba ancho y el nombre se partía en varias líneas.
                 className={cx(
-                  "flex cursor-pointer items-baseline justify-between gap-[12px] px-(--control-px) py-[10px] text-sm",
+                  "flex cursor-pointer flex-col gap-0.5 px-(--control-px) py-[8px] text-sm",
                   i === active && "bg-accent-100",
                   o.value === selected && "font-semibold"
                 )}
               >
-                <span>{o.label}</span>
-                {o.hint && <span className="font-mono text-xs text-neutral-700">{o.hint}</span>}
+                <span className="break-words">{o.label}</span>
+                {o.hint && <span className="font-mono text-xs font-normal text-neutral-700">{o.hint}</span>}
               </li>
             ))
           )}

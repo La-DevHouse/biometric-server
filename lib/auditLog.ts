@@ -19,6 +19,7 @@ export const AUDIT_ACTION_LABEL: Record<string, string> = {
   "site.reactivate": "Reactivó la sede",
   "employee.create": "Creó el empleado",
   "employee.update": "Editó el empleado",
+  "employee.delete": "Eliminó el empleado",
   "employment.create": "Creó un contrato",
   "employment.update": "Editó un contrato",
   "employment.end": "Dio de baja un contrato",

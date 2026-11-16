@@ -10,6 +10,8 @@ import { MultiOpButton } from "./MultiOpButton";
 import { syncEmployeeNowAction } from "@/app/admin/actions";
 import { companyReturn, withReturn } from "@/lib/returnTo";
 import { requireAccess } from "@/lib/access";
+import { employeeDeletionInfo } from "@/lib/employeeDeletion";
+import { DeleteEmployeeDialog } from "./DeleteEmployeeDialog";
 
 export type EmployeeTab = "info" | "contratos" | "equipos" | "asistencia";
 
@@ -36,7 +38,7 @@ export async function EmployeeTabs({
 }) {
   const ret = companyReturn(returnTo);
   const access = await requireAccess();
-  const [employee, withPhoto, vigentes, fromCompany] = await Promise.all([
+  const [employee, withPhoto, vigentes, fromCompany, deletion] = await Promise.all([
     prisma.employee.findUnique({
       where: { id: employeeId },
       select: { id: true, national_id: true, tax_id: true, first_name: true, last_name: true, birth_date: true, status: true },
@@ -44,6 +46,8 @@ export async function EmployeeTabs({
     prisma.$queryRaw<{ id: number }[]>`SELECT id FROM employee WHERE id = ${employeeId} AND cedula_photo IS NOT NULL`,
     prisma.employment.count({ where: { employee_id: employeeId, ...activeEmploymentWhere() } }),
     ret ? prisma.client_company.findUnique({ where: { id: ret.companyId }, select: { name: true } }) : null,
+    // Eliminar: solo administradores (docs/18).
+    access.isAdmin ? employeeDeletionInfo(employeeId) : null,
   ]);
   if (!employee) notFound();
 
@@ -88,6 +92,14 @@ export async function EmployeeTabs({
             >
               {Icon.sync}
             </MultiOpButton>
+            )}
+            {deletion && (
+              <DeleteEmployeeDialog
+                employeeId={employee.id}
+                name={`${employee.first_name} ${employee.last_name}`}
+                nationalId={employee.national_id}
+                info={deletion}
+              />
             )}
           </>
         }

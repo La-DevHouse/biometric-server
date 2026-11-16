@@ -15,7 +15,8 @@ falta un perfil de **solo lectura**. Las cuentas de siempre siguen siendo Admini
 - **Administrador** (`admin`): todo, en todas las empresas. Es el único que ve Cuentas, Auditoría,
   Categorías, Diagnóstico y la guía de estilos; crea, desactiva y agrupa empresas; corrige el serial
   de un equipo; asigna equipos sin sede; aprueba bajas frenadas; sincroniza todos los equipos; y es
-  el único que **edita huellas** (borrar un usuario del equipo, vaciar huellas o marcaciones).
+  el único que **edita huellas** (borrar un usuario del equipo, vaciar huellas o marcaciones) y el
+  único que **elimina personas** (ver abajo).
 - **Solo lectura** (`viewer`): ve y descarga (reportes, export a nómina), sin cambiar nada. Todas
   las empresas o solo las elegidas.
 - **Socio** (`operator`): trabaja con las empresas asignadas: datos de la empresa (no su grupo),
@@ -63,10 +64,30 @@ limitada, "Registrar persona" pide además la **empresa** y el **inicio del cont
 cosas juntas. Si la cédula ya existe (la persona trabaja en otra empresa), no se muestran sus datos:
 se le agrega el contrato y el aviso dice "ya estaba registrada: se le agregó el contrato".
 
+## Eliminar una persona
+
+Ficha del empleado → ícono de papelera, solo para administradores (2026-11-16, pedido del usuario).
+Lo hace `lib/employeeDeletion.ts`, y la acción valida `allow({ admin: true, employee })`.
+
+- **Condición:** ningún contrato abierto con ninguna empresa. Abierto = sin cerrar y con baja
+  vacía o de hoy en adelante, **haya empezado o no**: un contrato que empieza la semana próxima
+  también bloquea. Se vuelve a revisar dentro de la transacción del borrado.
+- **Se borra:** la persona (con la foto de la cédula), sus contratos cerrados y lo que cuelga de
+  ellos (días de asistencia, correcciones, historial de horario) y sus huellas guardadas. La
+  base no permite contratos sin persona. Esos períodos dejan de mostrarla en reportes y exports.
+- **Se conserva:** sus marcaciones en los equipos, como ID sin empleado, y la auditoría
+  `employee.delete`, con una copia de sus datos y de sus contratos.
+- **Sigue en los equipos:** si la última lectura todavía la muestra en algún equipo, el diálogo lo
+  avisa. Al eliminarla pasa a ser un ID sin empleado, y la sincronización ya no la quita: hay que
+  usar "Sincronizar ahora" antes de eliminarla.
+- **Confirmación:** escribir el documento de la persona.
+
 ## Pruebas
 
 `__tests__/access.test.ts` (perfiles, CHECKs, la guardia por cada tipo de objeto, equipos
-visibles, buscador), `__tests__/accessGuards.test.ts` (todas las acciones validan) y
+visibles, buscador), `__tests__/accessGuards.test.ts` (todas las acciones validan),
+`__tests__/employeeDeletion.test.ts` (eliminar personas: contratos que bloquean, qué se borra y
+qué se conserva, solo administradores), `e2e/empleados.spec.ts` y
 `e2e/perfiles.spec.ts` (el administrador crea un Socio con una empresa y una cuenta de Solo
 lectura; el Socio ve solo lo suyo y lo ajeno da 404; Solo lectura no tiene botones para cambiar).
 

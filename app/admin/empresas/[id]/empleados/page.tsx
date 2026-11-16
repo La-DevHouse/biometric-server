@@ -1,5 +1,7 @@
 import Link from "next/link";
+import { Suspense } from "react";
 import { notFound } from "next/navigation";
+import { UrlFilters } from "@/components/admin/UrlFilters";
 import { prisma } from "@/lib/db";
 import { requirePage } from "@/lib/access";
 import { Table, Th, Td, Tr } from "@/components/ui/Table";
@@ -23,6 +25,7 @@ interface Row {
   nationalId: string;
   position: string | null;
   schedule: string | null;
+  site: string | null; // sede del contrato (informativa)
   fingerprints: number; // copias canónicas activas
   onDevices: number; // equipos del alcance donde está vinculada
   complete: number; // de esos, donde tiene todas sus huellas (hasta 10)
@@ -33,21 +36,35 @@ interface Row {
  * y cómo está en los equipos de su alcance (los de sus sedes, y los de su grupo si
  * comparte empleados). El estado de cada equipo lo mantiene el reconciliador.
  */
-export default async function EmpresaEmpleadosPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function EmpresaEmpleadosPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ sede?: string }>;
+}) {
   const id = Number((await params).id);
   if (!Number.isFinite(id)) notFound();
   const access = await requirePage({ company: id });
 
-  const company = await prisma.client_company.findUnique({ where: { id }, select: { id: true, name: true, status: true } });
+  const company = await prisma.client_company.findUnique({
+    where: { id },
+    select: { id: true, name: true, status: true, sites: { select: { id: true, name: true, status: true }, orderBy: { name: "asc" } } },
+  });
   if (!company) notFound();
+  // Sede del contrato (informativa): solo se muestra y se filtra si la empresa tiene varias.
+  const multiSite = company.sites.filter((s) => s.status === "active").length > 1;
+  const sede = (await searchParams).sede ?? "";
+  const siteFilter = !multiSite || !sede ? {} : sede === "ninguna" ? { site_id: null } : { site_id: Number(sede) };
 
   const [contracts, scopeDevices] = await Promise.all([
     prisma.employment.findMany({
-      where: { company_id: id, ...activeEmploymentWhere() },
+      where: { company_id: id, ...activeEmploymentWhere(), ...siteFilter },
       include: {
         employee: { select: { id: true, first_name: true, last_name: true, national_id: true } },
         position: { select: { name: true } },
         schedule_group: { select: { name: true } },
+        site: { select: { name: true } },
       },
       orderBy: [{ employee: { last_name: "asc" } }, { employee: { first_name: "asc" } }],
     }),
@@ -93,6 +110,7 @@ export default async function EmpresaEmpleadosPage({ params }: { params: Promise
       nationalId: c.employee.national_id,
       position: c.position?.name ?? null,
       schedule: c.schedule_group?.name ?? null,
+      site: c.site?.name ?? null,
       fingerprints: fps.filter((f) => f.employee_id === c.employee_id).length,
       onDevices: myLinks.length,
       complete: desired.length === 0 ? 0 : complete,
@@ -159,6 +177,24 @@ export default async function EmpresaEmpleadosPage({ params }: { params: Promise
           alcance{" "}
           <span className="text-text/60">(sedes de la empresa, y de su grupo si comparte empleados)</span>
         </p>
+        {multiSite && (
+          <Suspense fallback={<div className="h-(--control-h) w-(--control-h)" />}>
+            <UrlFilters
+              fields={[
+                {
+                  name: "sede",
+                  label: "Sede",
+                  type: "select",
+                  emptyLabel: "— todas —",
+                  options: [
+                    ...company.sites.map((s) => ({ value: String(s.id), label: s.status === "active" ? s.name : `${s.name} (inactiva)` })),
+                    { value: "ninguna", label: "Sin sede asignada" },
+                  ],
+                },
+              ]}
+            />
+          </Suspense>
+        )}
       </div>
 
       {rows.length === 0 ? (
@@ -174,6 +210,7 @@ export default async function EmpresaEmpleadosPage({ params }: { params: Promise
                 <tr>
                   <Th>Persona</Th>
                   <Th>Cédula</Th>
+                  {multiSite && <Th>Sede</Th>}
                   <Th>Cargo / Horario</Th>
                   <Th>Huellas</Th>
                   <Th>Equipos</Th>
@@ -191,6 +228,9 @@ export default async function EmpresaEmpleadosPage({ params }: { params: Promise
                         </Link>
                       </Td>
                       <Td className="font-mono text-xs">{r.nationalId}</Td>
+                      {multiSite && (
+                        <Td className="text-xs">{r.site ?? <span className="text-accent2">Falta elegir</span>}</Td>
+                      )}
                       <Td className="text-xs">
                         {r.position ?? "—"}
                         {r.schedule && <span className="text-text/60"> · {r.schedule}</span>}
@@ -220,6 +260,7 @@ export default async function EmpresaEmpleadosPage({ params }: { params: Promise
                   tags={<Tag variant={st.variant}>{st.label}</Tag>}
                   fields={[
                     { label: "Cédula", value: r.nationalId },
+                    ...(multiSite ? [{ label: "Sede", value: r.site ?? "Falta elegir" }] : []),
                     { label: "Huellas", value: r.fingerprints },
                     { label: "Equipos", value: `en ${r.onDevices} de ${total}` },
                   ]}

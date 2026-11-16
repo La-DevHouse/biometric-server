@@ -7,6 +7,9 @@ import { Combobox } from "@/components/ui/Combobox";
 
 export interface EmploymentDefaults {
   company_id?: number | null;
+  site_id?: number | null;
+  /** Nombre de la sede actual, por si ya no está activa (no viene en `lookups`). */
+  site_name?: string | null;
   schedule_group_id?: number | null;
   position_id?: number | null;
   department_id?: number | null;
@@ -16,11 +19,12 @@ export interface EmploymentDefaults {
 }
 
 /**
- * Campos de un contrato de trabajo: empresa + horario (filtrado por empresa,
- * client-side) + departamento/puesto + inicio + ref nómina. Reusado por alta de
- * contrato y por su edición. Los `name` son fijos (`company_id`, …). Sin sede: la
- * pertenencia es con la empresa, y el alcance de la huella sale de sus sedes
- * (y las de su grupo) — docs/10 R4. Al editar, la empresa queda fija
+ * Campos de un contrato de trabajo: empresa (todo el ancho) + sede y horario de esa
+ * empresa + departamento/puesto + nómina + inicio. Reusado por alta de contrato y
+ * por su edición. Los `name` son fijos (`company_id`, `site_id`, …).
+ * La sede es SOLO INFORMATIVA (lib/employmentSite): el alcance de la huella sigue
+ * saliendo de todas las sedes de la empresa (y su grupo) — docs/10 R6. Con una sola
+ * sede se asigna sola; con varias es obligatoria. Al editar, la empresa queda fija
  * (`lockCompany`, docs/11 P2): otra empresa = baja + contrato nuevo.
  */
 export function EmploymentFields({
@@ -38,14 +42,22 @@ export function EmploymentFields({
   onStartDateChange?: (date: string) => void;
 }) {
   const [companyId, setCompanyId] = useState<number | "">(defaults?.company_id ?? "");
+  const [siteSel, setSiteSel] = useState<string>(defaults?.site_id != null ? String(defaults.site_id) : "");
   const [positionSel, setPositionSel] = useState<string>(
     defaults?.position_id != null ? String(defaults.position_id) : ""
   );
   const schedules = lookups.schedules.filter((g) => g.company_id === companyId);
+  const company = companyId === "" ? null : lookups.companies.find((c) => c.id === companyId) ?? null;
+
+  // Sedes de la empresa; la del contrato aunque ya no esté activa.
+  const sites = [...(company?.sites ?? [])];
+  if (defaults?.site_id != null && defaults.company_id === companyId && !sites.some((s) => s.id === defaults.site_id)) {
+    sites.push({ id: defaults.site_id, name: `${defaults.site_name ?? "Sede"} (inactiva)` });
+  }
+  const onlySite = sites.length === 1 ? sites[0] : null;
 
   // modelo de negocio de la empresa elegida → filtra los puestos
-  const effectiveBm =
-    companyId === "" ? null : lookups.companies.find((c) => c.id === companyId)?.business_model_id ?? null;
+  const effectiveBm = company?.business_model_id ?? null;
   const positions = lookups.positions.filter(
     (p) =>
       p.business_model_ids.length === 0 || // genérico
@@ -55,13 +67,13 @@ export function EmploymentFields({
   return (
     <div className="flex flex-col sm:grid sm:grid-cols-2 gap-2">
       {lockCompany ? (
-        <div className={LABEL}>
+        <div className={`${LABEL} col-span-2`}>
           Empresa
           <input type="hidden" name="company_id" value={lockCompany.id} />
           <span className="flex h-(--control-h) items-center text-sm font-medium normal-case tracking-normal font-sans text-text">{lockCompany.name}</span>
         </div>
       ) : (
-        <div className={LABEL}>
+        <div className={`${LABEL} col-span-2`}>
           Empresa *
           <Combobox
             name="company_id"
@@ -69,11 +81,42 @@ export function EmploymentFields({
             ariaLabel="Empresa"
             options={lookups.companies.map((c) => ({ value: String(c.id), label: c.name, hint: c.tax_id ?? undefined }))}
             value={companyId === "" ? "" : String(companyId)}
-            onChange={(v) => setCompanyId(v === "" ? "" : Number(v))}
+            onChange={(v) => {
+              setCompanyId(v === "" ? "" : Number(v));
+              setSiteSel(""); // la sede es de la empresa: al cambiarla se vuelve a elegir
+            }}
             placeholder="Buscar empresa o RIF…"
           />
         </div>
       )}
+
+      <label className={LABEL}>
+        {sites.length > 1 ? "Sede *" : "Sede"}
+        {onlySite ? (
+          <>
+            <input type="hidden" name="site_id" value={onlySite.id} />
+            <select className={INPUT} value={onlySite.id} disabled aria-label="Sede">
+              <option value={onlySite.id}>{onlySite.name}</option>
+            </select>
+          </>
+        ) : (
+          <select
+            name="site_id"
+            className={INPUT}
+            value={siteSel}
+            onChange={(e) => setSiteSel(e.target.value)}
+            required={sites.length > 1}
+            disabled={!company}
+          >
+            <option value="">{company ? "— elija la sede —" : "— elija la empresa —"}</option>
+            {sites.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name}
+              </option>
+            ))}
+          </select>
+        )}
+      </label>
 
       <label className={LABEL}>
         Horario
@@ -90,12 +133,13 @@ export function EmploymentFields({
             </option>
           ))}
         </select>
-        {defaults?.schedule_group_id !== undefined && (
-          <span className="text-xs font-normal text-text/70">
-            Un cambio de horario aquí rige desde hoy. Para otra fecha use Empresa → Empleados → Asignar horario.
-          </span>
-        )}
       </label>
+
+      {defaults?.schedule_group_id !== undefined && (
+        <span className="col-span-2 text-xs font-normal text-text/70">
+          Un cambio de horario aquí rige desde hoy. Para otra fecha use Empresa → Empleados → Asignar horario.
+        </span>
+      )}
 
       <label className={LABEL}>
         Departamento
@@ -127,15 +171,6 @@ export function EmploymentFields({
         </select>
       </label>
 
-      <label className={LABEL}>
-        Tipo de nómina
-        <select name="payroll_type" className={INPUT} defaultValue={defaults?.payroll_type ?? ""}>
-          <option value="">— sin nómina —</option>
-          <option value="quincenal">Quincenal</option>
-          <option value="semanal">Semanal</option>
-        </select>
-      </label>
-
       {positionSel === "__new__" && (
         <label className={`${LABEL} col-span-2`}>
           Nombre del puesto nuevo *
@@ -145,6 +180,15 @@ export function EmploymentFields({
           </span>
         </label>
       )}
+
+      <label className={LABEL}>
+        Tipo de nómina
+        <select name="payroll_type" className={INPUT} defaultValue={defaults?.payroll_type ?? ""}>
+          <option value="">— sin nómina —</option>
+          <option value="quincenal">Quincenal</option>
+          <option value="semanal">Semanal</option>
+        </select>
+      </label>
 
       <label className={LABEL}>
         Ref. nómina

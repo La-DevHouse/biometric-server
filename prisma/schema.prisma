@@ -376,13 +376,15 @@ model site {
   devices        devices[]
   device_history device_site_assignment[]
   corrections    attendance_correction[]
+  employments    employment[]
 
   @@unique([company_id, code])
   @@index([company_id])
 }
 
-/// La persona. Registro global permanente (pool de reclutamiento) — nunca se
-/// borra, puede no tener ningún employment activo.
+/// La persona. Registro global permanente (pool de reclutamiento), puede no tener
+/// ningún employment activo. Solo la borra un administrador, y solo sin contrato
+/// abierto (lib/employeeDeletion.ts).
 model employee {
   id           Int             @id @default(autoincrement())
   national_id  String          @unique // V/E/J/G + dígitos, validado en app
@@ -409,14 +411,17 @@ model employee {
 /// Contrato de trabajo (UI: "Contrato de trabajo"; la tabla conserva el
 /// nombre `employment`, docs/10 R4). Vínculo persona ↔ empresa con datos
 /// propios. N por persona — el alcance de la huella es la unión sobre todos
-/// sus contratos activos. NO lleva sede: el alcance sale de la empresa (y su
-/// grupo), nunca de una sede puntual.
+/// sus contratos activos. El alcance sale de la empresa (y su grupo), nunca de
+/// una sede puntual: `site_id` es SOLO INFORMATIVA (dónde trabaja; 2026-11-16,
+/// revierte en parte docs/10 R4), obligatoria en la app si la empresa tiene varias sedes.
 model employment {
   id                Int               @id @default(autoincrement())
   employee_id       Int
   employee          employee          @relation(fields: [employee_id], references: [id], onDelete: Restrict)
   company_id        Int
   company           client_company    @relation(fields: [company_id], references: [id], onDelete: Restrict)
+  site_id           Int? // informativa: no cambia en qué equipos está la persona
+  site              site?             @relation(fields: [site_id], references: [id], onDelete: SetNull)
   schedule_group_id Int?
   schedule_group    schedule_group?   @relation(fields: [schedule_group_id], references: [id], onDelete: SetNull)
   position_id       Int?
@@ -438,6 +443,7 @@ model employment {
   @@index([employee_id])
   @@index([company_id, status])
   @@index([schedule_group_id])
+  @@index([site_id])
 }
 
 model department {

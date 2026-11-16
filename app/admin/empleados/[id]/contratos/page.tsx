@@ -37,7 +37,8 @@ export default async function EmpleadoContratosPage({
       where: { employee_id: id, company_id: companyIdWhere(access) },
       orderBy: [{ start_date: "desc" }],
       include: {
-        company: { select: { name: true } },
+        company: { select: { name: true, _count: { select: { sites: { where: { status: "active" } } } } } },
+        site: { select: { name: true } },
         schedule_group: { select: { name: true } },
         position: { select: { name: true } },
         department: { select: { name: true } },
@@ -51,6 +52,8 @@ export default async function EmpleadoContratosPage({
     id: em.id,
     company_id: em.company_id,
     company_name: em.company.name,
+    site_id: em.site_id,
+    site_name: em.site?.name ?? null,
     schedule_group_id: em.schedule_group_id,
     position_id: em.position_id,
     department_id: em.department_id,
@@ -68,6 +71,9 @@ export default async function EmpleadoContratosPage({
   const payroll = (em: Em) =>
     em.payroll_type ? (em.payroll_type === "quincenal" ? "Quincenal" : "Semanal") : "—";
   const period = (em: Em) => `${fmtDate(em.start_date)} → ${em.end_date ? fmtDate(em.end_date) : "∞"}`;
+  // Sede (informativa): falta solo si la empresa tiene varias y no se eligió.
+  const site = (em: Em) =>
+    em.site?.name ?? (em.company._count.sites > 1 ? <span className="text-accent2">Falta elegir la sede</span> : null);
   const statusTag = (em: Em) => (
     <Tag variant={em.status === "active" ? "accent" : "neutral"}>{em.status === "active" ? "Vigente" : "Cerrado"}</Tag>
   );
@@ -92,7 +98,7 @@ export default async function EmpleadoContratosPage({
             <Table>
               <thead>
                 <tr>
-                  <Th>Empresa</Th>
+                  <Th>Empresa / Sede</Th>
                   <Th>Horario</Th>
                   <Th>Puesto / Depto</Th>
                   <Th>Nómina</Th>
@@ -104,7 +110,10 @@ export default async function EmpleadoContratosPage({
               <tbody>
                 {employments.map((em) => (
                   <Tr key={em.id}>
-                    <Td className="font-medium">{em.company.name}</Td>
+                    <Td>
+                      <span className="font-medium">{em.company.name}</span>
+                      {site(em) && <span className="block text-xs text-text/70">{site(em)}</span>}
+                    </Td>
                     <Td>{em.schedule_group?.name ?? <span className="text-text/60">—</span>}</Td>
                     <Td>
                       {em.position?.name ?? "—"}
@@ -130,6 +139,7 @@ export default async function EmpleadoContratosPage({
                 tags={statusTag(em)}
                 accent={em.status === "active" ? "accent" : "neutral"}
                 fields={[
+                  { label: "Sede", value: site(em) ?? "—" },
                   { label: "Período", value: period(em) },
                   { label: "Horario", value: em.schedule_group?.name ?? "—" },
                   { label: "Puesto", value: em.position?.name ?? "—" },

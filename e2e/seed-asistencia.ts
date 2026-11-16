@@ -19,9 +19,15 @@ async function main() {
   const day = (i: number) => addDays(monday, i).replace(/-/g, "");
   const start = new Date(`${addDays(today, -60)}T00:00:00Z`);
 
+  // --dos-sedes: la empresa con una segunda sede (la sede del contrato pasa a ser obligatoria).
+  const twoSites = process.argv.includes("--dos-sedes");
   const company = await prisma.client_company.create({
-    data: { name: `E2E Asistencia ${stamp}`, tax_id: "J-00000000-0", sites: { create: { name: "Sede E2E" } } },
-    include: { sites: true },
+    data: {
+      name: `E2E Asistencia ${stamp}`,
+      tax_id: "J-00000000-0",
+      sites: { create: twoSites ? [{ name: "Sede E2E" }, { name: "Sede E2E Norte" }] : [{ name: "Sede E2E" }] },
+    },
+    include: { sites: { orderBy: { id: "asc" } } },
   });
   const devId = `E2E${stamp}`;
   await prisma.devices.create({ data: { dev_id: devId, name: `Equipo E2E ${stamp}`, site_id: company.sites[0].id } });

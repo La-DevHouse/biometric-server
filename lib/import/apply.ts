@@ -83,6 +83,10 @@ export async function applyPlan(plan: CompanyImportPlan, actorId: number | null,
   return prisma.$transaction(
     async (tx) => {
       const company = await tx.client_company.findUniqueOrThrow({ where: { id: plan.companyId }, select: { id: true, business_model_id: true } });
+      // Sede del contrato (informativa, lib/employmentSite): el archivo no la trae. Con
+      // una sola sede activa es esa; con varias quedan sin sede hasta que se editen.
+      const activeSites = await tx.site.findMany({ where: { company_id: company.id, status: "active" }, select: { id: true }, take: 2 });
+      const siteId = activeSites.length === 1 ? activeSites[0].id : null;
 
       // --- Cargos → puestos, departamentos ---
       const positions = await resolveIds(
@@ -185,11 +189,12 @@ export async function applyPlan(plan: CompanyImportPlan, actorId: number | null,
           data: newContracts.map((p) => ({
             employee_id: employeeByCedula.get(p.cedula)!,
             company_id: company.id,
+            site_id: siteId,
             start_date: ymdToDate(p.startDate),
             position_id: positionOf(p),
             department_id: departmentOf(p),
           })),
-          select: { id: true, employee_id: true, company_id: true, start_date: true, position_id: true, department_id: true },
+          select: { id: true, employee_id: true, company_id: true, site_id: true, start_date: true, position_id: true, department_id: true },
         });
         for (const c of created) log("import.employment.create", "employment", c.id, undefined, c);
       }

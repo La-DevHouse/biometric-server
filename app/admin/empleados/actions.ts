@@ -22,6 +22,8 @@ async function syncNote(employeeId: number): Promise<string> {
 import { extractCedula, type CedulaExtractedFields } from "@/lib/documentVision";
 import { allow, canSeeCompany } from "@/lib/access";
 import { isEmployeeStatus, type EmployeeStatus } from "@/lib/employeeStatus";
+import { deleteEmployee, type DeleteEmployeeResult } from "@/lib/employeeDeletion";
+import { onlySiteOf, resolveContractSite } from "@/lib/employmentSite";
 
 function str(fd: FormData, k: string) {
   return String(fd.get(k) ?? "").trim();
@@ -141,14 +143,15 @@ export async function createEmployeeAction(
 
   // Cuenta limitada a ciertas empresas (docs/18): la persona entra con su primer
   // contrato en una de ellas; sin contrato no la vería después.
-  let first: { company_id: number; start_date: Date } | null = null;
+  // Sede: la única de la empresa; con varias queda sin sede hasta que se edite el contrato.
+  let first: { company_id: number; start_date: Date; site_id: number | null } | null = null;
   if (g.access.companyIds !== null) {
     const company_id = Number(str(fd, "company_id"));
     const start_date = optDate(str(fd, "start_date"));
     if (!Number.isInteger(company_id) || !canSeeCompany(g.access, company_id))
       return { status: "error", error: "Elija la empresa del contrato." };
     if (!start_date) return { status: "error", error: "La fecha de inicio del contrato es obligatoria." };
-    first = { company_id, start_date };
+    first = { company_id, start_date, site_id: await onlySiteOf(company_id) };
   }
 
   let cedulaPhoto: Uint8Array<ArrayBuffer> | undefined;
@@ -163,7 +166,7 @@ export async function createEmployeeAction(
       data: {
         ...d,
         cedula_photo: cedulaPhoto ?? null,
-        ...(first ? { employments: { create: { company_id: first.company_id, start_date: first.start_date } } } : {}),
+        ...(first ? { employments: { create: { company_id: first.company_id, site_id: first.site_id, start_date: first.start_date } } } : {}),
       },
       include: { employments: true },
     });
@@ -180,7 +183,7 @@ export async function createEmployeeAction(
         const existing = await prisma.employee.findUnique({ where: { national_id: d.national_id }, select: { id: true } });
         if (existing) {
           const em = await prisma.employment.create({
-            data: { employee_id: existing.id, company_id: first.company_id, start_date: first.start_date },
+            data: { employee_id: existing.id, company_id: first.company_id, site_id: first.site_id, start_date: first.start_date },
           });
           await writeAudit({ actorId: user.id, action: "employment.create", entityType: "employment", entityId: em.id, after: em });
           revalidatePath("/admin/empleados");
@@ -237,6 +240,23 @@ export async function updateEmployeeAction(
   }
 }
 
+/**
+ * Eliminar a una persona: solo administradores, y solo si no tiene contrato
+ * vigente ni por empezar con ninguna empresa (lib/employeeDeletion).
+ */
+export async function deleteEmployeeAction(employeeId: number): Promise<DeleteEmployeeResult> {
+  const g = await allow({ admin: true, employee: employeeId });
+  if (!g.ok) return { ok: false, error: g.error };
+  if (!Number.isInteger(employeeId)) return { ok: false, error: "ID inválido." };
+  try {
+    const r = await deleteEmployee(employeeId, g.access.user.id);
+    if (r.ok) revalidatePath("/admin/empleados");
+    return r;
+  } catch (e) {
+    return { ok: false, error: userErrorMessage(e) };
+  }
+}
+
 // --------------------------------------------------------------------------
 // Contrato de trabajo (employment)
 // --------------------------------------------------------------------------
@@ -248,6 +268,7 @@ function employmentData(fd: FormData) {
   const ptRaw = str(fd, "payroll_type");
   return {
     company_id: Number(str(fd, "company_id")),
+    site_id: optId(fd, "site_id"),
     schedule_group_id: optId(fd, "schedule_group_id"),
     // "__new__" → null acá; lo resuelve resolvePositionId() creando el puesto
     position_id: posRaw === "" || posRaw === "__new__" ? null : Number(posRaw),
@@ -313,6 +334,10 @@ export async function createEmploymentAction(
   const g = await allow({ edit: true, employee: employee_id, company: d.company_id });
   if (!g.ok) return { status: "error", error: g.error };
   const user = g.access.user;
+
+  const site = await resolveContractSite(d.company_id, d.site_id);
+  if ("error" in site) return { status: "error", error: site.error };
+  d.site_id = site.siteId;
 
   const pos = await resolvePositionId(fd, d.position_id, d.company_id, user.id);
   if ("error" in pos) return { status: "error", error: pos.error };
@@ -399,6 +424,9 @@ export async function updateEmploymentAction(
       return { status: "error", error: "El horario no es de la empresa del contrato." };
   }
 
+  const site = await resolveContractSite(before.company_id, d.site_id, before.site_id);
+  if ("error" in site) return { status: "error", error: site.error };
+
   const pos = await resolvePositionId(fd, d.position_id, before.company_id, user.id);
   if ("error" in pos) return { status: "error", error: pos.error };
 
@@ -407,6 +435,7 @@ export async function updateEmploymentAction(
       where: { id },
       data: {
         // company_id NO: la empresa del contrato es fija.
+        site_id: site.siteId,
         schedule_group_id: d.schedule_group_id,
         position_id: pos.id,
         department_id: d.department_id,

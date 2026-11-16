@@ -117,6 +117,11 @@ test.describe.serial("Perfiles de acceso", () => {
     await expect(page.getByRole("dialog").getByLabel("Empresa del contrato *")).toBeVisible();
     await page.keyboard.press("Escape");
 
+    // Eliminar empleados: solo administradores.
+    await page.goto(`/admin/empleados/${A.ana.id}`);
+    await expect(page.getByRole("navigation", { name: "Secciones del empleado" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Eliminar empleado…" })).toHaveCount(0);
+
     // Ficha de un empleado de A: puede editar, pero no borrar usuarios del equipo (huellas).
     await page.goto(`/admin/dispositivos/E2E${stampOf(A)}/usuarios`);
     await expect(page.getByRole("button", { name: /Eliminar usuario/ })).toHaveCount(0);
