@@ -5,6 +5,7 @@ import { Tabs, DetailHeader } from "@/components/ui/Tabs";
 import { Tag } from "@/components/ui/Tag";
 import { Icon } from "@/components/ui/icons";
 import { EmployeeFormDialog, type EmployeeValues } from "./EmployeeFormDialog";
+import { EMPLOYEE_STATUS_LABEL, EMPLOYEE_STATUS_TAG } from "@/lib/employeeStatus";
 import { MultiOpButton } from "./MultiOpButton";
 import { syncEmployeeNowAction } from "@/app/admin/actions";
 import { companyReturn, withReturn } from "@/lib/returnTo";
@@ -38,7 +39,7 @@ export async function EmployeeTabs({
   const [employee, withPhoto, vigentes, fromCompany] = await Promise.all([
     prisma.employee.findUnique({
       where: { id: employeeId },
-      select: { id: true, national_id: true, tax_id: true, first_name: true, last_name: true, birth_date: true },
+      select: { id: true, national_id: true, tax_id: true, first_name: true, last_name: true, birth_date: true, status: true },
     }),
     prisma.$queryRaw<{ id: number }[]>`SELECT id FROM employee WHERE id = ${employeeId} AND cedula_photo IS NOT NULL`,
     prisma.employment.count({ where: { employee_id: employeeId, ...activeEmploymentWhere() } }),
@@ -53,6 +54,7 @@ export async function EmployeeTabs({
     first_name: employee.first_name,
     last_name: employee.last_name,
     birth_date: fmtDate(employee.birth_date),
+    status: employee.status,
     has_cedula_photo: withPhoto.length > 0,
   };
   const base = `/admin/empleados/${employee.id}`;
@@ -66,7 +68,12 @@ export async function EmployeeTabs({
         backLabel={back && fromCompany ? fromCompany.name : "Empleados"}
         secondaryLink={back ? { href: "/admin/empleados", label: "Todos los empleados" } : undefined}
         title={`${employee.first_name} ${employee.last_name}`}
-        badges={vigentes > 0 ? <Tag variant="accent">Activo</Tag> : <Tag variant="neutral">Pool</Tag>}
+        badges={
+          <>
+            {vigentes > 0 ? <Tag variant="accent">Contrato vigente</Tag> : <Tag variant="neutral">Pool</Tag>}
+            <Tag variant={EMPLOYEE_STATUS_TAG[employee.status]}>{EMPLOYEE_STATUS_LABEL[employee.status]}</Tag>
+          </>
+        }
         subtitle={<span className="font-mono">{employee.national_id}</span>}
         actions={
           <>

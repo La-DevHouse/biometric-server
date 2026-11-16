@@ -15,6 +15,7 @@ import { describeActionError } from "@/lib/actionErrors";
 import { createEmployeeAction, updateEmployeeAction, extractCedulaAction } from "@/app/admin/empleados/actions";
 import { ADMIN_ACTION_INITIAL } from "@/lib/adminActionState";
 import { FIELD_INPUT as INPUT, FIELD_LABEL as LABEL } from "@/components/ui/fieldStyles";
+import { EMPLOYEE_STATUSES, EMPLOYEE_STATUS_LABEL, type EmployeeStatus } from "@/lib/employeeStatus";
 
 export interface EmployeeValues {
   id: number;
@@ -23,6 +24,7 @@ export interface EmployeeValues {
   first_name: string;
   last_name: string;
   birth_date: string | null; // YYYY-MM-DD
+  status: EmployeeStatus;
   has_cedula_photo?: boolean;
 }
 
@@ -192,6 +194,16 @@ export function EmployeeFormDialog({
             <label className={LABEL}>
               Fecha de nacimiento
               <input name="birth_date" type="date" defaultValue={employee?.birth_date ?? ""} className={INPUT} />
+            </label>
+            <label className={LABEL}>
+              Estatus *
+              <select name="status" required defaultValue={employee?.status ?? "active"} className={INPUT}>
+                {EMPLOYEE_STATUSES.map((s) => (
+                  <option key={s} value={s}>
+                    {EMPLOYEE_STATUS_LABEL[s]}
+                  </option>
+                ))}
+              </select>
             </label>
           </div>
           {!editing && contractCompanies && (

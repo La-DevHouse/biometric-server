@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { companyIdWhere, requirePage } from "@/lib/access";
 import { activeEmploymentWhere } from "@/lib/scope";
 import { EmployeeTabs } from "@/components/admin/EmployeeTabs";
+import { EMPLOYEE_STATUS_LABEL } from "@/lib/employeeStatus";
 
 export const dynamic = "force-dynamic";
 
@@ -11,7 +12,7 @@ function fmtDate(d: Date | null): string {
   return d ? d.toISOString().slice(0, 10) : "—";
 }
 
-/** Empleado → Información (docs/11 P1): documento, RIF, nacimiento, foto de cédula. */
+/** Empleado → Información (docs/11 P1): documento, RIF, nacimiento, estatus, foto de cédula. */
 export default async function EmpleadoInfoPage({
   params,
   searchParams,
@@ -31,6 +32,7 @@ export default async function EmpleadoInfoPage({
         national_id: true,
         tax_id: true,
         birth_date: true,
+        status: true,
         _count: { select: { fingerprints: { where: { status: "active" } } } },
       },
     }),
@@ -50,6 +52,7 @@ export default async function EmpleadoInfoPage({
         <Field label="Documento" value={employee.national_id} mono />
         <Field label="RIF" value={employee.tax_id ?? "—"} mono />
         <Field label="Fecha de nacimiento" value={fmtDate(employee.birth_date)} />
+        <Field label="Estatus" value={EMPLOYEE_STATUS_LABEL[employee.status]} />
         <Field
           label="Contrato vigente con"
           value={

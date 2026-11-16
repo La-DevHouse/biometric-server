@@ -4,10 +4,11 @@ import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { useTransition } from "react";
 import { FiltersDialog } from "@/components/ui/FiltersDialog";
 import { Combobox } from "@/components/ui/Combobox";
+import { EMPLOYEE_STATUSES, EMPLOYEE_STATUS_LABEL } from "@/lib/employeeStatus";
 import { FIELD_INPUT as INPUT_CLASS, FIELD_LABEL as LABEL } from "@/components/ui/fieldStyles";
 
 /**
- * Los 5 filtros de Empleados desordenaban la barra superior — se agrupan
+ * Los filtros de Empleados desordenaban la barra superior — se agrupan
  * en el ícono de embudo estándar (components/ui/FiltersDialog), en vez de
  * una fila de <select> sueltos. Controlado por URL, no un <form method=get>.
  */
@@ -27,7 +28,8 @@ export function EmployeeFiltersDialog({
   const grupo = searchParams.get("grupo") ?? "";
   const empresa = searchParams.get("empresa") ?? "";
   const estado = searchParams.get("estado") ?? "";
-  const activeCount = [q, grupo, empresa, estado].filter(Boolean).length;
+  const estatus = searchParams.get("estatus") ?? "";
+  const activeCount = [q, grupo, empresa, estado, estatus].filter(Boolean).length;
 
   function update(patch: Record<string, string>) {
     const params = new URLSearchParams(searchParams.toString());
@@ -91,6 +93,22 @@ export function EmployeeFiltersDialog({
           <option value="">todos</option>
           <option value="activo">Con contrato activo</option>
           <option value="pool">Pool (sin vínculo)</option>
+        </select>
+      </label>
+      <label className={LABEL}>
+        Estatus
+        <select
+          className={INPUT_CLASS}
+          value={estatus}
+          disabled={isPending}
+          onChange={(e) => update({ estatus: e.target.value })}
+        >
+          <option value="">todos</option>
+          {EMPLOYEE_STATUSES.map((s) => (
+            <option key={s} value={s}>
+              {EMPLOYEE_STATUS_LABEL[s]}
+            </option>
+          ))}
         </select>
       </label>
     </FiltersDialog>

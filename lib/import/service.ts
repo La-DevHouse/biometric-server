@@ -18,7 +18,7 @@ const RETENTION_DAYS = 30;
 
 export type PreviewPerson = Pick<
   PersonOp,
-  "row" | "cedula" | "employee" | "firstName" | "lastName" | "split" | "fileName" | "birthDate" | "personChanges" | "contract" | "startDate" | "cargoKey" | "deptKey" | "changes" | "pendingChoice"
+  "row" | "cedula" | "employee" | "firstName" | "lastName" | "split" | "fileName" | "birthDate" | "status" | "personChanges" | "contract" | "startDate" | "cargoKey" | "deptKey" | "changes" | "pendingChoice"
 >;
 
 export interface PreviewView {
@@ -97,8 +97,8 @@ async function buildView(runId: number, fileName: string, plan: CompanyImportPla
     },
     people: sorted
       .slice(0, VIEW_LIMIT)
-      .map(({ row, cedula, employee, firstName, lastName, split, fileName: fn, birthDate, personChanges, contract, startDate, cargoKey, deptKey, changes, pendingChoice }) => ({
-        row, cedula, employee, firstName, lastName, split, fileName: fn, birthDate, personChanges, contract, startDate, cargoKey, deptKey, changes, pendingChoice,
+      .map(({ row, cedula, employee, firstName, lastName, split, fileName: fn, birthDate, status, personChanges, contract, startDate, cargoKey, deptKey, changes, pendingChoice }) => ({
+        row, cedula, employee, firstName, lastName, split, fileName: fn, birthDate, status, personChanges, contract, startDate, cargoKey, deptKey, changes, pendingChoice,
       })),
     peopleTotal: plan.people.length,
     cargos: plan.cargos,

@@ -9,6 +9,8 @@
 //        archivo es una sola celda partida por heurística): si difiere, se avisa.
 //        La fecha de nacimiento sí: si el archivo la trae y es otra, se completa o
 //        se corrige (el roster de Galepso a veces no la trae: eso no borra nada).
+//        Lo mismo el estatus (activo / vacaciones / desactivado): el del archivo
+//        manda; si el archivo no lo trae, no se toca.
 //   D3 — no se da de baja a nadie: los que tienen contrato vigente y no están en
 //        el archivo solo se listan.
 //   D4 — una persona que aparece varias veces (tiene varios puestos en la empresa)
@@ -22,6 +24,8 @@ import { activeEmploymentWhere } from "@/lib/scope";
 import { splitFullName } from "./names";
 import { cellText, cleanText, dateToYmd, isBlank, normKey, parseCedula, parseDate } from "./normalize";
 import type { ReadResult } from "./read";
+import { BIRTH_FIELD, STATUS_FIELD } from "./changeFields";
+import { EMPLOYEE_STATUS_LABEL, parseEmployeeStatus, type EmployeeStatus } from "@/lib/employeeStatus";
 
 export interface Change {
   field: string;
@@ -107,7 +111,9 @@ export interface PersonOp {
   fileName?: string;
   /** La del archivo (null = no la trae; nunca borra la del sistema). */
   birthDate: string | null;
-  /** Persona existente: datos de su ficha que cambian (hoy, la fecha de nacimiento). */
+  /** El del archivo (null = no lo trae; a una persona nueva se la crea activa). */
+  status: EmployeeStatus | null;
+  /** Persona existente: datos de su ficha que cambian (fecha de nacimiento, estatus). */
   personChanges: Change[];
   contract: "create" | "update" | "same";
   contractId?: number;
@@ -147,7 +153,7 @@ export interface Catalog {
 
 export interface Snapshot {
   company: { id: number; name: string; status: string; business_model_id: number | null } | null;
-  employeesByCedula: Map<string, { id: number; first_name: string; last_name: string; birth_date: string | null }>;
+  employeesByCedula: Map<string, { id: number; first_name: string; last_name: string; birth_date: string | null; status: EmployeeStatus }>;
   /** Contratos de esas personas EN ESTA EMPRESA. */
   contractsByEmployee: Map<
     number,
@@ -182,7 +188,7 @@ export async function loadSnapshot(companyId: number, read: ReadResult): Promise
     prisma.client_company.findUnique({ where: { id: companyId }, select: { id: true, name: true, status: true, business_model_id: true } }),
     prisma.employee.findMany({
       where: { national_id: { in: [...cedulas] } },
-      select: { id: true, national_id: true, first_name: true, last_name: true, birth_date: true },
+      select: { id: true, national_id: true, first_name: true, last_name: true, birth_date: true, status: true },
     }),
     prisma.position.findMany({ select: { id: true, name: true }, orderBy: { id: "asc" } }),
     prisma.position_alias.findMany({ select: { alias_key: true, position: { select: { id: true, name: true } } } }),
@@ -214,7 +220,7 @@ export async function loadSnapshot(companyId: number, read: ReadResult): Promise
   return {
     company,
     employeesByCedula: new Map(
-      employees.map((e) => [e.national_id, { id: e.id, first_name: e.first_name, last_name: e.last_name, birth_date: dateToYmd(e.birth_date) }])
+      employees.map((e) => [e.national_id, { id: e.id, first_name: e.first_name, last_name: e.last_name, birth_date: dateToYmd(e.birth_date), status: e.status }])
     ),
     contractsByEmployee,
     positions: catalog(positions, positionAliases.map((a) => ({ alias_key: a.alias_key, target: a.position }))),
@@ -311,6 +317,7 @@ export function buildPlan(companyId: number, read: ReadResult, snap: Snapshot, o
   const droppedRows = new Set<number>();
   const pendingCedulas = new Set<string>();
   const birthByCedula = new Map<string, string>();
+  const statusByCedula = new Map<string, EmployeeStatus>();
   for (const [cedula, rows] of rowsByCedula) {
     if (rows.length < 2) continue;
     const group = read.rows.filter((r) => rows.includes(r.row));
@@ -325,6 +332,8 @@ export function buildPlan(companyId: number, read: ReadResult, snap: Snapshot, o
     for (const r of group) {
       const b = isBlank(r.cells.birth_date) ? null : parseDate(r.cells.birth_date);
       if (b && "value" in b && b.value && !birthByCedula.has(cedula)) birthByCedula.set(cedula, b.value);
+      const st = parseEmployeeStatus(r.cells.status);
+      if ("value" in st && st.value && !statusByCedula.has(cedula)) statusByCedula.set(cedula, st.value);
     }
     const options: DuplicateOption[] = [];
     for (const r of group) {
@@ -391,11 +400,17 @@ export function buildPlan(companyId: number, read: ReadResult, snap: Snapshot, o
       reject(r.row, "FECHA DE NACIMIENTO", birth.error);
       bad = true;
     }
-    if (bad || "error" in ced || "error" in start || "error" in birth) continue;
+    const status = parseEmployeeStatus(r.cells.status);
+    if ("error" in status) {
+      reject(r.row, "STATUS", status.error);
+      bad = true;
+    }
+    if (bad || "error" in ced || "error" in start || "error" in birth || "error" in status) continue;
     const cedula = ced.value;
     // Varias filas de la misma persona: una sola entra (D4), y una sola vez su nacimiento.
     if ((rowsByCedula.get(cedula)?.length ?? 0) > 1 && keptRow.get(cedula) !== r.row) continue;
     const birthDate = birth.value ?? birthByCedula.get(cedula) ?? null;
+    const empStatus = status.value ?? statusByCedula.get(cedula) ?? null;
     const cargoKey = keyOf(cellText(r.cells.cargo));
     const deptKey = keyOf(departmentText(r.cells.department));
 
@@ -408,7 +423,13 @@ export function buildPlan(companyId: number, read: ReadResult, snap: Snapshot, o
         row: r.row, cedula, employee: "existing", employeeId: emp.id, firstName: emp.first_name, lastName: emp.last_name,
         ...(differs ? { fileName: fullName } : {}),
         birthDate,
-        personChanges: birthDate && birthDate !== emp.birth_date ? [{ field: "Fecha de nacimiento", from: emp.birth_date, to: birthDate }] : [],
+        status: empStatus,
+        personChanges: [
+          ...(birthDate && birthDate !== emp.birth_date ? [{ field: BIRTH_FIELD, from: emp.birth_date, to: birthDate }] : []),
+          ...(empStatus && empStatus !== emp.status
+            ? [{ field: STATUS_FIELD, from: EMPLOYEE_STATUS_LABEL[emp.status], to: EMPLOYEE_STATUS_LABEL[empStatus] }]
+            : []),
+        ],
         contract: "create", startDate: start.value, cargoKey, deptKey, changes: [],
       };
     } else {
@@ -420,7 +441,7 @@ export function buildPlan(companyId: number, read: ReadResult, snap: Snapshot, o
       op = {
         row: r.row, cedula, employee: "create", firstName: split.firstName, lastName: split.lastName,
         split: { tokens: split.tokens, boundary: split.boundary, ambiguous: split.ambiguous && overrides.splits?.[cedula] === undefined },
-        birthDate, personChanges: [],
+        birthDate, status: empStatus, personChanges: [],
         contract: "create", startDate: start.value, cargoKey, deptKey, changes: [],
       };
     }

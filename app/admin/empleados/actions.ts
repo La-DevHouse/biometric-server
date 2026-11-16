@@ -21,6 +21,7 @@ async function syncNote(employeeId: number): Promise<string> {
 }
 import { extractCedula, type CedulaExtractedFields } from "@/lib/documentVision";
 import { allow, canSeeCompany } from "@/lib/access";
+import { isEmployeeStatus, type EmployeeStatus } from "@/lib/employeeStatus";
 
 function str(fd: FormData, k: string) {
   return String(fd.get(k) ?? "").trim();
@@ -45,11 +46,14 @@ type PersonData = {
   first_name: string;
   last_name: string;
   birth_date: Date | null;
+  status: EmployeeStatus;
 };
 
 function personData(fd: FormData): { data: PersonData } | { error: string } {
   const ced = joinDoc(str(fd, "doc_prefix"), str(fd, "doc_number"), "cedula");
   if ("error" in ced) return { error: ced.error };
+  const status = str(fd, "status") || "active";
+  if (!isEmployeeStatus(status)) return { error: "Estatus inválido." };
 
   const rifPrefix = str(fd, "rif_prefix");
   const rifNumber = str(fd, "rif_number");
@@ -70,6 +74,7 @@ function personData(fd: FormData): { data: PersonData } | { error: string } {
       first_name: str(fd, "first_name"),
       last_name: str(fd, "last_name"),
       birth_date: optDate(str(fd, "birth_date")),
+      status,
     },
   };
 }

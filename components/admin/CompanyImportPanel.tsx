@@ -15,6 +15,8 @@ import { describeActionError } from "@/lib/actionErrors";
 import { previewCompanyImportAction, confirmCompanyImportAction, reopenCompanyImportAction } from "@/app/admin/empresas/[id]/importar/actions";
 import type { PreviewPerson, PreviewView } from "@/lib/import/service";
 import type { CategoryChoice, CategoryOp, DuplicateOption } from "@/lib/import/plan";
+import { BIRTH_FIELD, STATUS_FIELD } from "@/lib/import/changeFields";
+import { EMPLOYEE_STATUS_LABEL } from "@/lib/employeeStatus";
 
 const SELECT = `${FIELD_INPUT} h-auto! py-[6px] text-sm`;
 const fmtDate = (ymd: string) => ymd.split("-").reverse().join("/");
@@ -173,7 +175,7 @@ export function CompanyImportPanel({ companyId, resumeRunId }: { companyId: numb
           <div className="grid gap-3 sm:grid-cols-3">
             <Box title="Personas">
               {view.counts.newPeople} nueva(s) · {view.counts.existingPeople} ya en el sistema
-              {view.counts.updatedPeople > 0 && ` · ${view.counts.updatedPeople} con fecha de nacimiento nueva`}
+              {view.counts.updatedPeople > 0 && ` · ${view.counts.updatedPeople} con datos que cambian (nacimiento o estatus)`}
             </Box>
             <Box title="Contratos en esta empresa">
               {[
@@ -314,6 +316,7 @@ export function CompanyImportPanel({ companyId, resumeRunId }: { companyId: numb
                     <Th>Cédula</Th>
                     <Th>Nombres | Apellidos</Th>
                     <Th>Nacimiento</Th>
+                    <Th>Estatus</Th>
                     <Th>Ingreso</Th>
                     <Th>Departamento</Th>
                     <Th>Puesto</Th>
@@ -474,11 +477,23 @@ function PersonRow({
       </Td>
       <Td className="whitespace-nowrap">
         {p.birthDate ? fmtDate(p.birthDate) : "—"}
-        {p.personChanges.map((c) => (
-          <span key={c.field} className="mt-1 block text-xs text-neutral-700">
-            {c.from ? `antes ${fmtDate(c.from)}` : "no tenía"}
-          </span>
-        ))}
+        {p.personChanges
+          .filter((c) => c.field === BIRTH_FIELD)
+          .map((c) => (
+            <span key={c.field} className="mt-1 block text-xs text-neutral-700">
+              {c.from ? `antes ${fmtDate(c.from)}` : "no tenía"}
+            </span>
+          ))}
+      </Td>
+      <Td className="whitespace-nowrap">
+        {p.status ? EMPLOYEE_STATUS_LABEL[p.status] : p.employee === "create" ? EMPLOYEE_STATUS_LABEL.active : "—"}
+        {p.personChanges
+          .filter((c) => c.field === STATUS_FIELD)
+          .map((c) => (
+            <span key={c.field} className="mt-1 block text-xs text-neutral-700">
+              antes {c.from}
+            </span>
+          ))}
       </Td>
       <Td className="whitespace-nowrap">{pendingChoice ? "—" : fmtDate(p.startDate)}</Td>
       <Td>{pendingChoice ? "—" : department}</Td>
